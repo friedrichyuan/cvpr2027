@@ -1,0 +1,551 @@
+{
+  "n_segments": 1000,
+  "n_unique_verbs": 117,
+  "n_unique_objects": 1362,
+  "n_unique_scenes": 74,
+  "n_unique_devices": 25,
+  "n_unique_collectors": 157,
+  "n_total_actions": 12141,
+  "top_verbs": [
+    [
+      "grasp",
+      1550
+    ],
+    [
+      "scrub",
+      655
+    ],
+    [
+      "set_down",
+      626
+    ],
+    [
+      "pull",
+      613
+    ],
+    [
+      "drop",
+      506
+    ],
+    [
+      "fold",
+      470
+    ],
+    [
+      "reach",
+      374
+    ],
+    [
+      "insert",
+      369
+    ],
+    [
+      "crack",
+      348
+    ],
+    [
+      "hold",
+      339
+    ],
+    [
+      "release",
+      297
+    ],
+    [
+      "carry",
+      280
+    ],
+    [
+      "adjust",
+      264
+    ],
+    [
+      "lift",
+      228
+    ],
+    [
+      "break",
+      228
+    ],
+    [
+      "rub",
+      227
+    ],
+    [
+      "squeeze",
+      214
+    ],
+    [
+      "wipe",
+      205
+    ],
+    [
+      "pinch",
+      188
+    ],
+    [
+      "flip",
+      187
+    ],
+    [
+      "separate",
+      186
+    ],
+    [
+      "slide",
+      184
+    ],
+    [
+      "push",
+      159
+    ],
+    [
+      "position",
+      158
+    ],
+    [
+      "peel",
+      153
+    ],
+    [
+      "press",
+      152
+    ],
+    [
+      "thread",
+      141
+    ],
+    [
+      "gather",
+      135
+    ],
+    [
+      "unfold",
+      128
+    ],
+    [
+      "tap",
+      128
+    ],
+    [
+      "rotate",
+      125
+    ],
+    [
+      "slice",
+      123
+    ],
+    [
+      "stir",
+      122
+    ],
+    [
+      "extract",
+      117
+    ],
+    [
+      "wash",
+      115
+    ],
+    [
+      "cut",
+      113
+    ],
+    [
+      "pour",
+      107
+    ],
+    [
+      "swipe",
+      107
+    ],
+    [
+      "tear",
+      104
+    ],
+    [
+      "arrange",
+      80
+    ],
+    [
+      "rinse",
+      79
+    ],
+    [
+      "twist",
+      78
+    ],
+    [
+      "align",
+      74
+    ],
+    [
+      "flatten",
+      70
+    ],
+    [
+      "unscrew",
+      68
+    ],
+    [
+      "scoop",
+      64
+    ],
+    [
+      "chop",
+      62
+    ],
+    [
+      "screw",
+      60
+    ],
+    [
+      "remove",
+      53
+    ],
+    [
+      "point",
+      51
+    ]
+  ],
+  "top_objects": [
+    [
+      "sunflower seed",
+      610
+    ],
+    [
+      "needle",
+      388
+    ],
+    [
+      "cloth",
+      227
+    ],
+    [
+      "thread",
+      222
+    ],
+    [
+      "sunflower seed shell",
+      186
+    ],
+    [
+      "meat",
+      176
+    ],
+    [
+      "clothes",
+      166
+    ],
+    [
+      "milk carton",
+      152
+    ],
+    [
+      "bowl",
+      134
+    ],
+    [
+      "sunflower seed kernel",
+      134
+    ],
+    [
+      "needle and thread",
+      134
+    ],
+    [
+      "chopsticks",
+      130
+    ],
+    [
+      "plastic bag",
+      107
+    ],
+    [
+      "food",
+      101
+    ],
+    [
+      "black plastic bag",
+      100
+    ],
+    [
+      "paper",
+      99
+    ],
+    [
+      "smartphone screen",
+      99
+    ],
+    [
+      "smartphone",
+      94
+    ],
+    [
+      "clothing",
+      92
+    ],
+    [
+      "white pill bottle cap",
+      92
+    ],
+    [
+      "white bowl",
+      91
+    ],
+    [
+      "green paper strip",
+      85
+    ],
+    [
+      "pumpkin seed",
+      79
+    ],
+    [
+      "grey sock",
+      78
+    ],
+    [
+      "gold foil paper",
+      77
+    ],
+    [
+      "bottle cap",
+      76
+    ],
+    [
+      "gold paper",
+      76
+    ],
+    [
+      "cleaver",
+      75
+    ],
+    [
+      "spatula",
+      73
+    ],
+    [
+      "milk cartons",
+      69
+    ],
+    [
+      "hands",
+      66
+    ],
+    [
+      "cardboard box",
+      65
+    ],
+    [
+      "seed shell",
+      65
+    ],
+    [
+      "dough",
+      64
+    ],
+    [
+      "white cloth",
+      61
+    ],
+    [
+      "playing cards",
+      59
+    ],
+    [
+      "earbud case lid",
+      59
+    ],
+    [
+      "patterned cloth",
+      59
+    ],
+    [
+      "silver cap",
+      58
+    ],
+    [
+      "smart earbud case screen",
+      58
+    ],
+    [
+      "green vegetable stalk",
+      57
+    ],
+    [
+      "plate",
+      56
+    ],
+    [
+      "steering wheel",
+      53
+    ],
+    [
+      "garment",
+      52
+    ],
+    [
+      "paper strip",
+      52
+    ],
+    [
+      "small boxes",
+      51
+    ],
+    [
+      "white pill bottle",
+      50
+    ],
+    [
+      "white paper",
+      49
+    ],
+    [
+      "green vegetable",
+      47
+    ],
+    [
+      "egg",
+      47
+    ]
+  ],
+  "scenes": {
+    "kitchen": 4559,
+    "kitchen sink": 5,
+    "room": 507,
+    "office": 107,
+    "entryway": 3,
+    "indoor porch": 5,
+    "sidewalk": 5,
+    "windowsill": 26,
+    "desk": 331,
+    "indoor": 343,
+    "closet": 44,
+    "paved ground": 4,
+    "bedroom": 751,
+    "dining room": 25,
+    "living room": 859,
+    "study": 4,
+    "bathroom": 960,
+    "vanity table": 6,
+    "vanity": 31,
+    "tabletop": 324,
+    "dressing room": 9,
+    "living_room": 97,
+    "bed": 9,
+    "store": 106,
+    "supermarket": 66,
+    "warehouse": 239,
+    "storage room": 308,
+    "workspace": 391,
+    "packing area": 5,
+    "warehouse desk": 16,
+    "storeroom": 7,
+    "packing station": 10,
+    "indoor workspace": 15,
+    "indoor room": 67,
+    "balcony": 69,
+    "home": 35,
+    "laundry room": 66,
+    "indoors": 64,
+    "house": 19,
+    "driveway": 3,
+    "courtyard": 149,
+    "outdoor": 30,
+    "garage": 14,
+    "outdoor yard": 6,
+    "yard": 42,
+    "outdoor washing area": 33,
+    "outdoor utility area": 5,
+    "outdoor courtyard": 59,
+    "outdoor wash area": 9,
+    "backyard": 6,
+    "messy room": 1,
+    "house interior": 3,
+    "house interior to yard": 1,
+    "yard to house interior": 1,
+    "crafting table": 52,
+    "workshop": 153,
+    "table": 255,
+    "crafting area": 46,
+    "bathroom sink": 5,
+    "playroom": 159,
+    "cabinet": 122,
+    "laundry area": 42,
+    "laundry": 36,
+    "washroom": 33,
+    "laundry basin": 49,
+    "floor": 3,
+    "craft room": 56,
+    "car interior": 132,
+    "car_interior": 4,
+    "car": 9,
+    "grocery store": 28,
+    "store shelf": 27,
+    "convenience store": 29,
+    "office desk": 42
+  },
+  "brands": {
+    "OnePlus": 73,
+    "HUAWEI": 180,
+    "OPPO": 536,
+    "vivo": 128,
+    "HONOR": 43,
+    "PTAC": 1,
+    "realme": 25,
+    "Xiaomi": 14
+  },
+  "brand_models": {
+    "OPPO PLG110": 243,
+    "HUAWEI DVC-AN20": 123,
+    "OPPO PFVM10": 85,
+    "OnePlus IN2010": 73,
+    "OPPO PKB110": 65,
+    "vivo V2302A": 64,
+    "OPPO PEPM00": 60,
+    "OPPO PLJ110": 53,
+    "HUAWEI ALP-AL00": 49,
+    "vivo V2464A": 31,
+    "realme RMX5062": 25,
+    "HONOR NTH-AN00": 22,
+    "vivo V2183A": 19,
+    "OPPO PKV110": 18,
+    "OPPO PCCM00": 10,
+    "vivo V2238A": 10,
+    "HONOR FNE-AN00": 9,
+    "HUAWEI ABR-AL60": 8,
+    "Xiaomi 25104RADAC": 7,
+    "HONOR TNA-AN00": 7,
+    "Xiaomi 25080RABDC": 7,
+    "HONOR LYN-AN00": 5,
+    "vivo V2528A": 4,
+    "OPPO PJH110": 2,
+    "PTAC MGZ-BD00": 1
+  },
+  "resolutions": {
+    "1920x1080": 1000
+  },
+  "fps_values": {
+    "30": 639,
+    "60": 361
+  },
+  "hands": {
+    "right": 4838,
+    "left": 1577,
+    "both": 5726
+  },
+  "fov_h_stats": {
+    "mean": 76.62375751607787,
+    "std": 11.780738177279876,
+    "min": 64.24515688514356,
+    "max": 97.22861371913895
+  },
+  "duration_stats": {
+    "mean": 63.83531000000001,
+    "std": 96.0425888733946,
+    "min": 5.0,
+    "max": 778.97,
+    "total_hours": 17.732030555555557
+  }
+}
