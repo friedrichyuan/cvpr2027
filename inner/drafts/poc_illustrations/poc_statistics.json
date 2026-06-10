@@ -1,0 +1,480 @@
+{
+  "n_segments": 110,
+  "n_unique_verbs": 93,
+  "n_unique_objects": 587,
+  "n_unique_scenes": 17,
+  "n_unique_devices": 7,
+  "n_unique_collectors": 1,
+  "n_total_actions": 1230,
+  "top_verbs": [
+    [
+      "grasp",
+      172
+    ],
+    [
+      "set_down",
+      93
+    ],
+    [
+      "insert",
+      73
+    ],
+    [
+      "wipe",
+      56
+    ],
+    [
+      "carry",
+      52
+    ],
+    [
+      "scrub",
+      48
+    ],
+    [
+      "fold",
+      47
+    ],
+    [
+      "adjust",
+      34
+    ],
+    [
+      "put_down",
+      33
+    ],
+    [
+      "hold",
+      29
+    ],
+    [
+      "rinse",
+      27
+    ],
+    [
+      "wash",
+      25
+    ],
+    [
+      "extract",
+      25
+    ],
+    [
+      "lift",
+      25
+    ],
+    [
+      "scoop",
+      25
+    ],
+    [
+      "peel",
+      21
+    ],
+    [
+      "pull",
+      20
+    ],
+    [
+      "open",
+      20
+    ],
+    [
+      "pour",
+      20
+    ],
+    [
+      "reach",
+      19
+    ],
+    [
+      "remove",
+      18
+    ],
+    [
+      "arrange",
+      16
+    ],
+    [
+      "tear",
+      15
+    ],
+    [
+      "rotate",
+      14
+    ],
+    [
+      "cut",
+      14
+    ],
+    [
+      "rub",
+      13
+    ],
+    [
+      "sweep",
+      12
+    ],
+    [
+      "push",
+      11
+    ],
+    [
+      "turn",
+      11
+    ],
+    [
+      "unfold",
+      10
+    ],
+    [
+      "place",
+      10
+    ],
+    [
+      "position",
+      10
+    ],
+    [
+      "slice",
+      10
+    ],
+    [
+      "close",
+      9
+    ],
+    [
+      "press",
+      9
+    ],
+    [
+      "tie",
+      8
+    ],
+    [
+      "gather",
+      8
+    ],
+    [
+      "uncap",
+      8
+    ],
+    [
+      "stir",
+      8
+    ],
+    [
+      "mop",
+      8
+    ],
+    [
+      "transfer",
+      7
+    ],
+    [
+      "apply",
+      6
+    ],
+    [
+      "drop",
+      6
+    ],
+    [
+      "unzip",
+      5
+    ],
+    [
+      "move",
+      5
+    ],
+    [
+      "toss",
+      5
+    ],
+    [
+      "attach",
+      5
+    ],
+    [
+      "brush",
+      5
+    ],
+    [
+      "stack",
+      5
+    ],
+    [
+      "dump",
+      4
+    ]
+  ],
+  "top_objects": [
+    [
+      "cat food",
+      20
+    ],
+    [
+      "floor",
+      18
+    ],
+    [
+      "mask packets",
+      14
+    ],
+    [
+      "bowl",
+      13
+    ],
+    [
+      "plastic bag",
+      12
+    ],
+    [
+      "white cloth",
+      12
+    ],
+    [
+      "table surface",
+      11
+    ],
+    [
+      "spoon",
+      11
+    ],
+    [
+      "beige garment",
+      11
+    ],
+    [
+      "drawer",
+      10
+    ],
+    [
+      "green vegetable",
+      9
+    ],
+    [
+      "trash",
+      8
+    ],
+    [
+      "metal bowl",
+      8
+    ],
+    [
+      "pumpkin",
+      7
+    ],
+    [
+      "yellow cleaning cloth",
+      7
+    ],
+    [
+      "light blue garment",
+      7
+    ],
+    [
+      "hands",
+      6
+    ],
+    [
+      "wet wipe",
+      6
+    ],
+    [
+      "white tube",
+      6
+    ],
+    [
+      "black plastic bag",
+      6
+    ],
+    [
+      "pet food bag",
+      6
+    ],
+    [
+      "scissors",
+      6
+    ],
+    [
+      "plastic wrap",
+      6
+    ],
+    [
+      "sliced vegetable pieces",
+      6
+    ],
+    [
+      "cloth",
+      6
+    ],
+    [
+      "cardboard box",
+      5
+    ],
+    [
+      "white box",
+      5
+    ],
+    [
+      "black pouch",
+      5
+    ],
+    [
+      "green bottle",
+      5
+    ],
+    [
+      "blue cable",
+      5
+    ],
+    [
+      "two small bottles",
+      5
+    ],
+    [
+      "trash bag",
+      5
+    ],
+    [
+      "white bottle",
+      5
+    ],
+    [
+      "gold jar",
+      5
+    ],
+    [
+      "pink jar",
+      5
+    ],
+    [
+      "orange",
+      5
+    ],
+    [
+      "white sock",
+      5
+    ],
+    [
+      "brush",
+      5
+    ],
+    [
+      "small cup",
+      5
+    ],
+    [
+      "cleaver",
+      5
+    ],
+    [
+      "phone screen",
+      5
+    ],
+    [
+      "phone",
+      5
+    ],
+    [
+      "skewers",
+      5
+    ],
+    [
+      "water",
+      5
+    ],
+    [
+      "plastic wrapping",
+      5
+    ],
+    [
+      "folded bill",
+      5
+    ],
+    [
+      "spray bottle",
+      5
+    ],
+    [
+      "freeze-dried treat",
+      5
+    ],
+    [
+      "faucet handle",
+      5
+    ],
+    [
+      "knife",
+      5
+    ]
+  ],
+  "scenes": {
+    "kitchen": 387,
+    "living room": 106,
+    "room": 11,
+    "bedroom": 476,
+    "living_room": 26,
+    "bathroom": 60,
+    "hallway": 23,
+    "desk": 28,
+    "indoor": 25,
+    "laundry_room": 1,
+    "pantry": 10,
+    "workspace": 4,
+    "laundry room": 24,
+    "closet": 17,
+    "laundry area": 12,
+    "laundry": 8,
+    "dining room": 12
+  },
+  "brands": {
+    "samsung": 50,
+    "HUAWEI": 27,
+    "Xiaomi": 25,
+    "vivo": 4,
+    "OPPO": 4
+  },
+  "brand_models": {
+    "samsung SM-S9080": 50,
+    "HUAWEI FRL-AN00a": 27,
+    "Xiaomi 23113RKC6C": 25,
+    "OPPO PLJ110": 4,
+    "vivo V2068A": 2,
+    "vivo vivo NEX A": 1,
+    "vivo V2502A": 1
+  },
+  "resolutions": {
+    "1920x1080": 61,
+    "1920x1088": 18,
+    "1280x720": 31
+  },
+  "fps_values": {
+    "30": 96,
+    "27": 5,
+    "29": 1,
+    "25": 1,
+    "28": 2,
+    "60": 5
+  },
+  "hands": {
+    "both": 720,
+    "right": 338,
+    "left": 171,
+    "none": 1
+  },
+  "fov_h_stats": {
+    "mean": 99.36999474917096,
+    "std": 6.1882426959003425,
+    "min": 65.95324112091613,
+    "max": 105.06823041990894
+  },
+  "duration_stats": {
+    "mean": 96.041,
+    "std": 39.665996634397075,
+    "min": 18.47,
+    "max": 255.65,
+    "total_hours": 2.9345861111111113
+  }
+}

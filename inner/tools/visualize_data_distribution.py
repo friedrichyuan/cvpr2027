@@ -71,31 +71,62 @@ PIE_COLORS = plt.cm.Set3.colors
 
 # ---------- Data Loading ----------
 
-def load_all_segments(data_dir: str):
-    """Load video_info and annotations from all segments."""
+def load_all_segments(data_dir: str, exclude_dirs: list = None):
+    """Load video_info and annotations from all segments.
+
+    Supports two directory naming conventions:
+      - raw_{collector_id}_seg_{segment_id}/   (Open-AoE delivery format)
+      - poc_raw_video_{timestamp}[_partNNN]/   (POC delivery format)
+
+    Args:
+        data_dir: Path to the segment data directory.
+        exclude_dirs: List of directory names to exclude from loading.
+    """
     data_dir = Path(data_dir)
+    exclude_set = set(exclude_dirs) if exclude_dirs else set()
     segments = []
 
     for seg_dir in sorted(data_dir.iterdir()):
-        if not seg_dir.is_dir() or not seg_dir.name.startswith('raw_'):
+        if not seg_dir.is_dir():
+            continue
+        dirname = seg_dir.name
+        if not (dirname.startswith('raw_') or dirname.startswith('poc_raw_video_')):
+            continue
+        if dirname in exclude_set:
+            print(f"  [EXCLUDE] {dirname}")
             continue
 
-        entry = {'dir_name': seg_dir.name}
+        entry = {'dir_name': dirname}
 
         # Parse collector_id and seg_id from directory name
-        parts = seg_dir.name.split('_')
-        if len(parts) >= 4:
-            entry['collector_id'] = parts[1]
-            entry['seg_id'] = parts[3]
+        if dirname.startswith('raw_') and '_seg_' in dirname:
+            parts = dirname.split('_')
+            if len(parts) >= 4:
+                entry['collector_id'] = parts[1]
+                entry['seg_id'] = parts[3]
+        elif dirname.startswith('poc_raw_video_'):
+            # POC format: extract device identifier from video_info later
+            entry['collector_id'] = 'poc'
+            entry['seg_id'] = dirname.replace('poc_raw_video_', '')
 
-        # Load video_info
+        # Load video_info — prefer undistorted (has FOV and fps fields)
+        undistorted_info_path = (
+            seg_dir / 'ego_process' / 'ego_undistorted_video' / 'undistorted_video_info.json'
+        )
         video_info_path = seg_dir / 'video_info.json'
-        if video_info_path.exists():
-            try:
-                with open(video_info_path, 'r') as f:
-                    entry['video_info'] = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
+
+        loaded_video_info = None
+        for info_path in [undistorted_info_path, video_info_path]:
+            if info_path.exists():
+                try:
+                    with open(info_path, 'r') as f:
+                        loaded_video_info = json.load(f)
+                    break
+                except (json.JSONDecodeError, IOError):
+                    continue
+
+        if loaded_video_info is not None:
+            entry['video_info'] = loaded_video_info
 
         # Load annotation
         annotation_path = seg_dir / 'ego_annotation' / 'ego_action_annotation.json'
@@ -146,10 +177,16 @@ def extract_statistics(segments: list) -> dict:
         # Camera params
         if 'fovHorizontal_degrees' in camera:
             stats['fov_h'].append(camera['fovHorizontal_degrees'])
+        elif 'fov_x_degrees' in camera:
+            stats['fov_h'].append(camera['fov_x_degrees'])
         if 'fovVertical_degrees' in camera:
             stats['fov_v'].append(camera['fovVertical_degrees'])
+        elif 'fov_y_degrees' in camera:
+            stats['fov_v'].append(camera['fov_y_degrees'])
         if 'fps' in camera:
             stats['fps_values'].append(camera['fps'])
+        elif 'fps' in vi:
+            stats['fps_values'].append(vi['fps'])
         if 'resolution' in camera:
             stats['resolutions'][camera['resolution']] += 1
 
@@ -500,12 +537,14 @@ def main():
                         help='Path to save generated figures')
     parser.add_argument('--prefix', type=str, default='openaoe',
                         help='Filename prefix for output figures (default: openaoe)')
+    parser.add_argument('--exclude', type=str, nargs='*', default=None,
+                        help='Directory names to exclude (e.g., poc_raw_video_20260226_215034_part001)')
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     print(f"Loading data from: {args.data_dir}")
-    segments = load_all_segments(args.data_dir)
+    segments = load_all_segments(args.data_dir, exclude_dirs=args.exclude)
     print(f"Loaded {len(segments)} segments")
 
     print("Extracting statistics...")
