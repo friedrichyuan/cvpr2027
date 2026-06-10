@@ -1,0 +1,9 @@
+\section{Conclusion}
+
+We present Open-AoE, an open-source release of 2,000 hours of egocentric manipulation data collected from consumer smartphones, accompanied by a complete data-to-model toolchain. Our three-component toolchain---AoE-Visualization, AoE-Retarget-Replay, and AoE-Training-Ready---bridges the gap from raw egocentric video to trained robot policies, supporting mainstream models including $\pi_{0.5}$, GR00T, and fastWAM.
+
+Experiments demonstrate that Open-AoE data significantly improves manipulation policy performance when augmenting limited robot teleoperation data, with the \textit{Close Laptop} task achieving a 50 percentage-point improvement in success rate.
+
+By lowering both the data contribution barrier (smartphone-based collection at $<\$20$ per user) and the data consumption barrier (ready-to-train format conversion and recipes), Open-AoE aims to accelerate community-driven progress in embodied intelligence. We will continuously update the toolchain to support emerging models and welcome community contributions.
+
+\textbf{Limitations.} The single egocentric viewpoint limits multi-view reasoning. MANO reconstruction accuracy degrades under severe occlusion. The 2,000-hour scale, while meeting the pretraining entry threshold, remains smaller than simulation-augmented datasets. Future work will expand data volume, integrate additional sensor modalities, and extend retarget support to more robot platforms.

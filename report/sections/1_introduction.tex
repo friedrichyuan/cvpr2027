@@ -1,0 +1,16 @@
+\section{Introduction}
+
+Recent embodied foundation models exhibit scaling laws mirroring large language models: generalization capabilities expand commensurate with the scale of real-world interaction data~\cite{gen0,luo2025being}. However, physical interaction data remains prohibitively expensive to curate, suffering from high acquisition costs, limited diversity, and significant noise. This scarcity constitutes a critical bottleneck impeding the field of embodied intelligence.
+
+Current data collection paradigms each face fundamental trade-offs. Teleoperation~\cite{chen2025towards,droid2024} yields high-fidelity data but is constrained by expensive hardware ($>\$50$K) and lab environments. Universal Manipulation Interfaces~\cite{chi2024umi,xu2025dexumi} reduce costs to $\$300$--$800$ but remain ``active'' devices requiring deliberate manipulation. Wearable AR/VR systems~\cite{wang2024dexcap,zhong2025humanoidexo} capture complex poses with high precision, yet their significant bulk ($>500$g) renders them too intrusive for continuous daily use. Passive egocentric video from existing datasets~\cite{grauman2022ego4d,damen2018epic} offers massive scale but typically lacks fine-grained manipulation annotations.
+
+Our prior work, AoE (Always-on Egocentric)~\cite{aoe2026}, introduced a paradigm that leverages ubiquitous smartphones for passive, always-on data collection at near-zero marginal cost ($<\$20$ per user). Building upon this foundation, we present \textbf{Open-AoE}, an open-source release comprising:
+
+\begin{itemize}
+    \item \textbf{Open-AoE-2000H}: 2,000 hours of egocentric manipulation data with bilingual atomic action annotations, MANO hand pose reconstructions, and camera trajectories.
+    \item \textbf{AoE-Visualization}: A Rerun-based data browser for intuitive data exploration and quality assessment.
+    \item \textbf{AoE-Retarget-Replay}: A human-to-robot motion transfer pipeline with real-hardware replay validation on Unitree G1.
+    \item \textbf{AoE-Training-Ready}: Format converters and training recipes for mainstream models including $\pi_{0.5}$~\cite{pi05}, GR00T~\cite{groot2025}, and fastWAM~\cite{fastwam2025}.
+\end{itemize}
+
+To our knowledge, Open-AoE is the first open-source egocentric dataset that simultaneously provides a complete data-to-model toolchain, collected entirely from consumer smartphones. Table~\ref{tab:paradigm_comparison} and Table~\ref{tab:dataset_comparison} position Open-AoE relative to existing paradigms and datasets.
