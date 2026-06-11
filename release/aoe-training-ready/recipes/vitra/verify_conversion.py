@@ -151,12 +151,24 @@ def projection_overlay(ep: dict, src_video_path: Path, out_dir: Path, ep_id: str
         print(f"[verify] cannot open {src_video_path}")
         return
 
+    # Pre-read all needed frames sequentially (cv2 seek is unreliable on
+    # compressed mp4 – it can return wrong frames, causing projection drift).
+    max_src_f = int(decode_frame[sample_local[-1]])
+    needed = {int(decode_frame[fl]): fl for fl in sample_local}
+    frame_cache: dict[int, np.ndarray] = {}
+    for idx in range(max_src_f + 1):
+        ok, frame = cap.read()
+        if not ok:
+            break
+        if idx in needed:
+            frame_cache[idx] = frame
+    cap.release()
+
     saved = []
     for f_local in sample_local:
         src_f = int(decode_frame[f_local])
-        cap.set(cv2.CAP_PROP_POS_FRAMES, src_f)
-        ok, frame = cap.read()
-        if not ok or frame is None:
+        frame = frame_cache.get(src_f)
+        if frame is None:
             continue
         Rw, tw = extr[f_local, :3, :3], extr[f_local, :3, 3]
         for side, color in [("left", (255, 80, 80)), ("right", (80, 255, 80))]:
@@ -180,7 +192,6 @@ def projection_overlay(ep: dict, src_video_path: Path, out_dir: Path, ep_id: str
         path = out_dir / f"{ep_id}_proj_f{int(f_local):04d}_src{src_f:04d}.jpg"
         cv2.imwrite(str(path), frame)
         saved.append(str(path))
-    cap.release()
     print(f"[verify] saved {len(saved)} projection frames to {out_dir}")
     return saved
 
