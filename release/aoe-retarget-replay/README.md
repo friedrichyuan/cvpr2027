@@ -3,7 +3,7 @@
 Human-to-Robot 运动重映射工具，将 AoE ego-centric 数据（手机录制 + MANO 双手重建）转换为 Unitree G1 机器人可执行的关节轨迹。
 
 <p align="center">
-  <img src="docs/viz_2x3_stage3.jpg" width="100%" alt="2×3 可视化布局：Ego视频 | MuJoCo外部视角 | FK关键点叠加 | SAM2手部分割 | E2FGVI修复 | G1合成">
+  <img src="docs/viz_2x3_stage3.gif" width="100%" alt="2×3 可视化布局：Ego视频 | MuJoCo外部视角 | FK关键点叠加 | SAM2手部分割 | E2FGVI修复 | G1合成">
 </p>
 <p align="center"><em>完整 2×3 可视化管线：手机 ego 视频 → MANO 关键点 → SAM2 分割 → E2FGVI 修复 → G1 机械臂合成</em></p>
 
