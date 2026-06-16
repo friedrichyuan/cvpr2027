@@ -1,0 +1,22 @@
+retargeting:
+  add_dummy_free_joint: true
+  ignore_mimic_joint: false
+  low_pass_alpha: 1
+  target_joint_names:
+  - right_hand_thumb_0_joint
+  - right_hand_thumb_1_joint
+  - right_hand_thumb_2_joint
+  - right_hand_middle_0_joint
+  - right_hand_middle_1_joint
+  - right_hand_index_0_joint
+  - right_hand_index_1_joint
+  target_link_human_indices:
+  - 0
+  - 1
+  - 2
+  target_link_names:
+  - right_hand_thumb_finger_tip
+  - right_hand_index_finger_tip
+  - right_hand_middle_finger_tip
+  type: position
+  urdf_path: dex3_hand/dex3_hand_right.urdf

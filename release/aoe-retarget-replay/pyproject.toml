@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aoe-retarget-replay"
+version = "0.1.0"
+requires-python = ">=3.10"
+description = "Human-to-Robot motion retargeting for AoE egocentric data → Unitree G1"
+dependencies = [
+    "mujoco>=3.0",
+    "numpy>=1.24",
+    "scipy",
+    "pandas",
+    "pyarrow",
+    "opencv-python",
+    "imageio",
+    "imageio-ffmpeg",
+    "mink",
+    "dex_retargeting",
+    "torch",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.setuptools.packages.find]
+include = ["aoe_retarget_replay*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.xml", "*.urdf", "*.yml", "*.yaml", "*.stl", "*.obj", "*.pkl"]
