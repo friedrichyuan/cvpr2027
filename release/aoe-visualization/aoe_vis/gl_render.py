@@ -19,20 +19,26 @@ fall back to the pure-NumPy painter's-algorithm mesh in :mod:`aoe_vis.mesh`.
 
 Per-hand colours (single source of truth for the whole release)
 ---------------------------------------------------------------
-The reference pipeline assigns one solid colour per hand and uses the *same*
-two colours in both its high-quality (OpenGL) and fast (OpenCV) render links:
+The reference pipeline assigns one solid colour per hand -- a light purple for
+the left hand and a bright blue for the right. The base material colours below
+are a lifted (brighter) variant of the upstream ``director-purple`` /
+``director-blue`` materials, chosen so that -- after the two-light Lambert
+shading (see :mod:`aoe_vis.shading`) -- the rendered hand surface reads as the
+brighter, more-vivid look that was selected for the delivery:
 
-* **left  hand = "director-purple"** -> linear RGB ``(0.804, 0.600, 0.820)``
-  == 8-bit RGB ``(205, 153, 209)`` == OpenCV BGR ``(209, 153, 205)``
-* **right hand = "director-blue"**   -> linear RGB ``(0.207, 0.596, 0.792)``
-  == 8-bit RGB ``(53, 152, 202)``  == OpenCV BGR ``(202, 152, 53)``
+* **left  hand = light purple** -> base linear RGB ``(0.867, 0.698, 0.859)``
+  == 8-bit RGB ``(221, 178, 219)`` == OpenCV BGR ``(219, 178, 221)`` ;
+  shaded palm ~ RGB ``(182, 146, 180)``.
+* **right hand = bright blue**  -> base linear RGB ``(0.196, 0.663, 0.898)``
+  == 8-bit RGB ``(50, 169, 229)`` == OpenCV BGR ``(229, 169, 50)`` ;
+  shaded palm ~ RGB ``(37, 127, 172)``.
 
-These exact values come from the reference materials (the OpenGL link names the
-materials ``director-purple`` / ``director-blue`` with ambient ``0.2``) and are
-mirrored verbatim as the BGR fill colours in the reference OpenCV world render.
-Every other module in this release derives its hand colours from
-:func:`hand_color_for` / :func:`hand_color_bgr` so the two hands look identical
-across the camera-frame overlay and the world-frame panel.
+(The upstream materials were the darker ``director-purple`` ``(0.804, 0.6, 0.820)``
+/ ``director-blue`` ``(0.207, 0.596, 0.792)`` with ambient ``0.2``; the values
+here lift those bases for a lighter/more-vivid surface.) Every other module in
+this release derives its hand colours from :func:`hand_color_for` /
+:func:`hand_color_bgr` so the two hands look identical across the camera-frame
+overlay and the world-frame panel.
 """
 
 from __future__ import annotations
@@ -61,8 +67,8 @@ except Exception as exc:  # pragma: no cover - depends on environment
 # Reference-renderer hand materials (linear RGB in 0..1). See module docstring
 # for the exact 8-bit/BGR equivalents and where they come from. Treated as the
 # single source of truth for hand colours across the whole release.
-LEFT_COLOR: Tuple[float, float, float] = (0.804, 0.600, 0.820)   # "director-purple"
-RIGHT_COLOR: Tuple[float, float, float] = (0.207, 0.596, 0.792)  # "director-blue"
+LEFT_COLOR: Tuple[float, float, float] = (0.867, 0.698, 0.859)   # lifted light purple
+RIGHT_COLOR: Tuple[float, float, float] = (0.196, 0.663, 0.898)  # lifted bright blue
 
 # Material ambient term used by the reference materials.
 REFERENCE_AMBIENT = 0.2
@@ -182,8 +188,8 @@ def hand_color_for(hand_idx: int) -> Tuple[float, float, float]:
 def hand_color_bgr(hand_idx: int) -> Tuple[int, int, int]:
     """Return the reference hand colour as an 8-bit OpenCV BGR tuple.
 
-    ``0=left`` -> ``(209, 153, 205)`` (director-purple),
-    ``1=right`` -> ``(202, 152, 53)`` (director-blue).
+    ``0=left`` -> ``(219, 178, 221)`` (light purple),
+    ``1=right`` -> ``(229, 169, 50)`` (bright blue).
     """
     r, g, b = hand_color_for(hand_idx)
     return (int(round(b * 255)), int(round(g * 255)), int(round(r * 255)))

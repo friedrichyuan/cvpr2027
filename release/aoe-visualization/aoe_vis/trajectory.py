@@ -23,9 +23,10 @@ from . import shading
 from .keypoints import LEFT, RIGHT, draw_skeleton, project_cam_to_2d
 from .overlays import (C_PANEL_BG, C_TEXT_MUTED)
 
-# All per-hand colours derive from the reference MANO mesh colours
-# (director-purple = left, director-blue = right) so the hands look identical in
-# the camera-frame overlay and this world-frame panel, and the trails match.
+# All per-hand colours derive from the single mesh-colour source in
+# :mod:`gl_render` (light purple = left, bright blue = right) so the hands look
+# identical in the camera-frame overlay and this world-frame panel, and the
+# future-wrist trails match each hand's mesh colour.
 MESH_COLORS: Dict[int, Tuple[int, int, int]] = {
     LEFT: gl_render.hand_color_bgr(LEFT),
     RIGHT: gl_render.hand_color_bgr(RIGHT),
