@@ -7,7 +7,7 @@ import mink
 import mujoco
 import numpy as np
 
-from aoe_retarget_replay.constants import (
+from phantom.constants import (
     CONF_THRESHOLD,
     G1_LEFT_WRIST_TARGET_BODY,
     G1_RIGHT_WRIST_TARGET_BODY,
@@ -34,7 +34,7 @@ class G1ArmIKSolver:
 
     def __init__(self, mjcf_path: str | Path | None = None, dt: float = 1.0 / 30):
         if mjcf_path is None:
-            from aoe_retarget_replay.constants.g1_dex3 import G1_MJCF_PATH
+            from phantom.constants.g1_dex3 import G1_MJCF_PATH
             mjcf_path = G1_MJCF_PATH
         self.model = mujoco.MjModel.from_xml_path(str(mjcf_path))
         self.data = mujoco.MjData(self.model)

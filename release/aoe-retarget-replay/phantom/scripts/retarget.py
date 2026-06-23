@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AoE-Retarget-Replay: Retarget AoE egocentric data to robot actions.
+"""Phantom: Retarget AoE egocentric data to robot actions.
 
 Usage:
     # Single episode
@@ -53,11 +53,11 @@ def main():
                         help="Write LeRobot v2.1 parquet output")
     args = parser.parse_args()
 
-    from aoe_retarget_replay.pipeline import (
+    from phantom.pipeline import (
         RetargetSession,
         discover_episodes,
     )
-    from aoe_retarget_replay.robots import get_spec
+    from phantom.robots import get_spec
 
     spec = get_spec(args.robot)
     output_dir = args.output_dir or Path(f"./output/{args.robot}")
@@ -99,7 +99,7 @@ def main():
                     npy_path, result.actions.shape[0], result.scale)
 
         if args.write_parquet:
-            from aoe_retarget_replay.io import write_episode_parquet
+            from phantom.io import write_episode_parquet
             ep_info = write_episode_parquet(
                 episode_index=ep_idx,
                 actions=result.actions,
@@ -109,7 +109,7 @@ def main():
             episodes_info.append(ep_info)
 
         if args.visualize:
-            from aoe_retarget_replay.retarget.visualize import render_2x3_video
+            from phantom.retarget.visualize import render_2x3_video
             ego_video = _find_ego_video(ep_dir)
             if ego_video:
                 viz_path = output_dir / f"{seg_name}_2x3.mp4"
@@ -121,12 +121,12 @@ def main():
                     use_stage3=args.stage3,
                 )
             else:
-                from aoe_retarget_replay.retarget.visualize import render_trajectory_streaming
+                from phantom.retarget.visualize import render_trajectory_streaming
                 viz_path = output_dir / f"{seg_name}_robot.mp4"
                 render_trajectory_streaming(result.actions, viz_path, spec=spec)
 
     if args.write_parquet and episodes_info:
-        from aoe_retarget_replay.io import write_metadata
+        from phantom.io import write_metadata
         write_metadata(
             output_dir=output_dir,
             dataset_name=f"aoe_{args.robot}",

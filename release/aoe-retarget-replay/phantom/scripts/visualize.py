@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AoE-Retarget-Replay: Visualize retargeted robot trajectories.
+"""Phantom: Visualize retargeted robot trajectories.
 
 Generates a 2x3 video layout:
   Row 1: [ego video | MuJoCo ext | MuJoCo front]
@@ -50,7 +50,7 @@ def main():
                         help="Enable Stage 3 (SAM2 mask + E2FGVI inpaint + compose)")
     args = parser.parse_args()
 
-    from aoe_retarget_replay.robots import get_spec
+    from phantom.robots import get_spec
 
     spec = get_spec(args.robot)
 
@@ -58,7 +58,7 @@ def main():
         actions = np.load(args.actions)
     else:
         logger.info("No actions file provided, running retarget...")
-        from aoe_retarget_replay.pipeline import RetargetSession
+        from phantom.pipeline import RetargetSession
         session = RetargetSession(spec)
         result = session.retarget(args.episode_dir)
         actions = result.actions
@@ -69,10 +69,10 @@ def main():
     ego_video = _find_ego_video(args.episode_dir)
     if ego_video is None:
         logger.warning("No ego video found, rendering robot-only")
-        from aoe_retarget_replay.retarget.visualize import render_trajectory_streaming
+        from phantom.retarget.visualize import render_trajectory_streaming
         render_trajectory_streaming(actions, args.output, spec=spec)
     else:
-        from aoe_retarget_replay.retarget.visualize import render_2x3_video
+        from phantom.retarget.visualize import render_2x3_video
         render_2x3_video(
             actions, ego_video, args.output, spec=spec,
             use_stage3=args.stage3,

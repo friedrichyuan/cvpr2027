@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from aoe_retarget_replay.constants.aoe import (
+from phantom.constants.aoe import (
     CAMERA_TRAJ_NPZ_NAME,
     DEX3_TIPS,
     HANDS_NPZ_NAME,
@@ -94,7 +94,7 @@ def _generate_sidecar_from_hands(hands_path: Path, sidecar_path: Path) -> None:
     """
     import torch
 
-    from aoe_retarget_replay.constants import MANO_MODELS_DIR
+    from phantom.constants import MANO_MODELS_DIR
 
     hands = np.load(hands_path)
     T = hands["pred_hand_pose"].shape[1]
@@ -163,7 +163,7 @@ def _generate_sidecar_from_hands(hands_path: Path, sidecar_path: Path) -> None:
         cam_pose = np.concatenate([t_c2w, quat_wxyz], axis=-1).astype(np.float32)
         arrays["camera_pose_world"] = cam_pose
 
-    metadata = {"generator": "aoe_retarget_replay", "source": str(hands_path)}
+    metadata = {"generator": "phantom", "source": str(hands_path)}
     arrays["metadata"] = np.array(json.dumps(metadata))
 
     np.savez(sidecar_path, **arrays)
@@ -418,7 +418,7 @@ def load_aoe_episode(
     Returns:
         (load_dict, AoEEpisode metadata)
     """
-    from aoe_retarget_replay.aoe.shoulder import (
+    from phantom.aoe.shoulder import (
         SHOULDER_HALF_WIDTH,
         SHOULDER_OFFSET_FROM_CAMERA_CAM,
         synth_shoulders_cam,

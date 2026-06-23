@@ -1,4 +1,4 @@
-# AoE-Retarget-Replay
+# Phantom
 
 Human-to-Robot 运动重映射工具，将 AoE ego-centric 数据（手机录制 + MANO 双手重建）转换为 Unitree G1 机器人可执行的关节轨迹。
 
@@ -33,13 +33,14 @@ Layer 5: 真机 Replay    — Unitree G1 + Inspire Hand SDK (Phase 2+)
 conda activate phantom
 
 # 或从头安装依赖
+cd release/aoe-retarget-replay/phantom
 pip install -e .
 ```
 
 ### 单 episode 重映射
 
 ```bash
-cd release/aoe-retarget-replay
+cd release/aoe-retarget-replay/phantom
 
 # Inspire (26-DoF, 5 指)
 MUJOCO_GL=egl python scripts/retarget.py \
@@ -171,8 +172,8 @@ poc_raw_video_YYYYMMDD_HHMMSS[_partXXX]/
 ## 项目结构
 
 ```
-aoe-retarget-replay/
-├── aoe_retarget_replay/          # Python 包
+phantom/
+├── phantom/                      # Python 包
 │   ├── constants/                # 常量定义
 │   │   ├── __init__.py           # 共享常量（IK参数、坐标系等）
 │   │   ├── aoe.py               # AoE 特有常量（cam→G1 旋转、T_ALIGN）

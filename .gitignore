@@ -4,7 +4,7 @@ inner/sample_data/
 # Add for branch: cooperate/aoe-retarget-replay
 .vscode/
 CLAUDE.local.md
-release/aoe-retarget-replay/output_test/
+release/aoe-retarget-replay/phantom/output_test/
 
 # LaTeX intermediate files
 *.aux

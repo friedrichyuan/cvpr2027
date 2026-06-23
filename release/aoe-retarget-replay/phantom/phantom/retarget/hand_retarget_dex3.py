@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aoe_retarget_replay.constants.g1_dex3 import (
+from phantom.constants.g1_dex3 import (
     DEX3_CONFIG_DIR,
     DEX3_URDF_DIR,
     LEFT_HAND_JOINT_NAMES,
     RIGHT_HAND_JOINT_NAMES,
 )
-from aoe_retarget_replay.retarget.hand_retarget_base import HandRetargeter
+from phantom.retarget.hand_retarget_base import HandRetargeter
 
 
 class Dex3HandRetargeter(HandRetargeter):

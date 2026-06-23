@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from aoe_retarget_replay.constants.g1_inspire import (
+from phantom.constants.g1_inspire import (
     G1_INSPIRE_MJCF_PATH,
     INSPIRE_ACTION_DIM,
     INSPIRE_ACTION_JOINT_NAMES,
@@ -15,9 +15,9 @@ from aoe_retarget_replay.constants.g1_inspire import (
     LEFT_HAND_JOINT_IDS_RANGE,
     RIGHT_HAND_JOINT_IDS_RANGE,
 )
-from aoe_retarget_replay.retarget.hand_retarget_inspire import InspireHandRetargeter
-from aoe_retarget_replay.robots import RobotSpec, register
-from aoe_retarget_replay.robots.mjcf_patch import patch_mjcf_with_sibling_dirs
+from phantom.retarget.hand_retarget_inspire import InspireHandRetargeter
+from phantom.robots import RobotSpec, register
+from phantom.robots.mjcf_patch import patch_mjcf_with_sibling_dirs
 
 _INSPIRE_HAND_BODY_PREFIXES = (
     "l_thumb", "l_index", "l_middle", "l_ring", "l_pinky",

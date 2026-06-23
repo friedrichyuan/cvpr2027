@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from aoe_retarget_replay.constants import (
+from phantom.constants import (
     ARM_LENGTH_PERCENTILE,
     G1_ARM_LENGTH,
     MIN_ARM_LENGTH_SAMPLE,
 )
-from aoe_retarget_replay.constants.aoe import (
+from phantom.constants.aoe import (
     AOE_T_ALIGN_LEFT_WRIST,
     AOE_T_ALIGN_RIGHT_WRIST,
     R_AOE_CAM_TO_G1,

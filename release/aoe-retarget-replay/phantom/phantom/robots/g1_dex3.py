@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from aoe_retarget_replay.constants.g1_dex3 import (
+from phantom.constants.g1_dex3 import (
     ACTION_DIM,
     ACTION_JOINT_NAMES,
     G1_MJCF_PATH,
@@ -13,9 +13,9 @@ from aoe_retarget_replay.constants.g1_dex3 import (
     RIGHT_HAND_JOINT_IDS,
     ROBOT_TYPE,
 )
-from aoe_retarget_replay.retarget.hand_retarget_dex3 import Dex3HandRetargeter
-from aoe_retarget_replay.robots import RobotSpec, register
-from aoe_retarget_replay.robots.mjcf_patch import patch_mjcf_local
+from phantom.retarget.hand_retarget_dex3 import Dex3HandRetargeter
+from phantom.robots import RobotSpec, register
+from phantom.robots.mjcf_patch import patch_mjcf_local
 
 _HAND_BODY_SUBSTRINGS = ("hand_thumb", "hand_middle", "hand_index")
 

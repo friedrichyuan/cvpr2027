@@ -14,8 +14,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.optimize import minimize
 
-from aoe_retarget_replay.constants import G1_ARM_LENGTH
-from aoe_retarget_replay.constants.aoe import (
+from phantom.constants import G1_ARM_LENGTH
+from phantom.constants.aoe import (
     SHOULDER_HALF_WIDTH,
     SHOULDER_OFFSET_FROM_CAMERA_CAM,
 )

@@ -14,12 +14,12 @@ import cv2
 import mujoco
 import numpy as np
 
-from aoe_retarget_replay.constants import (
+from phantom.constants import (
     FPS,
     G1_STANDING_HEIGHT,
 )
-from aoe_retarget_replay.constants.aoe import HANDS_RECON_SUBDIRS, SIDECAR_NPZ_NAME
-from aoe_retarget_replay.robots import RobotSpec, get_spec
+from phantom.constants.aoe import HANDS_RECON_SUBDIRS, SIDECAR_NPZ_NAME
+from phantom.robots import RobotSpec, get_spec
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ def _load_camera_intrinsics(
     orig_w = orig_h = None
 
     # Try undistorted_video_info.json
-    from aoe_retarget_replay.constants.aoe import UNDISTORTED_VIDEO_SUBDIRS
+    from phantom.constants.aoe import UNDISTORTED_VIDEO_SUBDIRS
     for sub in UNDISTORTED_VIDEO_SUBDIRS:
         info_path = episode_dir / sub / "undistorted_video_info.json"
         if not info_path.exists():
@@ -509,7 +509,7 @@ def _run_stage3(
          composed_frames (T,H,W,3) uint8)
     """
     import torch
-    from aoe_retarget_replay.compose import compose, SceneStatsEMA
+    from phantom.compose import compose, SceneStatsEMA
 
     T, H, W = ego_arr.shape[:3]
 
@@ -524,7 +524,7 @@ def _run_stage3(
 
     logger.info("Stage 3.3: MuJoCo ego render + compose (%d frames)...", T)
 
-    from aoe_retarget_replay.robots.mjcf_patch import (
+    from phantom.robots.mjcf_patch import (
         EGO_CAMERA_NAME,
         patch_mjcf_local,
     )

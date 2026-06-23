@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from aoe_retarget_replay.constants import (
+from phantom.constants import (
     CHUNK_SIZE,
     FPS,
     VIDEO_CODEC,

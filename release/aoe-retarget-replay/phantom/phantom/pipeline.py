@@ -1,4 +1,4 @@
-"""AoE-Retarget-Replay pipeline: AoE data → robot action sequences.
+"""Phantom pipeline: AoE data → robot action sequences.
 
 Orchestrates: load → shoulder synthesis → coordinate transform →
 arm IK → hand retarget → action assembly → LeRobot parquet + MuJoCo viz.
@@ -13,21 +13,21 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from aoe_retarget_replay.aoe.episode import (
+from phantom.aoe.episode import (
     AoEEpisode,
     load_aoe_episode,
 )
-from aoe_retarget_replay.aoe.shoulder import (
+from phantom.aoe.shoulder import (
     SHOULDER_HALF_WIDTH,
     SHOULDER_OFFSET_FROM_CAMERA_CAM,
     refine_shoulder_offset_to_arm_length,
     synth_shoulders_cam,
 )
-from aoe_retarget_replay.aoe.transform import transform_aoe_wrist_poses
-from aoe_retarget_replay.constants import G1_STANDING_HEIGHT
-from aoe_retarget_replay.constants.aoe import DEX3_TIPS, INSPIRE_TIPS
-from aoe_retarget_replay.retarget.arm_ik import G1ArmIKSolver
-from aoe_retarget_replay.robots import RobotSpec, get_spec
+from phantom.aoe.transform import transform_aoe_wrist_poses
+from phantom.constants import G1_STANDING_HEIGHT
+from phantom.constants.aoe import DEX3_TIPS, INSPIRE_TIPS
+from phantom.retarget.arm_ik import G1ArmIKSolver
+from phantom.robots import RobotSpec, get_spec
 
 logger = logging.getLogger(__name__)
 

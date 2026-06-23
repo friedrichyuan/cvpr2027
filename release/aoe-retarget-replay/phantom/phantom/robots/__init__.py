@@ -50,7 +50,7 @@ def register(spec: RobotSpec) -> RobotSpec:
 
 def get_spec(name: str) -> RobotSpec:
     if name not in _REGISTRY:
-        from aoe_retarget_replay.robots import g1_dex3, g1_inspire  # noqa: F401
+        from phantom.robots import g1_dex3, g1_inspire  # noqa: F401
     if name not in _REGISTRY:
         raise ValueError(
             f"Unknown robot spec {name!r}; registered: {sorted(_REGISTRY)}"
@@ -60,5 +60,5 @@ def get_spec(name: str) -> RobotSpec:
 
 def all_specs() -> dict[str, RobotSpec]:
     """Return a copy of the registry."""
-    from aoe_retarget_replay.robots import g1_dex3, g1_inspire  # noqa: F401
+    from phantom.robots import g1_dex3, g1_inspire  # noqa: F401
     return dict(_REGISTRY)

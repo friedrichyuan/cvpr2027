@@ -9,7 +9,7 @@ import numpy as np
 from dex_retargeting.retargeting_config import RetargetingConfig
 from dex_retargeting.seq_retarget import SeqRetargeting
 
-from aoe_retarget_replay.constants import CONF_THRESHOLD
+from phantom.constants import CONF_THRESHOLD
 
 logger = logging.getLogger(__name__)
 

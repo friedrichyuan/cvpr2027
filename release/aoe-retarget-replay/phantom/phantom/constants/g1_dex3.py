@@ -1,6 +1,6 @@
 """Dex3-specific constants: 28-DoF action layout [L_arm(7), R_arm(7), L_hand(7), R_hand(7)]."""
 
-from aoe_retarget_replay.constants import (
+from phantom.constants import (
     LEFT_ARM_JOINT_NAMES,
     RIGHT_ARM_JOINT_NAMES,
     ROBOTS_DIR,
