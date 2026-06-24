@@ -14,7 +14,6 @@ Layer 1: 数据预处理     — MANO FK (world→cam) 生成 21 关键点 sidec
 Layer 2: 运动学重映射   — 臂部 IK (mink 7-DoF/臂) + 手指 (dex-retargeting)
 Layer 3: 仿真验证       — MuJoCo 2×3 可视化 + FK keypoints overlay
 Layer 4: 视频合成       — SAM2 手部分割 (FK seed) + E2FGVI 修复 + 边缘融合合成
-Layer 5: 真机 Replay    — Unitree G1 + Inspire Hand SDK (Phase 2+)
 ```
 
 ## 支持的机器人
@@ -29,10 +28,6 @@ Layer 5: 真机 Replay    — Unitree G1 + Inspire Hand SDK (Phase 2+)
 ### 安装
 
 ```bash
-# 使用已有的 phantom conda 环境（包含所有依赖）
-conda activate phantom
-
-# 或从头安装依赖
 cd aoe-retarget-replay/phantom
 pip install -e .
 ```
@@ -44,14 +39,14 @@ cd aoe-retarget-replay/phantom
 
 # Inspire (26-DoF, 5 指)
 MUJOCO_GL=egl python scripts/retarget.py \
-    --episode_dir /path/to/poc_raw_video_20260131_193028 \
+    --episode_dir /path/to/aoe_segment \
     --robot g1_inspire \
     --output_dir ./output/inspire \
     --visualize
 
 # Dex3 (28-DoF, 3 指)
 MUJOCO_GL=egl python scripts/retarget.py \
-    --episode_dir /path/to/poc_raw_video_20260131_193028 \
+    --episode_dir /path/to/aoe_segment \
     --robot g1_dex3 \
     --output_dir ./output/dex3 \
     --visualize
@@ -61,7 +56,7 @@ MUJOCO_GL=egl python scripts/retarget.py \
 
 ```bash
 MUJOCO_GL=egl python scripts/retarget.py \
-    --data_root /mnt/20T-1/yifan/data/poc_deliver \
+    --data_root /path/to/aoe_dataset \
     --robot g1_inspire \
     --output_dir ./output/batch_inspire \
     --write_parquet \
@@ -109,10 +104,10 @@ MUJOCO_GL=egl python scripts/visualize.py \
 
 ## 数据格式要求
 
-输入数据需遵循 `poc_deliver` 目录结构：
+输入数据需遵循 AoE 数据集目录结构：
 
 ```
-poc_raw_video_YYYYMMDD_HHMMSS[_partXXX]/
+<segment_dir>/
 ├── raw_video.mp4
 ├── video_info.json
 ├── ego_annotation/
