@@ -18,36 +18,54 @@
 
 ```
 Open-AoE/
-├── README.md          # 项目总览，对外可见
-├── CLAUDE.md          # AI 协作规范（你正在读的文件）
-├── STORY.md           # 行业叙事，保障代码/数据和叙事不脱钩
-├── PROJECT.md         # 多人分工与里程碑
-├── release/           # 对外发布物，代码质量要求最高
+├── README.md              # 项目总览，对外可见
+├── CONTRIBUTING.md        # 贡献指南，对外可见
+├── CLAUDE.md              # AI 协作规范（你正在读的文件）
+├── LICENSE                # Apache 2.0
+├── LEGAL.md               # 第三方依赖许可声明
+├── assets/                # 公共资源（下载脚本等）
+├── release/               # 对外发布物，代码质量要求最高
 │   ├── open-aoe-2000h/
 │   ├── aoe-visualization/
 │   ├── aoe-retarget-replay/
 │   └── aoe-training-ready/
-├── report/            # 技术报告 LaTeX 源码
-│   ├── main.tex
-│   ├── sections/
-│   ├── figures/
-│   └── tables/
-└── inner/             # 内部工作区，不对外发布
-    ├── drafts/        # 草案、规划文档
-    ├── research/      # 调研报告（3份deep-research报告在此）
-    ├── sample_data/   # AoE 样例数据
-    ├── prompts/       # AI 协作 prompt 历史
-    └── references/    # 参考论文与资料
+│       ├── vitra/
+│       └── gr00t_n1d7/
+│
+# ── 以下为内部协作目录，不纳入对外发布分支 ──
+├── STORY.md               # 行业叙事，保障代码/数据和叙事不脱钩
+├── PROJECT.md             # 多人分工与里程碑
+├── inner/                 # 内部工作区（不入 git，通过 .gitignore 排除）
+│   ├── drafts/            # 草案、规划文档
+│   ├── research/          # 调研报告
+│   ├── sample_data/       # AoE 样例数据
+│   ├── prompts/           # AI 协作 prompt 历史
+│   └── references/        # 参考论文与资料
+├── report/                # 技术报告 LaTeX 源码（Overleaf 协作，不入 git）
+├── illustrations/         # 数据分布图、框架图（不入 git）
+└── datasets/              # 本地数据 symlink（不入 git）
 ```
 
 ## AI 协作规则
 
 ### 写入文件前必须确认
 
-1. **release/ 下的代码** — 需要可运行、有 docstring、有类型注解、有 README。这是对外发布的代码，质量标准最高。
-2. **report/ 下的 LaTeX** — 需要可编译。修改前先阅读 `report/main.tex` 了解当前结构。
+1. **release/ 下的代码** — 需要可运行、有 docstring、有类型注解、有 README。质量标准最高。
+2. **顶层 .md 文件** — 修改 README.md / CONTRIBUTING.md 前先阅读全文。STORY.md / PROJECT.md 追加而非覆盖。
 3. **inner/ 下的文档** — 内部文档，可以较自由地写，但需遵循命名约定：`YYYYMMDD_描述.md`。
-4. **顶层 .md 文件** — 修改 STORY.md / PROJECT.md 前先阅读全文，追加而非覆盖。
+4. **report/ 下的 LaTeX** — 在 Overleaf 上协作，本地副本仅用于参考。
+
+### 发布 vs 内部
+
+| 目录 | 是否纳入对外发布 | 说明 |
+|------|------------------|------|
+| `release/` | ✅ | 公共代码，发布在 GitHub |
+| `assets/` | ✅ | 公共资源 |
+| `README.md` / `CONTRIBUTING.md` / `LICENSE` / `LEGAL.md` / `CLAUDE.md` | ✅ | 公共文档 |
+| `STORY.md` / `PROJECT.md` | ❌ | 内部协作文档 |
+| `inner/` | ❌ | 内部工作区 |
+| `report/` | ❌ | Overleaf 协作 |
+| `illustrations/` | ❌ | 内部素材 |
 
 ### 命名约定
 
@@ -75,6 +93,7 @@ Open-AoE/
 - **不要在 release/ 中放置草稿或实验性代码**（先在 inner/ 中验证）
 - **不要在一次提交中同时大幅修改多个顶层 .md 文件**（逐个更新，避免冲突）
 - **不要擅自更改 28D joint space 定义**: `[L_ARM(7), R_ARM(7), L_HAND(6), R_HAND(6), PAD(2)]`
+- **不要将内部目录（inner/、report/、illustrations/）中的文件提交到对外发布分支**
 
 ## AoE 数据格式速查
 

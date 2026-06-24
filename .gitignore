@@ -2,6 +2,11 @@
 inner/sample_data/
 *output
 
+# Internal collaboration directories (not part of public release)
+illustrations/
+inner/
+report/
+
 # Add for branch: cooperate/aoe-retarget-replay
 .vscode/
 CLAUDE.local.md

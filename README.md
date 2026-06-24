@@ -6,44 +6,35 @@
 
 ---
 
-## 项目总览
+## 项目结构
 
 ```
 Open-AoE/
-├── README.md              ← 你在这里
-├── CLAUDE.md              ← AI 协作规范（Copilot / Agent 读这个文件）
-├── STORY.md               ← 行业叙事：为什么做、差异化定位、价值锚点
-├── PROJECT.md             ← 多人分工与里程碑追踪
+├── README.md                   ← 项目总览
+├── CONTRIBUTING.md             ← 贡献指南
+├── LICENSE                     ← Apache 2.0
+├── LEGAL.md                    ← 第三方依赖许可证声明
 │
-├── release/               ← 对外发布物（代码 + 数据）
-│   ├── open-aoe-2000h/    ← 开源数据集（2000H 视频 + 标注）
-│   ├── aoe-visualization/ ← 数据可视化工具（Rerun）
-│   ├── aoe-retarget-replay/ ← Human-to-Robot 重映射工具
-│   └── aoe-training-ready/  ← 模型训练格式转换工具
+├── assets/                     ← 公共资源
+│   └── mano/                   ← MANO 模型下载脚本
 │
-├── report/                ← 技术报告（LaTeX）
-│   ├── main.tex
-│   ├── sections/
-│   ├── figures/
-│   └── tables/
+├── release/                    ← 对外发布物
+│   ├── open-aoe-2000h/         ← 数据集文档与使用指南
+│   ├── aoe-visualization/      ← 数据可视化工具
+│   ├── aoe-retarget-replay/    ← Human-to-Robot 重映射工具
+│   └── aoe-training-ready/     ← 模型训练格式转换工具
 │
-└── inner/                 ← 内部工作区（不对外发布）
-    ├── drafts/            ← 草案与规划文档
-    ├── research/          ← 调研报告
-    ├── sample_data/       ← 样例数据
-    ├── prompts/           ← AI 协作 prompt 历史
-    └── references/        ← 参考论文与资料
+└── CLAUDE.md                   ← AI 协作规范
 ```
 
-## 开源交付物矩阵
+## 开源交付物
 
 | 交付物 | 形态 | 价值锚点 | 状态 |
 |--------|------|---------|------|
-| **Open-AoE-2000H** | 2000H 视频 + 原子动作描述(双语) + MANO 标注 + 相机轨迹 | 1000H 是被加入基模 pretrain 的入门门槛 | 🟡 数据筛选中 |
-| **AoE-Visualization** | 基于 Rerun 的数据浏览器 | 方便使用者进行数据洞察、过滤、对比 | 🔴 未开始 |
-| **AoE-Retarget-Replay** | `aoe_retarget_replay.py` + 真机回放 SDK | 对有真机的团队，直接 replay 到 G1 | 🟡 核心脚本 80% |
-| **AoE-Training-Ready** | LeRobot 格式转换器 + 多模型 training recipe | 打通 π₀.₅ / GR00T / fastWAM 等 | 🟡 fastWAM 已验证 |
-| **Tech Report** | 4 页短报告（或 AoE v3 章节） | 数据分布洞察 + 数据质量实验 | 🔴 未开始 |
+| **Open-AoE-2000H** | 2000H 视频 + 原子动作描述(双语) + MANO 标注 + 相机轨迹 | 1000H 是加入基模 pretrain 的入门门槛 | 🟡 数据筛选中 |
+| **AoE-Visualization** | 数据浏览器与渲染工具 | 方便使用者进行数据洞察、过滤、对比 | ✅ 已发布 |
+| **AoE-Retarget-Replay** | 人机动作重映射 + 真机回放 (Phantom) | 对有真机的团队，直接 replay 到 G1 | ✅ 已发布 |
+| **AoE-Training-Ready** | LeRobot 格式转换器 + GR00T / VITRA training recipe | 打通主流 VLA 模型训练 | ✅ 已发布 |
 
 ## 核心差异化
 
@@ -54,25 +45,46 @@ Open-AoE/
 
 ## 快速开始
 
+### 数据访问
+
+数据集托管在 HuggingFace：
+
+> 🔗 [数据集链接]（待发布）
+
+### 可视化
+
 ```bash
-# 1. 浏览样例数据
-ls inner/sample_data/
-
-# 2. 查看数据格式
-cat inner/sample_data/AoE_dataset_README.md
-
-# 3. 查看调研报告
-ls inner/research/
+cd release/aoe-visualization
+pip install -r requirements.txt
+python visualize.py --data <path_to_aoe_data>
 ```
 
-## 目标里程碑
+详见 [release/aoe-visualization/README.md](release/aoe-visualization/README.md)
 
-- **2026-07 WAIC**: Open-AoE 首发（数据 + 工具链 + Tech Report）
-- **2026-09 外滩大会**: 社区反馈迭代版
+### 模型训练
+
+```bash
+# GR00T N1.7 训练配方
+cd release/aoe-training-ready/gr00t_n1d7
+# 详见 README.md
+
+# VITRA 训练配方
+cd release/aoe-training-ready/vitra
+# 详见 README.md
+```
+
+详见 [release/aoe-training-ready/README.md](release/aoe-training-ready/README.md)
+
+### 人机重映射
+
+```bash
+cd release/aoe-retarget-replay/phantom
+# 详见 README.md
+```
 
 ## 相关链接
 
-- AoE 论文 (CVPR Workshop 2026): `../Paper_Notes/AoE_CVPRW_2026/`
-- 项目协作: [PROJECT.md](PROJECT.md)
-- AI 协作规范: [CLAUDE.md](CLAUDE.md)
-- 行业叙事: [STORY.md](STORY.md)
+- **技术报告**: [arXiv 链接]（待发布）
+- **数据集**: [HuggingFace 链接]（待发布）
+- **AoE 论文** (CVPR Workshop 2026): [链接]（待发布）
+- **贡献指南**: [CONTRIBUTING.md](CONTRIBUTING.md)

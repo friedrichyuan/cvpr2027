@@ -24,8 +24,8 @@
 |----------|----------|------|
 | 某类任务的完整工具链（训练配方、可视化、仿真等） | `release/` 下新建子目录 | `release/aoe-training-ready/`、`release/aoe-retarget-replay/` |
 | 对某个已有子项目的功能增强 | 对应 `release/` 子目录内修改 | 在 `release/aoe-visualization/` 中增加新的渲染器 |
-| 调研报告、草案、实验性代码 | `inner/` | `inner/research/`、`inner/drafts/` |
-| 项目文档、叙事、分工 | 顶层 `.md` 文件 | `README.md`、`STORY.md`、`PROJECT.md` |
+| 调研报告、草案、实验性代码 | `inner/`（内部协作目录，不纳入对外发布） | `inner/research/`、`inner/drafts/` |
+| 项目叙事、分工文档 | 顶层 `.md` 文件（STORY.md / PROJECT.md，内部协作） | 追加而非覆盖 |
 
 **核心原则：不要修改不属于你的顶层文件。**（详见[第 5 节](#5-常见错误案例)）
 
@@ -40,15 +40,17 @@ Open-AoE/
 ├── README.md            # 项目总览（对外展示）
 ├── CONTRIBUTING.md      # 贡献指南（你正在读的文件）
 ├── CLAUDE.md            # AI 协作规范
-├── STORY.md             # 行业叙事
-├── PROJECT.md           # 分工与里程碑
 ├── LICENSE              # 项目许可证 (Apache 2.0)
 ├── LEGAL.md             # 第三方依赖许可声明
 ├── release/             # 对外发布物 ← 代码质量的最高标准
-├── report/              # 技术报告 LaTeX 源码
-├── inner/               # 内部工作区 ← 不对外发布
 ├── assets/              # 公共资源（下载脚本、共享配置）
-└── .gitignore           # Git 忽略规则
+│
+# ── 以下为内部协作目录，不纳入对外发布分支 ──
+├── STORY.md             # 行业叙事
+├── PROJECT.md           # 分工与里程碑
+├── inner/               # 内部工作区（不入 git）
+├── report/              # 技术报告 LaTeX 源码（Overleaf 协作，不入 git）
+└── illustrations/       # 数据分布图、框架图（不入 git）
 ```
 
 ### 1.2 `release/` 目录结构
@@ -75,7 +77,10 @@ release/<你的子项目名>/
 | aoe-retarget-replay | `release/aoe-retarget-replay/` | 人机动作重映射 (Phantom) |
 | open-aoe-2000h | `release/open-aoe-2000h/` | 数据集文档与下载 |
 
-### 1.3 `inner/` 目录
+### 1.3 `inner/` 目录（仅在内部协作分支上存在）
+
+> ⚠️ `inner/`、`report/`、`illustrations/` 等目录不纳入对外发布版本（`release/*` 分支），
+> 仅在内部协作分支（如 `main`、`dev`）上存在。详见 `.gitignore`。
 
 ```
 inner/
