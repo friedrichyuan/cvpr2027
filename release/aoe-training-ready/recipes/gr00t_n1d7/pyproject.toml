@@ -1,0 +1,100 @@
+[project]
+name = "aoe-gr00t-recipe"
+version = "0.1.0"
+description = "AoE Ego → GR00T N1.7 training recipe"
+requires-python = ">=3.10"
+dependencies = [
+    # === Training core (aligned with Isaac-GR00T upstream) ===
+    "torch>=2.6.0",
+    "torchvision>=0.21.0",
+    "transformers>=4.50.0",
+    "diffusers>=0.35.0",
+    "peft>=0.17.0",
+    "deepspeed>=0.17.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    # === Data ===
+    "numpy>=1.26.0,<2.0",
+    "scipy>=1.15.0",
+    "pandas>=2.2.0",
+    "pyarrow",
+    "datasets>=3.0.0",
+    "av>=12.0.0",
+    "albumentations>=1.4.0",
+    "opencv-python-headless>=4.5,<4.13",
+    "imageio>=2.30",
+    "imageio-ffmpeg>=0.5",
+    "torchcodec>=0.4.0; platform_machine == 'x86_64'",
+    # === Config & CLI ===
+    "omegaconf>=2.3.0",
+    "tyro>=0.9.0",
+    "einops>=0.8.0",
+    "pyyaml",
+    # === Logging ===
+    "wandb>=0.18.0",
+    "loguru",
+    # === Misc ===
+    "jsonlines",
+    "termcolor",
+    "dm-tree",
+    "tqdm",
+    "Pillow",
+    "huggingface-hub[cli]",
+    # === AoE pipeline: MANO FK + retarget + visualization ===
+    "smplx>=0.1.28",          # Step 0: MANO FK (smplx.MANOLayer)
+    "casadi>=3.6",             # Step 1a: Sharpa retarget (CasADi + IPOPT)
+    "mujoco>=3.0",             # Visualization: Sharpa mesh overlay rendering
+]
+
+[project.optional-dependencies]
+flash-attn = [
+    "flash-attn>=2.7.0; sys_platform == 'linux'",
+]
+viz = [
+    "matplotlib>=3.7.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gr00t*", "tools*"]
+
+# ---------------------------------------------------------------------------
+# uv configuration (inherited from Isaac-GR00T upstream)
+# ---------------------------------------------------------------------------
+
+[tool.uv]
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
+triton = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
+flash-attn = [
+    { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.7cxx11abiFALSE-cp310-cp310-linux_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.10'" },
+    { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.7cxx11abiFALSE-cp312-cp312-linux_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12'" },
+]
+
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch==2.7.1", "numpy==1.26.4", "triton==3.3.1"]
+
+[[tool.uv.index]]
+name = "nvidia-pypi"
+url = "https://pypi.nvidia.com"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+

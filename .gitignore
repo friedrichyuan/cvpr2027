@@ -1,4 +1,5 @@
 inner/sample_data/
+*output
 
 # LaTeX intermediate files
 *.aux
@@ -15,3 +16,5 @@ inner/sample_data/
 *.nav
 *.snm
 *.vrb
+__pycache__/
+*.pyc
