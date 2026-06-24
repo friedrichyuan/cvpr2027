@@ -11,7 +11,7 @@
 ## 关键背景
 
 - **前序工作**: AoE (Always-on Egocentric), CVPR Workshop 2026, 论文位于 `../Paper_Notes/AoE_CVPRW_2026/`
-- **DDL**: 2026-07 中下旬 WAIC 首发，2026-09 外滩大会迭代版
+- **DDL**: 2026-07-17 WAIC 首发
 - **定位**: "The First Open-Source Egocentric Dataset with a Complete Data-to-Model Toolchain, Collected Entirely from Consumer Smartphones"
 
 ## 目录结构约定
@@ -69,27 +69,3 @@ raw_{collector_id}_seg_{segment_id}/
     └── ...
 ```
 
-## 关键技术参数
-
-| 参数 | 值 |
-|------|-----|
-| 开源数据规模 | 2000 小时 |
-| 采集设备 | 消费级智能手机（多机型，Android/iOS）|
-| 单人成本 | < $20 |
-| 手部标注 | MANO (HaWoR) + 21-joint keypoints |
-| 动作标注 | VLM 自动切分（Qwen3-VL）+ 人工复审 |
-| 语言标注 | 中英双语原子动作描述 |
-| 目标 joint space | 28D: [L_ARM(7), R_ARM(7), L_HAND(6), R_HAND(6), PAD(2)] |
-| 已验证真机 | Unitree G1 + Inspire 5-fingered hands |
-| 已验证模型 | GR00T N1.5 + FLARE, fastWAM multihead |
-| 数据格式中枢 | LeRobot v2.1 |
-
-## 竞品速查
-
-| 数据集 | 规模 | 设备 | 成本 | 工具链 |
-|--------|------|------|------|--------|
-| EgoDex (Apple) | 829H | Vision Pro | $3,500 | ✗ |
-| EgoLive (JD) | 1,680H | 自研头戴 | 自研 | ✗ |
-| OpenEgo (UT Dallas) | 1,107H | 混合 | N/A | ✗ |
-| EgoScale (NVIDIA) | 20K+H | MANUS等 | 高 | ✗ |
-| **Open-AoE** | **2,000H** | **手机** | **<$20** | **✓ 完整** |
