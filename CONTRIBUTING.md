@@ -22,10 +22,9 @@
 
 | 你的贡献 | 应该放在 | 举例 |
 |----------|----------|------|
-| 某类任务的完整工具链（训练配方、可视化、仿真等） | `` 下新建子目录 | `aoe-training-ready/`、`aoe-retarget-replay/` |
-| 对某个已有子项目的功能增强 | 对应 `` 子目录内修改 | 在 `aoe-visualization/` 中增加新的渲染器 |
-| 调研报告、草案、实验性代码 | `inner/`（内部协作目录，不纳入对外发布） | `inner/research/`、`inner/drafts/` |
-| 项目叙事、分工文档 | 顶层 `.md` 文件（STORY.md / PROJECT.md，内部协作） | 追加而非覆盖 |
+| 某类任务的完整工具链（训练配方、可视化、仿真等） | 项目根目录下新建子目录 | `aoe-training-ready/`、`aoe-retarget-replay/` |
+| 对某个已有子项目的功能增强 | 对应子目录内修改 | 在 `aoe-visualization/` 中增加新的渲染器 |
+| 新的模型训练配方 | `aoe-training-ready/<model_name>/` | `aoe-training-ready/vitra/` |
 
 **核心原则：不要修改不属于你的顶层文件。**（详见[第 5 节](#5-常见错误案例)）
 
@@ -42,20 +41,16 @@ Open-AoE/
 ├── CLAUDE.md            # AI 协作规范
 ├── LICENSE              # 项目许可证 (Apache 2.0)
 ├── LEGAL.md             # 第三方依赖许可声明
-├──              # 对外发布物 ← 代码质量的最高标准
 ├── assets/              # 公共资源（下载脚本、共享配置）
-│
-# ── 以下为内部协作目录，不纳入对外发布分支 ──
-├── STORY.md             # 行业叙事
-├── PROJECT.md           # 分工与里程碑
-├── inner/               # 内部工作区（不入 git）
-├── report/              # 技术报告 LaTeX 源码（Overleaf 协作，不入 git）
-└── illustrations/       # 数据分布图、框架图（不入 git）
+├── open-aoe-2000h/      # 数据集文档与使用指南
+├── aoe-visualization/   # 数据可视化工具
+├── aoe-retarget-replay/ # Human-to-Robot 重映射工具
+└── aoe-training-ready/  # 模型训练格式转换工具
 ```
 
-### 1.2 `` 目录结构
+### 1.2 子项目目录结构
 
-每个 `` 下的子项目是一个**独立的功能模块**，必须包含：
+每个子项目是一个**独立的功能模块**，必须包含：
 
 ```
 <你的子项目名>/
@@ -76,20 +71,6 @@ Open-AoE/
 | aoe-training-ready | `aoe-training-ready/` | 模型训练配方（GR00T、VITRA） |
 | aoe-retarget-replay | `aoe-retarget-replay/` | 人机动作重映射 (Phantom) |
 | open-aoe-2000h | `open-aoe-2000h/` | 数据集文档与下载 |
-
-### 1.3 `inner/` 目录（仅在内部协作分支上存在）
-
-> ⚠️ `inner/`、`report/`、`illustrations/` 等目录不纳入对外发布版本（`*` 分支），
-> 仅在内部协作分支（如 `main`、`dev`）上存在。详见 `.gitignore`。
-
-```
-inner/
-├── drafts/              # 草案文档，命名：YYYYMMDD_描述.md
-├── research/            # 调研报告，命名：ReportN_主题_YYYYMMDD/
-├── sample_data/         # 样例数据（只读，不要修改）
-├── prompts/             # AI 协作 prompt 历史
-└── references/          # 参考论文与资料
-```
 
 ---
 
@@ -226,7 +207,7 @@ Open-AoE 整体采用 **Apache 2.0** 许可证。你贡献的代码将默认以�
 - 后来合并时需要大量人工处理冲突，甚至无法合并
 
 **正确做法**：
-- 将你的代码放在 `<你的子项目名>/` 或 `inner/` 下
+- 将你的代码放在项目根目录下对应的子目录中
 - 只修改你负责的目录内的文件
 - 如果确实需要更新顶层文件（如 `README.md`），只追加内容，不删除已有内容
 
@@ -294,9 +275,8 @@ Open-AoE 整体采用 **Apache 2.0** 许可证。你贡献的代码将默认以�
 
 ### 项目结构
 
-- [ ] 代码放在正确的目录下（`` 或 `inner/`）
+- [ ] 代码放在正确的目录下（项目根目录对应子目录）
 - [ ] 没有修改或删除顶层文件
-- [ ] 没有修改 `inner/sample_data/` 中的文件
 - [ ] 没有修改其他子项目的文件
 
 ### 依赖与 License
