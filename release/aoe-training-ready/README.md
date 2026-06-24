@@ -7,25 +7,27 @@ Zero-setup recipes for training state-of-the-art vision-language-action (VLA) mo
 AoE Training-Ready provides **per-model conversion recipes** that respect each model's native training data format, rather than forcing all data through a single intermediate representation. The goal is **train ready** — users can go from raw AoE data to a running training job with minimal effort.
 
 ```
-AoE Data ──→ recipes/vitra/     ──→ VITRA episodic format ──→ VITRA pretraining
-         └──→ (future recipes)  ──→ ...                   ──→ ...
+AoE Data ──→ vitra/          ──→ VITRA episodic format ──→ VITRA pretraining
+         ├──→ gr00t_n1d7/     ──→ LeRobot V2.1 ──→ GR00T N1.7 pretraining
+         └──→ (future)        ──→ ...
 ```
 
 ### Available Recipes
 
 | Model | Recipe | Status | Description |
 |-------|--------|--------|-------------|
-| [VITRA](https://github.com/microsoft/VITRA) | [`recipes/vitra/`](recipes/vitra/) | ✅ Verified | Ego-centric hand manipulation pretraining via MANO FK conversion |
+| [VITRA](https://github.com/microsoft/VITRA) | [`vitra/`](vitra/) | ✅ Verified | Ego-centric hand manipulation pretraining via MANO FK conversion |
+| [GR00T N1.7](https://developer.nvidia.com/gr00t) | [`gr00t_n1d7/`](gr00t_n1d7/) | ✅ Verified | Bimanual robot manipulation pretraining (sharpa + gripper modes) |
 
 ### Getting Started
 
-Each recipe is self-contained under `recipes/<model_name>/` with its own README, conversion scripts, and configuration templates. Navigate to the recipe directory for model-specific instructions.
+Each recipe is self-contained under `<model_name>/` with its own README, conversion scripts, and configuration templates. Navigate to the recipe directory for model-specific instructions.
 
 ### Contributing a New Recipe
 
 To add support for a new VLA model:
 
-1. Create `recipes/<model_name>/` with at minimum:
+1. Create `<model_name>/` with at minimum:
    - A conversion script (`convert_aoe_to_<model>.py`)
    - A verification script
    - A training config template

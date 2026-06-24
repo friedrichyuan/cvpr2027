@@ -31,7 +31,7 @@ from smplx.utils import to_tensor
 
 # MANO model weights — local directory first, then shared assets/mano/
 MANO_MODEL_DIR = Path(__file__).resolve().parent / "mano_models"
-SHARED_MANO_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "assets" / "mano"
+SHARED_MANO_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "assets" / "mano"
 if not (MANO_MODEL_DIR / "MANO_RIGHT.pkl").exists() and (SHARED_MANO_DIR / "MANO_RIGHT.pkl").exists():
     MANO_MODEL_DIR = SHARED_MANO_DIR
 MANO_RIGHT_PATH = MANO_MODEL_DIR

@@ -43,7 +43,7 @@ This section walks through the complete pipeline — from raw AoE data to a runn
 ### Step 0: Install
 
 ```bash
-cd release/aoe-training-ready/recipes/gr00t_n1d7
+cd release/aoe-training-ready/gr00t_n1d7
 
 # Create the environment
 uv sync --python 3.10
@@ -496,7 +496,7 @@ Ensure `scripts/urdf/sharpa-urdf-usd-xml/wave_01/` exists with `left_sharpa_wave
 ## Directory Structure
 
 ```
-recipes/gr00t_n1d7/
+gr00t_n1d7/
 ├── README.md                                   # This file
 ├── README_zh.md                                # Chinese version
 ├── pyproject.toml                              # Dependencies & package config
