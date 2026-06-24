@@ -163,12 +163,6 @@ poc_raw_video_YYYYMMDD_HHMMSS[_partXXX]/
 3. **Scale 为 episode 级单标量**：不做 per-frame per-arm 缩放。
 4. **相机内参**：从 `undistorted_video_info.json` 读取 `fx_pixels/fy_pixels/cx_pixels/cy_pixels` 和 `resolution`。如缺失则回退到 `hands.npz` 中的 `focal` + 视频实际分辨率。
 
-## 推荐升级路径
-
-- **Phase 1 (当前)**: 现有 IK + MuJoCo 可视化 ✅
-- **Phase 2**: 集成 GMR 做全身 retarget
-- **Phase 3**: 集成 SPIDER 做物理可行性验证
-
 ## 项目结构
 
 ```
@@ -205,17 +199,3 @@ phantom/
 ├── configs/retarget/             # dex-retargeting YAML
 └── pyproject.toml
 ```
-
-## 当前状态
-
-Phase 1 核心完成，已验证：
-- ✅ poc_deliver 格式 111 segment 兼容
-- ✅ G1 + Inspire (26-DoF) retarget + 可视化
-- ✅ G1 + Dex3 (28-DoF) retarget + 可视化
-- ✅ 自动 MANO FK sidecar 生成（world→cam 正确变换）
-- ✅ 长 segment (5000 帧) 流式处理，无 OOM
-- ✅ LeRobot v2.1 parquet 输出
-- ✅ 2×3 布局可视化（含 FK keypoints overlay）
-- ✅ Stage 3 完整管线（SAM2 双手分割 + E2FGVI 修复 + 边缘融合合成）
-
-详见 [PROJECT.md](../../PROJECT.md) WP3。
