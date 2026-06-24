@@ -101,6 +101,7 @@ Open-AoE 建立在以下优秀开源项目之上，感谢所有贡献者：
 | 项目 | 用途 | 许可证 |
 |------|------|--------|
 | [NVIDIA Isaac GR00T](https://github.com/NVIDIA/Isaac-GR00T) | 模型训练框架 | Apache 2.0 |
+| [H-RDT](https://github.com/HongzheBi/H_RDT) | 双手操作扩散策略 | Apache 2.0 |
 | [Phantom](https://github.com/MarionLepert/phantom) | 人机动作重映射 | MIT |
 | [VITRA](https://github.com/microsoft/VITRA) | 视觉轨迹推理 | MIT |
 | [dex-retargeting](https://github.com/dex-retargeting/dex-retargeting) | 手指重映射 | MIT |

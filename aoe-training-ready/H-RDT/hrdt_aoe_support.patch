@@ -1,0 +1,541 @@
+diff --git a/configs/hrdt_aoe_pretrain.yaml b/configs/hrdt_aoe_pretrain.yaml
+new file mode 100644
+index 0000000..4173189
+--- /dev/null
++++ b/configs/hrdt_aoe_pretrain.yaml
+@@ -0,0 +1,56 @@
++common:
++  img_history_size: 1
++  pcd_history_size: 1
++  action_chunk_size: 16
++  num_cameras: 1
++  # 48D: left_hand(24) + right_hand(24)
++  # Per hand: translation(3) + rotation_6d(6) + fingertips(15)
++  state_dim: 48
++  action_dim: 48
++  num_patches: 196
++
++dataset:
++  buf_path: /ssd/lingxuan/data/buffer
++  buf_num_chunks: 512
++  buf_chunk_size: 512
++  epsd_len_thresh_low: 32
++  epsd_len_thresh_high: 2048
++  image_aspect_ratio: pad
++  tokenizer_max_length: 1024
++
++model:
++  act_adaptor: mlp3x_silu
++  st_adaptor: mlp3x_silu
++  img_adapter: mlp2x_silu
++  lang_adapter: mlp2x_silu
++
++  hrdt:
++    hidden_size: 2176
++    depth: 16
++    num_heads: 16
++    norm_eps: 0.00001
++    multiple_of: 256
++    ffn_dim_multiplier: null
++    num_kv_heads: 8
++    output_size: 48
++    use_flash_attn: true
++
++  noise_scheduler:
++    num_inference_timesteps: 5
++    timestep_max: 0.999
++    sampler_type: uniform
++  time_noise:
++    a: 5
++    beta_m: 100
++  ema:
++    update_after_step: 0
++    inv_gamma: 1.0
++    power: 0.75
++    min_value: 0.0
++    max_value: 0.9999
++
++  vision:
++    feature_dim: 2176
++
++  text:
++    feature_dim: 4096
+diff --git a/datasets/aoe_dataset.py b/datasets/aoe_dataset.py
+new file mode 100644
+index 0000000..7e4139e
+--- /dev/null
++++ b/datasets/aoe_dataset.py
+@@ -0,0 +1,251 @@
++#!/usr/bin/env python3
++"""
++AoE dataset loader for H-RDT training.
++
++Loads precomputed per-segment HDF5 files produced by precompute_actions.py.
++Each segment has:
++  - <idx>.hdf5: actions + validity
++  - <idx>.mp4: symlink to undistorted video
++  - <idx>.pt: T5 language embeddings
++  - <idx>.meta.json: frame range for video seeking
++
++Supports the same interface as EgoDexDataset for drop-in use with VLAConsumerDataset.
++"""
++
++import os
++import json
++import random
++import warnings
++
++import cv2
++import h5py
++import numpy as np
++import torch
++from pathlib import Path
++
++warnings.filterwarnings("ignore")
++
++
++class AoEDataset:
++    """AoE (Art of Embodiment) dataset — segmented human manipulation data with MANO."""
++
++    DATASET_NAME = "aoe"
++
++    def __init__(
++        self,
++        data_root=None,
++        config=None,
++        upsample_rate=3,
++        val=False,
++        use_precomp_lang_embed=True,
++        stat_path=None,
++    ):
++        """
++        Args:
++            data_root: Processed data root (contains train/ and test/ subdirs)
++            config: YAML config dict
++            upsample_rate: temporal downsampling factor for action chunking
++            val: True for test split, False for train
++            use_precomp_lang_embed: whether to use .pt embeddings
++            stat_path: path to aoe_stat.json for normalization
++        """
++        self.data_root = Path(data_root)
++        self.config = config
++        self.upsample_rate = upsample_rate
++        self.val = val
++        self.use_precomp_lang_embed = use_precomp_lang_embed
++
++        if config:
++            self.chunk_size = config['common']['action_chunk_size']
++            self.action_dim = config['common']['action_dim']
++            self.img_history_size = config['common']['img_history_size']
++        else:
++            self.chunk_size = 16
++            self.action_dim = 48
++            self.img_history_size = 1
++
++        # Load normalization stats
++        if stat_path is None:
++            stat_path = self.data_root / 'aoe_stat.json'
++        self.action_min = None
++        self.action_max = None
++        if os.path.exists(stat_path):
++            with open(stat_path, 'r') as f:
++                stat = json.load(f)
++            if 'aoe' in stat:
++                self.action_min = np.array(stat['aoe']['min'], dtype=np.float32)
++                self.action_max = np.array(stat['aoe']['max'], dtype=np.float32)
++
++        # Load file list
++        self.data_files = self._load_file_list()
++        print(f"[AoE] Loaded {len(self.data_files)} segments")
++
++    def get_dataset_name(self):
++        return self.DATASET_NAME
++
++    def _load_file_list(self):
++        """Scan for (hdf5, mp4, pt, meta) tuples."""
++        files = []
++        if not self.data_root.exists():
++            return []
++
++        for episode_dir in sorted(self.data_root.iterdir()):
++            if not episode_dir.is_dir():
++                continue
++            for hdf5_file in sorted(episode_dir.glob('*.hdf5')):
++                idx = hdf5_file.stem
++                mp4_file = episode_dir / f"{idx}.mp4"
++                pt_file = episode_dir / f"{idx}.pt"
++                meta_file = episode_dir / f"{idx}.meta.json"
++
++                if not mp4_file.exists():
++                    continue
++                if self.use_precomp_lang_embed and not pt_file.exists():
++                    continue
++
++                files.append({
++                    'hdf5': hdf5_file,
++                    'mp4': mp4_file,
++                    'pt': pt_file,
++                    'meta': meta_file,
++                    'task': episode_dir.name,
++                    'file_index': idx,
++                })
++        return files
++
++    def __len__(self):
++        return len(self.data_files)
++
++    def get_item(self, idx=None):
++        """Get one training sample (compatible with VLAConsumerDataset interface)."""
++        if idx is None:
++            idx = random.randint(0, len(self.data_files) - 1)
++
++        file_info = self.data_files[idx % len(self.data_files)]
++
++        try:
++            # Load meta for video frame range
++            meta = {}
++            if file_info['meta'].exists():
++                with open(file_info['meta'], 'r') as f:
++                    meta = json.load(f)
++            start_frame = meta.get('start_frame', 0)
++
++            # Load HDF5
++            with h5py.File(file_info['hdf5'], 'r') as f:
++                actions_all = f['actions'][:]  # (T_seg, action_dim)
++
++            total_seg_frames = actions_all.shape[0]
++            max_index = total_seg_frames - 2
++            if max_index < 0:
++                return None
++
++            # Random sample point within segment
++            index = random.randint(0, max_index)
++
++            # Current state
++            current_action = actions_all[index:index+1]  # (1, D)
++
++            # Future action chunk
++            action_end = min(index + self.chunk_size * self.upsample_rate, total_seg_frames)
++            action_indices = list(range(index + 1, action_end, self.upsample_rate))
++
++            while len(action_indices) < self.chunk_size:
++                action_indices.append(action_indices[-1] if action_indices else min(index + 1, total_seg_frames - 1))
++
++            action_indices = action_indices[:self.chunk_size]
++            actions = actions_all[action_indices]
++
++            if actions.shape[0] < self.chunk_size:
++                pad = np.repeat(actions[-1:], self.chunk_size - actions.shape[0], axis=0)
++                actions = np.concatenate([actions, pad], axis=0)
++
++            # Normalize
++            if self.action_min is not None:
++                denom = self.action_max - self.action_min
++                denom = np.where(denom < 1e-8, 1.0, denom)
++                current_action = np.clip((current_action - self.action_min) / denom * 2 - 1, -1, 1)
++                actions = np.clip((actions - self.action_min) / denom * 2 - 1, -1, 1)
++
++            # Load video frame (offset by segment start_frame in the full video)
++            video_frame_idx = start_frame + index
++            image_frames = self._load_frames(file_info['mp4'], video_frame_idx)
++
++            # Language embedding
++            lang_embed_path = str(file_info['pt'])
++
++            return {
++                'states': current_action.astype(np.float32),
++                'actions': actions.astype(np.float32),
++                'action_norm': np.ones_like(actions, dtype=np.float32),
++                'current_images': [image_frames],
++                'current_images_mask': [np.ones(self.img_history_size, dtype=bool)],
++                'instruction': lang_embed_path,
++                'dataset_name': self.DATASET_NAME,
++                'task': file_info['task'],
++                'file_info': {
++                    'hdf5_path': str(file_info['hdf5']),
++                    'mp4_path': str(file_info['mp4']),
++                    'pt_path': str(file_info['pt']),
++                    'total_frames': total_seg_frames,
++                    'selected_index': index,
++                    'action_indices': action_indices,
++                }
++            }
++
++        except Exception as e:
++            print(f"[AoE] Error loading {file_info['hdf5']}: {e}")
++            return None
++
++    def _load_frames(self, mp4_path, frame_idx):
++        """Load image frames from video at the given absolute frame index."""
++        cap = cv2.VideoCapture(str(mp4_path))
++        total_video_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
++
++        start_i = max(frame_idx - self.img_history_size * self.upsample_rate + 1, 0)
++        frames = []
++
++        try:
++            for fi in range(start_i, frame_idx + 1, self.upsample_rate):
++                if fi >= total_video_frames:
++                    break
++                cap.set(cv2.CAP_PROP_POS_FRAMES, fi)
++                ret, frame = cap.read()
++                if ret:
++                    frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
++                else:
++                    break
++        finally:
++            cap.release()
++
++        if not frames:
++            frames = [np.zeros((720, 1280, 3), dtype=np.uint8)]
++
++        frames = np.array(frames)
++
++        # Pad to img_history_size
++        if frames.shape[0] < self.img_history_size:
++            pad = np.repeat(frames[:1], self.img_history_size - frames.shape[0], axis=0)
++            frames = np.concatenate([pad, frames], axis=0)
++
++        return frames[-self.img_history_size:]
++
++    def __getitem__(self, idx):
++        return self.get_item(idx)
++
++
++if __name__ == "__main__":
++    dataset = AoEDataset(
++        data_root="/path/to/H_RDT/processed_data",
++        val=False,
++        upsample_rate=3,
++    )
++    print(f"Dataset size: {len(dataset)}")
++    if len(dataset) > 0:
++        sample = dataset.get_item(0)
++        if sample:
++            for k, v in sample.items():
++                if isinstance(v, np.ndarray):
++                    print(f"  {k}: shape={v.shape}, dtype={v.dtype}")
++                else:
++                    print(f"  {k}: {type(v).__name__}")
+diff --git a/datasets/dataset.py b/datasets/dataset.py
+index 32342f7..9aafbae 100644
+--- a/datasets/dataset.py
++++ b/datasets/dataset.py
+@@ -14,6 +14,7 @@ from utils.image_corrupt import image_corrupt
+ from datasets.robotwin2.robotwin_agilex_dataset import RobotwinAgilexDataset
+ from datasets.pretrain.egodex_dataset import EgoDexDataset
+ from datasets.multi_hdf5_vla_dataset import MultiHDF5VLADataset
++from datasets.aoe_dataset import AoEDataset
+ import h5py
+ from PIL import Image
+ from torchvision import transforms
+@@ -41,7 +42,8 @@ class VLAConsumerDataset(Dataset):
+         upsample_rate=None,
+         val=False,
+         task_name="open_laptop",
+-        dataset_name="test_robotwin",  # Add dataset_name parameter
++        dataset_name="aoe",
++        data_root=None,
+     ):
+         super(VLAConsumerDataset, self).__init__()
+         self.dataset_name = dataset_name
+@@ -67,6 +69,14 @@ class VLAConsumerDataset(Dataset):
+                 # data_root="/path/to/egodex",
+                 # stat_path="/path/to/custom/egodex_stat.json",
+             )
++        elif self.dataset_name == "aoe":
++            self.hdf5_dataset = AoEDataset(
++                config=config,
++                data_root=data_root,
++                upsample_rate=upsample_rate,
++                val=val,
++                use_precomp_lang_embed=use_precomp_lang_embed,
++            )
+         elif self.dataset_name == "robotwin_agilex":
+             self.hdf5_dataset = RobotwinAgilexDataset(
+                 mode="multi_task",
+@@ -145,7 +155,7 @@ class VLAConsumerDataset(Dataset):
+         data_dict["action_norm"] = res['action_norm']
+ 
+         # Process images
+-        if self.dataset_name in ['egodex']:
++        if self.dataset_name in ['egodex', 'aoe']:
+             # Single camera / stitched image processing
+             image_metas = []
+             images = res['current_images'][0]
+diff --git a/datasets/pretrain/encode_lang_batch.py b/datasets/pretrain/encode_lang_batch.py
+index d2c8818..7eec1e9 100644
+--- a/datasets/pretrain/encode_lang_batch.py
++++ b/datasets/pretrain/encode_lang_batch.py
+@@ -188,7 +188,8 @@ def worker_process(process_id, gpu_id, file_list, progress_queue):
+         progress_queue.put(('done', process_id, processed_count, failed_count))
+         
+     except Exception as e:
+-        print(f"Process {process_id} encountered serious error: {str(e)}")
++        import traceback
++        print(f"Process {process_id} fatal error:\n{traceback.format_exc()}")
+         progress_queue.put(('error', process_id, str(e)))
+ 
+ 
+diff --git a/main.py b/main.py
+index b951c57..b215136 100644
+--- a/main.py
++++ b/main.py
+@@ -310,6 +310,20 @@ def parse_args(input_args=None):
+         help="Task name for RobotwinAgilexDataset (e.g., 'open_laptop', 'close_laptop', etc.)"
+     )
+ 
++    parser.add_argument(
++        "--dataset_name",
++        type=str,
++        default="egodex",
++        help="Dataset name to use: 'egodex', 'aoe', 'robotwin_agilex'"
++    )
++
++    parser.add_argument(
++        "--data_root",
++        type=str,
++        default=None,
++        help="Root directory of the dataset (passed to the dataset class)"
++    )
++
+     if input_args is not None:
+         args = parser.parse_args(input_args)
+     else:
+diff --git a/models/encoder/dinosiglip_vit.py b/models/encoder/dinosiglip_vit.py
+index fcc036f..6e4c8e3 100644
+--- a/models/encoder/dinosiglip_vit.py
++++ b/models/encoder/dinosiglip_vit.py
+@@ -52,13 +52,11 @@ class DinoSigLIPViTBackbone(VisionBackbone):
+     def __init__(self, vision_backbone_id: str, image_resize_strategy: str, default_image_size: int = 384) -> None:
+         super().__init__(vision_backbone_id, image_resize_strategy, default_image_size=default_image_size)
+         
+-        # 如果是"dino-siglip"，检查是否存在本地模型路径
+         import os
+-        # 获取模型的本地路径
+-        current_file_path = os.path.abspath(__file__)
+-        current_folder_path = os.path.dirname(current_file_path)
+-        parent_folder_path = os.path.dirname(os.path.dirname(current_folder_path))
+-        dino_siglip_dir = os.path.join(parent_folder_path, 'bak', 'dino-siglip')
++        dino_siglip_dir = os.environ.get(
++            'DINO_SIGLIP_DIR',
++            '/root/ckpts/dino-siglip',
++        )
+             
+         print(f"Using models from: {dino_siglip_dir}")
+             
+diff --git a/models/encoder/t5_encoder.py b/models/encoder/t5_encoder.py
+index 6c6fd76..4de037c 100644
+--- a/models/encoder/t5_encoder.py
++++ b/models/encoder/t5_encoder.py
+@@ -3,8 +3,6 @@ from transformers import AutoTokenizer, T5EncoderModel
+ 
+ 
+ class T5Embedder:
+-    available_models = ["/data/lingxuan/weights/t5-v1_1-xxl"]
+-
+     def __init__(
+         self,
+         device,
+@@ -23,6 +21,9 @@ class T5Embedder:
+         self.torch_dtype = torch_dtype or torch.bfloat16
+         self.cache_dir = cache_dir
+ 
++        if from_pretrained is None:
++            raise ValueError("from_pretrained must be a valid path or HuggingFace model id")
++
+         if t5_model_kwargs is None:
+             t5_model_kwargs = {
+                 "low_cpu_mem_usage": True,
+@@ -70,7 +71,6 @@ class T5Embedder:
+         self.use_text_preprocessing = use_text_preprocessing
+         self.hf_token = hf_token
+ 
+-        assert from_pretrained in self.available_models
+         self.tokenizer = AutoTokenizer.from_pretrained(
+             from_pretrained,
+             model_max_length=model_max_length,
+diff --git a/pretrain_aoe.sh b/pretrain_aoe.sh
+new file mode 100644
+index 0000000..4c35012
+--- /dev/null
++++ b/pretrain_aoe.sh
+@@ -0,0 +1,44 @@
++export NCCL_IB_HCA=mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_4:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
++export NCCL_IB_DISABLE=0
++export NCCL_SOCKET_IFNAME=bond0
++export NCCL_DEBUG=INFO
++export NCCL_NVLS_ENABLE=0
++export CUDA_VISIBLE_DEVICES=0,1
++
++export WANDB_PROJECT="hrdt"
++export OUTPUT_DIR="./checkpoints/pretrain_aoe"
++
++export VISION_ENCODER_NAME="dino-siglip"
++
++if [ ! -d "$OUTPUT_DIR" ]; then
++    mkdir -p "$OUTPUT_DIR"
++    echo "Folder '$OUTPUT_DIR' created"
++else
++    echo "Folder '$OUTPUT_DIR' already exists"
++fi
++
++accelerate launch --main_process_port 29500 main.py \
++    --pretrained_vision_encoder_name_or_path=$VISION_ENCODER_NAME \
++    --deepspeed="./configs/zero1.json" \
++    --config_path="configs/hrdt_aoe_pretrain.yaml" \
++    --output_dir=$OUTPUT_DIR \
++    --train_batch_size=32 \
++    --sample_batch_size=32 \
++    --max_train_steps=1000000 \
++    --checkpointing_period=5000 \
++    --sample_period=500 \
++    --checkpoints_total_limit=40 \
++    --lr_scheduler="constant_with_warmup" \
++    --learning_rate=1e-4 \
++    --mixed_precision="bf16" \
++    --dataloader_num_workers=32 \
++    --dataset_type="finetune" \
++    --report_to=wandb \
++    --upsample_rate=3 \
++    --image_aug \
++    --gradient_checkpointing \
++    --precomp_lang_embed \
++    --training_mode="lang" \
++    --mode="pretrain" \
++    --dataset_name="aoe" \
++    --data_root="/root/datasets/AoE_processed_data" \
+diff --git a/requirements.txt b/requirements.txt
+index 5d4dea7..2c518f4 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -14,3 +14,4 @@ imgaug==0.4.0
+ numpy==1.26.4
+ huggingface-hub==0.25.0
+ pandas==2.2.3
++chumpy==0.70
+diff --git a/train/train.py b/train/train.py
+index 5310c11..a49b136 100644
+--- a/train/train.py
++++ b/train/train.py
+@@ -263,8 +263,10 @@ def train(args, logger):
+         val=False,
+         use_precomp_lang_embed=args.precomp_lang_embed,
+         task_name=args.task_name,
++        dataset_name=args.dataset_name,
++        data_root=args.data_root,
+     )
+-    
++
+     val_dataset = VLAConsumerDataset(
+         config=config,
+         image_transform=image_transform,
+@@ -276,6 +278,8 @@ def train(args, logger):
+         val=True,
+         use_precomp_lang_embed=args.precomp_lang_embed,
+         task_name=args.task_name,
++        dataset_name=args.dataset_name,
++        data_root=args.data_root,
+     )
+ 
+     # Create data collator for batching

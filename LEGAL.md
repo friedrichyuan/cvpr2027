@@ -40,6 +40,14 @@ The VITRA training recipe under `aoe-training-ready/vitra/` is an
 adaptation layer for the [VITRA](https://github.com/microsoft/VITRA) project by Microsoft.
 Users must clone VITRA separately and apply the provided patch.
 
+### H-RDT
+
+The H-RDT training recipe under `aoe-training-ready/H-RDT/` is an
+adaptation layer for the [H-RDT](https://github.com/HongzheBi/H_RDT) project.
+Users must clone H-RDT separately and apply the provided patch. The recipe
+also depends on [HaWoR](https://github.com/ThunderVVV/HaWoR) (CC-BY-NC-ND 4.0)
+for MANO forward kinematics — users must clone HaWoR separately.
+
 ## Contributing
 
 By contributing to this project, you agree that your contributions will be licensed

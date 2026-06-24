@@ -9,7 +9,7 @@ AoE Training-Ready provides **per-model conversion recipes** that respect each m
 ```
 AoE Data ──→ vitra/          ──→ VITRA episodic format ──→ VITRA pretraining
          ├──→ gr00t_n1d7/     ──→ LeRobot V2.1 ──→ GR00T N1.7 pretraining
-         └──→ (future)        ──→ ...
+         └──→ H-RDT/          ──→ 48D action HDF5 ──→ H-RDT pretraining
 ```
 
 ### Available Recipes
@@ -18,6 +18,7 @@ AoE Data ──→ vitra/          ──→ VITRA episodic format ──→ VIT
 |-------|--------|--------|-------------|
 | [VITRA](https://github.com/microsoft/VITRA) | [`vitra/`](vitra/) | ✅ Verified | Ego-centric hand manipulation pretraining via MANO FK conversion |
 | [GR00T N1.7](https://developer.nvidia.com/gr00t) | [`gr00t_n1d7/`](gr00t_n1d7/) | ✅ Verified | Bimanual robot manipulation pretraining (sharpa + gripper modes) |
+| [H-RDT](https://github.com/HongzheBi/H_RDT) | [`H-RDT/`](H-RDT/) | ✅ Verified | Bimanual hand-action pretraining via 48D action representation |
 
 ### Getting Started
 
