@@ -1,0 +1,20 @@
+retargeting:
+  type: position
+  add_dummy_free_joint: true
+  ignore_mimic_joint: false
+  low_pass_alpha: 1
+  urdf_path: inspire_hand/inspire_hand_right.urdf
+  target_joint_names:
+    - r_thumb_proximal_yaw_joint
+    - r_thumb_proximal_pitch_joint
+    - r_index_proximal_joint
+    - r_middle_proximal_joint
+    - r_ring_proximal_joint
+    - r_pinky_proximal_joint
+  target_link_human_indices: [0, 1, 2, 3, 4]
+  target_link_names:
+    - r_thumb_tip
+    - r_index_tip
+    - r_middle_tip
+    - r_ring_tip
+    - r_pinky_tip
