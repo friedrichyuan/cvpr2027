@@ -17,11 +17,17 @@ before downloading and using these files. See `assets/mano/download_mano.sh` for
 
 Code under `aoe-training-ready/gr00t_n1d7/gr00t/` is originally from
 NVIDIA CORPORATION & AFFILIATES, licensed under Apache 2.0.
+See [NVIDIA/Isaac-GR00T](https://github.com/NVIDIA/Isaac-GR00T).
 
 ### Sharpa Robot Description
 
 URDF/USD/MJCF files under `aoe-training-ready/gr00t_n1d7/scripts/urdf/`
 are from Sharpa Group, licensed under Apache 2.0.
+
+### Phantom
+
+The retargeting pipeline under `aoe-retarget-replay/phantom/` is an adaptation of
+[Phantom](https://github.com/MarionLepert/phantom) by MarionLepert, licensed under MIT.
 
 ### dex-retargeting
 

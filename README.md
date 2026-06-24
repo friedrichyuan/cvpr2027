@@ -82,9 +82,23 @@ cd aoe-retarget-replay/phantom
 # 详见 README.md
 ```
 
+## 致谢
+
+Open-AoE 建立在以下优秀开源项目之上，感谢所有贡献者：
+
+| 项目 | 用途 | 许可证 |
+|------|------|--------|
+| [NVIDIA Isaac GR00T](https://github.com/NVIDIA/Isaac-GR00T) | 模型训练框架 | Apache 2.0 |
+| [Phantom](https://github.com/MarionLepert/phantom) | 人机动作重映射 | MIT |
+| [VITRA](https://github.com/microsoft/VITRA) | 视觉轨迹推理 | MIT |
+| [dex-retargeting](https://github.com/dex-retargeting/dex-retargeting) | 手指重映射 | MIT |
+| [MANO](https://mano.is.tue.mpg.de/) | 手部模型 | MANO License |
+| [HaWoR](https://github.com/ThunderVVV/HaWoR) | 手部重建 | CC-BY-NC-ND 4.0 |
+
 ## 相关链接
 
 - **技术报告**: [arXiv 链接]（待发布）
 - **数据集**: [HuggingFace 链接]（待发布）
 - **AoE 论文** (CVPR Workshop 2026): [链接]（待发布）
 - **贡献指南**: [CONTRIBUTING.md](CONTRIBUTING.md)
+- **第三方许可**: [LEGAL.md](LEGAL.md)
