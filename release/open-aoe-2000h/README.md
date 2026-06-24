@@ -492,15 +492,36 @@ v = fy * p_cam[1] / p_cam[2] + cy
 
 ## 🔍 可视化
 
-### 使用脚本重新生成手部可视化
+数据集的端到端可视化由独立工具 **`aoe-visualization`** 提供（与本数据集目录同级，位于 `release/aoe-visualization/`）。该工具会重新渲染 MANO 手部重建结果，并将原子动作标注叠加到视频上，为每个样本生成一个完整的复核视频 `AoE_output_vis.mp4`（包含：去畸变 Ego 视频 + 手部 mesh/关键点叠加、动作标注信息面板、世界坐标系 3D 面板、底部时间轴）。
+
+### 安装
 
 ```bash
-python visualization/visualize_hands.py /path/to/<样本目录>
+cd /path/to/release/aoe-visualization
+pip install -r requirements.txt   # numpy, opencv-python, pyrender, trimesh, PyOpenGL
 ```
 
-其中 `<样本目录>` 为视频片段的根目录路径。
+> 高质量手部 mesh 渲染依赖可用的 EGL/OpenGL 离屏上下文（通常为 GPU 机器）；若无法创建 GL 上下文，会自动回退到纯 NumPy 渲染（质量较低）。
+
+### 使用
+
+```bash
+cd /path/to/release/aoe-visualization
+
+# 可视化单个样本 -> output/<样本名>/AoE_output_vis.mp4
+python visualize.py --sample /path/to/<样本目录>
+
+# 可视化整个数据集目录
+python visualize.py --data_dir /path/to/数据集目录 --output_dir ./output
+```
+
+其中 `<样本目录>` 为视频片段的根目录路径。更多细节（渲染原理、MANO 资源、依赖说明等）见 `aoe-visualization/README.md`。
 
 ### 可视化输出
+
+- `AoE_output_vis.mp4`: 由 `aoe-visualization` 生成的端到端复核视频（手部 mesh/关键点叠加 + 动作标注 + 世界坐标系 3D 面板 + 时间轴）
+
+此外，数据集自带的预渲染可视化文件位于每个样本的 `ego_process/ego_hands_reconstruction/visualization/` 目录下：
 
 - `hands_combined.mp4`: 手部 3D mesh 叠加在视频帧上（左手紫色，右手蓝色）
 - `overview.png`: 相机轨迹和手部运动轨迹总览图
