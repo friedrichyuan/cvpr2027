@@ -492,12 +492,12 @@ v = fy * p_cam[1] / p_cam[2] + cy
 
 ## 🔍 可视化
 
-数据集的端到端可视化由独立工具 **`aoe-visualization`** 提供（与本数据集目录同级，位于 `release/aoe-visualization/`）。该工具会重新渲染 MANO 手部重建结果，并将原子动作标注叠加到视频上，为每个样本生成一个完整的复核视频 `AoE_output_vis.mp4`（包含：去畸变 Ego 视频 + 手部 mesh/关键点叠加、动作标注信息面板、世界坐标系 3D 面板、底部时间轴）。
+数据集的端到端可视化由独立工具 **`aoe-visualization`** 提供（与本数据集目录同级，位于 `aoe-visualization/`）。该工具会重新渲染 MANO 手部重建结果，并将原子动作标注叠加到视频上，为每个样本生成一个完整的复核视频 `AoE_output_vis.mp4`（包含：去畸变 Ego 视频 + 手部 mesh/关键点叠加、动作标注信息面板、世界坐标系 3D 面板、底部时间轴）。
 
 ### 安装
 
 ```bash
-cd /path/to/release/aoe-visualization
+cd aoe-visualization
 pip install -r requirements.txt   # numpy, opencv-python, pyrender, trimesh, PyOpenGL
 ```
 
@@ -506,7 +506,7 @@ pip install -r requirements.txt   # numpy, opencv-python, pyrender, trimesh, PyO
 ### 使用
 
 ```bash
-cd /path/to/release/aoe-visualization
+cd aoe-visualization
 
 # 可视化单个样本 -> output/<样本名>/AoE_output_vis.mp4
 python visualize.py --sample /path/to/<样本目录>

@@ -33,14 +33,14 @@ Layer 5: 真机 Replay    — Unitree G1 + Inspire Hand SDK (Phase 2+)
 conda activate phantom
 
 # 或从头安装依赖
-cd release/aoe-retarget-replay/phantom
+cd aoe-retarget-replay/phantom
 pip install -e .
 ```
 
 ### 单 episode 重映射
 
 ```bash
-cd release/aoe-retarget-replay/phantom
+cd aoe-retarget-replay/phantom
 
 # Inspire (26-DoF, 5 指)
 MUJOCO_GL=egl python scripts/retarget.py \

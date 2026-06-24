@@ -10,21 +10,19 @@
 
 ```
 Open-AoE/
-├── README.md                   ← 项目总览
-├── CONTRIBUTING.md             ← 贡献指南
-├── LICENSE                     ← Apache 2.0
-├── LEGAL.md                    ← 第三方依赖许可证声明
-│
-├── assets/                     ← 公共资源
-│   └── mano/                   ← MANO 模型下载脚本
-│
-├── release/                    ← 对外发布物
-│   ├── open-aoe-2000h/         ← 数据集文档与使用指南
-│   ├── aoe-visualization/      ← 数据可视化工具
-│   ├── aoe-retarget-replay/    ← Human-to-Robot 重映射工具
-│   └── aoe-training-ready/     ← 模型训练格式转换工具
-│
-└── CLAUDE.md                   ← AI 协作规范
+├── README.md                ← 项目总览
+├── CONTRIBUTING.md          ← 贡献指南
+├── CLAUDE.md                ← AI 协作规范
+├── LICENSE                  ← Apache 2.0
+├── LEGAL.md                 ← 第三方依赖许可证声明
+├── assets/                  ← 公共资源
+│   └── mano/                ← MANO 模型下载脚本
+├── open-aoe-2000h/          ← 数据集文档与使用指南
+├── aoe-visualization/       ← 数据可视化工具
+├── aoe-retarget-replay/     ← Human-to-Robot 重映射工具 (Phantom)
+└── aoe-training-ready/      ← 模型训练格式转换工具
+    ├── vitra/               ← VITRA 训练配方
+    └── gr00t_n1d7/          ← GR00T N1.7 训练配方
 ```
 
 ## 开源交付物
@@ -54,31 +52,31 @@ Open-AoE/
 ### 可视化
 
 ```bash
-cd release/aoe-visualization
+cd aoe-visualization
 pip install -r requirements.txt
 python visualize.py --data <path_to_aoe_data>
 ```
 
-详见 [release/aoe-visualization/README.md](release/aoe-visualization/README.md)
+详见 [aoe-visualization/README.md](aoe-visualization/README.md)
 
 ### 模型训练
 
 ```bash
 # GR00T N1.7 训练配方
-cd release/aoe-training-ready/gr00t_n1d7
+cd aoe-training-ready/gr00t_n1d7
 # 详见 README.md
 
 # VITRA 训练配方
-cd release/aoe-training-ready/vitra
+cd aoe-training-ready/vitra
 # 详见 README.md
 ```
 
-详见 [release/aoe-training-ready/README.md](release/aoe-training-ready/README.md)
+详见 [aoe-training-ready/README.md](aoe-training-ready/README.md)
 
 ### 人机重映射
 
 ```bash
-cd release/aoe-retarget-replay/phantom
+cd aoe-retarget-replay/phantom
 # 详见 README.md
 ```
 

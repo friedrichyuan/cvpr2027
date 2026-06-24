@@ -22,8 +22,8 @@
 
 | 你的贡献 | 应该放在 | 举例 |
 |----------|----------|------|
-| 某类任务的完整工具链（训练配方、可视化、仿真等） | `release/` 下新建子目录 | `release/aoe-training-ready/`、`release/aoe-retarget-replay/` |
-| 对某个已有子项目的功能增强 | 对应 `release/` 子目录内修改 | 在 `release/aoe-visualization/` 中增加新的渲染器 |
+| 某类任务的完整工具链（训练配方、可视化、仿真等） | `` 下新建子目录 | `aoe-training-ready/`、`aoe-retarget-replay/` |
+| 对某个已有子项目的功能增强 | 对应 `` 子目录内修改 | 在 `aoe-visualization/` 中增加新的渲染器 |
 | 调研报告、草案、实验性代码 | `inner/`（内部协作目录，不纳入对外发布） | `inner/research/`、`inner/drafts/` |
 | 项目叙事、分工文档 | 顶层 `.md` 文件（STORY.md / PROJECT.md，内部协作） | 追加而非覆盖 |
 
@@ -42,7 +42,7 @@ Open-AoE/
 ├── CLAUDE.md            # AI 协作规范
 ├── LICENSE              # 项目许可证 (Apache 2.0)
 ├── LEGAL.md             # 第三方依赖许可声明
-├── release/             # 对外发布物 ← 代码质量的最高标准
+├──              # 对外发布物 ← 代码质量的最高标准
 ├── assets/              # 公共资源（下载脚本、共享配置）
 │
 # ── 以下为内部协作目录，不纳入对外发布分支 ──
@@ -53,12 +53,12 @@ Open-AoE/
 └── illustrations/       # 数据分布图、框架图（不入 git）
 ```
 
-### 1.2 `release/` 目录结构
+### 1.2 `` 目录结构
 
-每个 `release/` 下的子项目是一个**独立的功能模块**，必须包含：
+每个 `` 下的子项目是一个**独立的功能模块**，必须包含：
 
 ```
-release/<你的子项目名>/
+<你的子项目名>/
 ├── README.md            # 子项目说明（必须）
 ├── LICENSE              # 许可证文件（可选，默认继承根 LICENSE）
 ├── pyproject.toml       # 或 requirements.txt —— 依赖声明（必须）
@@ -72,14 +72,14 @@ release/<你的子项目名>/
 
 | 子项目 | 路径 | 功能 |
 |--------|------|------|
-| aoe-visualization | `release/aoe-visualization/` | AoE 数据可视化与渲染 |
-| aoe-training-ready | `release/aoe-training-ready/` | 模型训练配方（GR00T、VITRA） |
-| aoe-retarget-replay | `release/aoe-retarget-replay/` | 人机动作重映射 (Phantom) |
-| open-aoe-2000h | `release/open-aoe-2000h/` | 数据集文档与下载 |
+| aoe-visualization | `aoe-visualization/` | AoE 数据可视化与渲染 |
+| aoe-training-ready | `aoe-training-ready/` | 模型训练配方（GR00T、VITRA） |
+| aoe-retarget-replay | `aoe-retarget-replay/` | 人机动作重映射 (Phantom) |
+| open-aoe-2000h | `open-aoe-2000h/` | 数据集文档与下载 |
 
 ### 1.3 `inner/` 目录（仅在内部协作分支上存在）
 
-> ⚠️ `inner/`、`report/`、`illustrations/` 等目录不纳入对外发布版本（`release/*` 分支），
+> ⚠️ `inner/`、`report/`、`illustrations/` 等目录不纳入对外发布版本（`*` 分支），
 > 仅在内部协作分支（如 `main`、`dev`）上存在。详见 `.gitignore`。
 
 ```
@@ -167,7 +167,7 @@ git commit -m "<类型>: <简短描述>"
 ### 3.3 禁止事项
 
 - ❌ 不要修改 `inner/sample_data/` 中的数据文件
-- ❌ 不要在 `release/` 中放置草稿或实验性代码
+- ❌ 不要在 `` 中放置草稿或实验性代码
 - ❌ 不要在一次提交中同时大幅修改多个顶层 `.md` 文件
 - ❌ 不要擅自更改 28D joint space 定义：`[L_ARM(7), R_ARM(7), L_HAND(6), R_HAND(6), PAD(2)]`
 - ❌ 不要直接提交二进制大文件（模型权重、视频、数据集等），使用外部下载脚本
@@ -222,7 +222,7 @@ Open-AoE 整体采用 **Apache 2.0** 许可证。你贡献的代码将默认以�
 - 后来合并时需要大量人工处理冲突，甚至无法合并
 
 **正确做法**：
-- 将你的代码放在 `release/<你的子项目名>/` 或 `inner/` 下
+- 将你的代码放在 `<你的子项目名>/` 或 `inner/` 下
 - 只修改你负责的目录内的文件
 - 如果确实需要更新顶层文件（如 `README.md`），只追加内容，不删除已有内容
 
@@ -290,7 +290,7 @@ Open-AoE 整体采用 **Apache 2.0** 许可证。你贡献的代码将默认以�
 
 ### 项目结构
 
-- [ ] 代码放在正确的目录下（`release/` 或 `inner/`）
+- [ ] 代码放在正确的目录下（`` 或 `inner/`）
 - [ ] 没有修改或删除顶层文件
 - [ ] 没有修改 `inner/sample_data/` 中的文件
 - [ ] 没有修改其他子项目的文件
@@ -313,7 +313,7 @@ Open-AoE 整体采用 **Apache 2.0** 许可证。你贡献的代码将默认以�
 
 - [ ] 代码可以在干净的 Python 环境中运行
 - [ ] README 中的安装和使用说明准确无误
-- [ ] 如果是新子项目，已更新 `release/aoe-training-ready/README.md` 中的表格
+- [ ] 如果是新子项目，已更新 `aoe-training-ready/README.md` 中的表格
 
 ---
 

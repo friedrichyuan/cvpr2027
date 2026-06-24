@@ -41,7 +41,7 @@ AoE 原始数据                          训练好的模型
 ### Step 0: 安装
 
 ```bash
-cd release/aoe-training-ready/gr00t_n1d7
+cd aoe-training-ready/gr00t_n1d7
 uv sync --python 3.10
 source .venv/bin/activate
 

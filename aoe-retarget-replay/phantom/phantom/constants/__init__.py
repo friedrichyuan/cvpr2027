@@ -20,7 +20,7 @@ ROBOTS_DIR = ASSETS_DIR / "robots"
 MANO_MODELS_DIR = ASSETS_DIR / "mano_models"
 # Fallback to the shared assets/mano/ location for MANO models.
 # Users should run assets/mano/download_mano.sh before using this package.
-SHARED_MANO_DIR = PROJECT_ROOT.parent.parent.parent / "assets" / "mano"
+SHARED_MANO_DIR = PROJECT_ROOT.parent.parent / "assets" / "mano"
 
 RETARGET_CONFIG_DIR = PROJECT_ROOT / "configs" / "retarget"
 

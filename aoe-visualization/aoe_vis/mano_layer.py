@@ -97,7 +97,7 @@ class ManoLayer:
             # Try to auto-convert from .pkl in shared assets/mano/
             _pkl_fname = "MANO_RIGHT.pkl" if is_rhand else "MANO_LEFT.pkl"
             _pkl_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))), "assets", "mano", _pkl_fname)
+                os.path.dirname(__file__)))), "assets", "mano", _pkl_fname)
             if os.path.exists(_pkl_path):
                 import sys
                 _convert_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "convert_mano_pkl_to_npz.py")
@@ -108,7 +108,7 @@ class ManoLayer:
                 raise FileNotFoundError(
                     f"MANO model not found: {path}. Run assets/mano/download_mano.sh "
                     f"from the repo root to set up MANO models, then run "
-                    f"release/aoe-visualization/scripts/convert_mano_pkl_to_npz.py "
+                    f"aoe-visualization/scripts/convert_mano_pkl_to_npz.py "
                     f"to convert them to .npz format.")
         m = np.load(path)
         self.faces = m["f"].astype(np.int64)

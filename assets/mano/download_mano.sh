@@ -53,7 +53,7 @@ cp "$SRC_LEFT"  "$SHARED_DIR/MANO_LEFT.pkl"
 echo "✓ MANO models copied to: $SHARED_DIR/"
 
 # ── GR00T N1.7 recipe ──────────────────────────────────────────────────────────
-GR00T_DIR="$SHARED_DIR/../../release/aoe-training-ready/recipes/gr00t_n1d7/scripts/mano_models"
+GR00T_DIR="$SHARED_DIR/../../aoe-training-ready/gr00t_n1d7/scripts/mano_models"
 if [ -d "$(dirname "$GR00T_DIR")" ]; then
     mkdir -p "$GR00T_DIR"
     ln -sf "$SHARED_DIR/MANO_RIGHT.pkl" "$GR00T_DIR/MANO_RIGHT.pkl"
@@ -62,7 +62,7 @@ if [ -d "$(dirname "$GR00T_DIR")" ]; then
 fi
 
 # ── Phantom retarget-replay ────────────────────────────────────────────────────
-PHANTOM_DIR="$SHARED_DIR/../../release/aoe-retarget-replay/phantom/assets/mano_models"
+PHANTOM_DIR="$SHARED_DIR/../../aoe-retarget-replay/phantom/assets/mano_models"
 if [ -d "$(dirname "$PHANTOM_DIR")" ]; then
     mkdir -p "$PHANTOM_DIR"
     ln -sf "$SHARED_DIR/MANO_RIGHT.pkl" "$PHANTOM_DIR/MANO_RIGHT.pkl"
@@ -71,8 +71,8 @@ if [ -d "$(dirname "$PHANTOM_DIR")" ]; then
 fi
 
 # ── Visualization (converts .pkl → .npz) ─────────────────────────────────────
-VIS_DIR="$SHARED_DIR/../../release/aoe-visualization/assets/mano"
-VIS_SCRIPT="$SHARED_DIR/../../release/aoe-visualization/scripts/convert_mano_pkl_to_npz.py"
+VIS_DIR="$SHARED_DIR/../../aoe-visualization/assets/mano"
+VIS_SCRIPT="$SHARED_DIR/../../aoe-visualization/scripts/convert_mano_pkl_to_npz.py"
 if [ -d "$VIS_DIR" ] && [ -f "$VIS_SCRIPT" ]; then
     python3 "$VIS_SCRIPT" "$SHARED_DIR/MANO_RIGHT.pkl" "$VIS_DIR/MANO_RIGHT.npz"
     python3 "$VIS_SCRIPT" "$SHARED_DIR/MANO_LEFT.pkl"  "$VIS_DIR/MANO_LEFT.npz"

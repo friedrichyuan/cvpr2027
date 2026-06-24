@@ -43,7 +43,7 @@ This section walks through the complete pipeline — from raw AoE data to a runn
 ### Step 0: Install
 
 ```bash
-cd release/aoe-training-ready/gr00t_n1d7
+cd aoe-training-ready/gr00t_n1d7
 
 # Create the environment
 uv sync --python 3.10
