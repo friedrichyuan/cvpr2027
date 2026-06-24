@@ -482,7 +482,7 @@ find output/ego_sharpa_merged/videos -type l -exec sh -c \
 
 ### smplx / MANO 模型未找到
 
-确保 `scripts/mano_models/` 包含 `MANO_LEFT.pkl` 和 `MANO_RIGHT.pkl`，或从仓库根目录运行 `assets/mano/download_mano.sh` 设置符号链接。这些模型来自 [MANO 项目](https://mano.is.tue.mpg.de/)（需要注册）。
+如 MANO 模型缺失，从仓库根目录运行 `bash assets/mano/download_mano.sh` 并指定你下载的 `MANO_RIGHT.pkl` 和 `MANO_LEFT.pkl`（见上方）。这些模型来自 [MANO 项目](https://mano.is.tue.mpg.de/)（需要注册）。
 
 ### Sharpa URDF 找不到
 

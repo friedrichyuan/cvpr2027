@@ -42,6 +42,18 @@ Open-AoE/
 - **可参与性**: 任何人用自己的手机即可贡献数据
 - **双语标注**: 中英文原子动作描述
 
+## 前置准备
+
+Open-AoE 中的多个工具需要 MANO 手部模型进行渲染和重映射。MANO 模型需要用户在官网注册后下载，详见 [MANO 许可](https://mano.is.tue.mpg.de/license.html)。
+
+```bash
+# 1. 注册并下载 MANO 模型: https://mano.is.tue.mpg.de/
+# 2. 运行下载脚本，将模型复制到共享目录
+bash assets/mano/download_mano.sh ~/Downloads/MANO_RIGHT.pkl ~/Downloads/MANO_LEFT.pkl
+```
+
+完成后，所有子项目将自动发现 MANO 模型。你也可以在具体子项目中根据提示单独准备。
+
 ## 快速开始
 
 ### 数据访问

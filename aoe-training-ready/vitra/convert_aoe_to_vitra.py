@@ -610,7 +610,9 @@ def main():
     ap.add_argument("--out_root", required=True, type=str)
     ap.add_argument("--max_clips", default=-1, type=int,
                     help="limit number of clips; -1 = all")
-    ap.add_argument("--mano_dir", default="weights/mano", type=str)
+    ap.add_argument("--mano_dir", default=None, type=str,
+                    help="Path to MANO model directory. Defaults to shared assets/mano/ "
+                         "if available, otherwise falls back to weights/mano/.")
     ap.add_argument("--device", default="cpu", type=str, help="cpu | cuda for MANO FK")
     ap.add_argument("--verify", action="store_true",
                     help="Run numerical cam-space self-consistency check per clip")
@@ -633,7 +635,15 @@ def main():
     if not clip_dirs:
         sys.exit("no clips discovered")
 
-    mano_fk = ManoFK(args.mano_dir, device=args.device)
+    mano_dir = args.mano_dir
+    if mano_dir is None:
+        # Auto-detect: shared assets/mano/ first, then local fallback
+        _shared = Path(__file__).resolve().parent.parent.parent / "assets" / "mano"
+        if (_shared / "MANO_RIGHT.pkl").exists():
+            mano_dir = str(_shared)
+        else:
+            mano_dir = "weights/mano"
+    mano_fk = ManoFK(mano_dir, device=args.device)
 
     successes = []
     n_clips_ok = n_clips_skip = n_clips_err = 0

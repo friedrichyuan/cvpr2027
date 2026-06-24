@@ -486,7 +486,7 @@ find output/ego_sharpa_merged/videos -type l -exec sh -c \
 
 ### smplx / MANO model not found
 
-Ensure `scripts/mano_models/` contains `MANO_LEFT.pkl` and `MANO_RIGHT.pkl`, or run `assets/mano/download_mano.sh` from the repo root to set up symlinks. These models are from the [MANO project](https://mano.is.tue.mpg.de/) (requires registration).
+If MANO models are missing, run `bash assets/mano/download_mano.sh` from the repo root with your downloaded `MANO_RIGHT.pkl` and `MANO_LEFT.pkl` (see above). These models are from the [MANO project](https://mano.is.tue.mpg.de/) (requires registration).
 
 ### Sharpa URDF not found
 

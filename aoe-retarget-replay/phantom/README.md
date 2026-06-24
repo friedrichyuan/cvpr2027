@@ -28,6 +28,10 @@ Layer 4: 视频合成       — SAM2 手部分割 (FK seed) + E2FGVI 修复 + �
 ### 安装
 
 ```bash
+# 1. 准备 MANO 模型（如未在项目根目录执行过）
+bash assets/mano/download_mano.sh ~/Downloads/MANO_RIGHT.pkl ~/Downloads/MANO_LEFT.pkl
+
+# 2. 安装依赖
 cd aoe-retarget-replay/phantom
 pip install -e .
 ```

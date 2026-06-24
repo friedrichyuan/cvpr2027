@@ -114,6 +114,18 @@ is reused by the world-frame 3D panel so both views match.
 
 ## Install
 
+### MANO 模型
+
+可视化工具需要 MANO 手部模型。首次使用前运行：
+
+```bash
+bash assets/mano/download_mano.sh ~/Downloads/MANO_RIGHT.pkl ~/Downloads/MANO_LEFT.pkl
+```
+
+详见 [MANO 模型下载](https://mano.is.tue.mpg.de/)（需注册）。
+
+### Python 依赖
+
 ```bash
 pip install -r requirements.txt   # numpy, opencv-python, pyrender, trimesh, PyOpenGL
 ```
