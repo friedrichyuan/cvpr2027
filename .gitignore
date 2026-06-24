@@ -49,3 +49,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# MANO model files (must be downloaded separately: see assets/mano/download_mano.sh)
+MANO_LEFT.pkl
+MANO_RIGHT.pkl

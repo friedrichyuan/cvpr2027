@@ -14,7 +14,7 @@ This recipe converts [AoE](https://github.com/AoE-Ego) ego-centric hand manipula
 
 ### Prerequisites
 
-1. **MANO weights**: Download from [MANO website](https://mano.is.tue.mpg.de/) and place under a `mano/` directory (you need `MANO_LEFT.pkl` and `MANO_RIGHT.pkl`)
+1. **MANO weights**: Download from [MANO website](https://mano.is.tue.mpg.de/) and place under a `mano/` directory (you need `MANO_LEFT.pkl` and `MANO_RIGHT.pkl`). Or run `assets/mano/download_mano.sh` from the repo root to set up symlinks.
 2. **Python dependencies**:
    ```bash
    pip install -r requirements.txt

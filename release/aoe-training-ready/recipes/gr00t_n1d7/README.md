@@ -26,7 +26,7 @@ AoE Raw Data                          Trained Model
 | AoE dataset | `poc_deliver/` directory with raw episodes | Internal: see PROJECT.md |
 | GR00T-N1.7-3B | Base model weights (full VLA checkpoint) | Download to `/path/to/GR00T-N1.7-3B` |
 | Cosmos-Reason2-2B | VLM backbone (Qwen3-VL); provides tokenizer & visual processor | `huggingface-cli download nvidia/Cosmos-Reason2-2B` |
-| MANO models | `MANO_LEFT.pkl` + `MANO_RIGHT.pkl` | Place in `scripts/mano_models/` |
+| MANO models | `MANO_LEFT.pkl` + `MANO_RIGHT.pkl` | Run `assets/mano/download_mano.sh` from repo root |
 | Sharpa URDF | Robot hand description files (URDF + MJCF + STL meshes) | Bundled in `scripts/urdf/sharpa-urdf-usd-xml/` |
 
 > **Note on Cosmos-Reason2-2B**: GR00T N1.7 uses `nvidia/Cosmos-Reason2-2B` (a Qwen3-VL architecture model) as its vision-language backbone. The training code loads the tokenizer and image processor from this model at startup. It will be auto-downloaded from HuggingFace Hub on first run, or you can pre-download it and pass the local path via `--vlm-model-name`:
@@ -486,7 +486,7 @@ find output/ego_sharpa_merged/videos -type l -exec sh -c \
 
 ### smplx / MANO model not found
 
-Ensure `scripts/mano_models/` contains `MANO_LEFT.pkl` and `MANO_RIGHT.pkl`. These are from the [MANO project](https://mano.is.tue.mpg.de/) (requires registration).
+Ensure `scripts/mano_models/` contains `MANO_LEFT.pkl` and `MANO_RIGHT.pkl`, or run `assets/mano/download_mano.sh` from the repo root to set up symlinks. These models are from the [MANO project](https://mano.is.tue.mpg.de/) (requires registration).
 
 ### Sharpa URDF not found
 

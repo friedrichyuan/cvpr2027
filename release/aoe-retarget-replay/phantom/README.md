@@ -201,7 +201,7 @@ phantom/
 │   └── visualize.py             # CLI: 可视化
 ├── assets/
 │   ├── robots/                   # MJCF + URDF + mesh (~32MB)
-│   └── mano_models/             # MANO_LEFT.pkl, MANO_RIGHT.pkl (~7MB)
+│   └── mano_models/             # Symlink to shared MANO models (see assets/mano/download_mano.sh)
 ├── configs/retarget/             # dex-retargeting YAML
 └── pyproject.toml
 ```

@@ -94,7 +94,12 @@ def _generate_sidecar_from_hands(hands_path: Path, sidecar_path: Path) -> None:
     """
     import torch
 
-    from phantom.constants import MANO_MODELS_DIR
+    from phantom.constants import MANO_MODELS_DIR, SHARED_MANO_DIR
+
+    # Use shared MANO models if local directory is empty
+    _mano_dir = MANO_MODELS_DIR
+    if not (_mano_dir / "MANO_RIGHT.pkl").exists() and (SHARED_MANO_DIR / "MANO_RIGHT.pkl").exists():
+        _mano_dir = SHARED_MANO_DIR
 
     hands = np.load(hands_path)
     T = hands["pred_hand_pose"].shape[1]
@@ -115,7 +120,7 @@ def _generate_sidecar_from_hands(hands_path: Path, sidecar_path: Path) -> None:
             trans_w = hands["pred_trans"][side_idx]   # (T, 3)
             kpts_world, wpose_world = _run_mano_fk(
                 side, rot_w, trans_w, hand_pose, betas, valid,
-                MANO_MODELS_DIR,
+                _mano_dir,
             )
             arrays[f"{side}_keypoints_world"] = kpts_world.astype(np.float32)
             arrays[f"{side}_wrist_pose_world"] = wpose_world.astype(np.float32)
@@ -145,7 +150,7 @@ def _generate_sidecar_from_hands(hands_path: Path, sidecar_path: Path) -> None:
             trans_c = hands["pred_trans_cam"][side_idx]
             kpts_cam, wpose_cam = _run_mano_fk(
                 side, rot_c, trans_c, hand_pose, betas, valid,
-                MANO_MODELS_DIR,
+                _mano_dir,
             )
             arrays[f"{side}_keypoints_cam"] = kpts_cam.astype(np.float32)
             arrays[f"{side}_wrist_pose_cam"] = wpose_cam.astype(np.float32)

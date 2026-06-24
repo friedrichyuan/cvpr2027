@@ -24,7 +24,7 @@ AoE 原始数据                          训练好的模型
 | AoE 数据集 | `poc_deliver/` 目录，包含所有 episode 原始数据 | 内部: 参见 PROJECT.md |
 | GR00T-N1.7-3B | 基础模型权重 | 下载到 `/path/to/GR00T-N1.7-3B` |
 | Cosmos-Reason2-2B | VLM 骨干网络 (Qwen3-VL)；提供 tokenizer 和图像处理器 | `huggingface-cli download nvidia/Cosmos-Reason2-2B`，或通过 `--vlm-model-name` 指定本地路径 |
-| MANO 模型 | `MANO_LEFT.pkl` + `MANO_RIGHT.pkl` | 放入 `scripts/mano_models/` |
+| MANO 模型 | `MANO_LEFT.pkl` + `MANO_RIGHT.pkl` | 运行 `assets/mano/download_mano.sh` |
 | Sharpa URDF | 机器人手描述文件（URDF + MJCF + STL 网格） | 已包含在 `scripts/urdf/sharpa-urdf-usd-xml/` |
 
 > **关于 Cosmos-Reason2-2B**: GR00T N1.7 使用 `nvidia/Cosmos-Reason2-2B`（Qwen3-VL 架构）作为视觉语言骨干网络。训练代码启动时会加载该模型的 tokenizer 和图像处理器。首次运行将从 HuggingFace Hub 自动下载，也可预下载后通过 `--vlm-model-name` 指定本地路径：
@@ -482,7 +482,7 @@ find output/ego_sharpa_merged/videos -type l -exec sh -c \
 
 ### smplx / MANO 模型未找到
 
-确保 `scripts/mano_models/` 包含 `MANO_LEFT.pkl` 和 `MANO_RIGHT.pkl`。这些来自 [MANO 项目](https://mano.is.tue.mpg.de/)（需要注册）。
+确保 `scripts/mano_models/` 包含 `MANO_LEFT.pkl` 和 `MANO_RIGHT.pkl`，或从仓库根目录运行 `assets/mano/download_mano.sh` 设置符号链接。这些模型来自 [MANO 项目](https://mano.is.tue.mpg.de/)（需要注册）。
 
 ### Sharpa URDF 找不到
 
