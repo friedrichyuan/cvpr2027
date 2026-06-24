@@ -17,8 +17,8 @@ Open-AoE/
 ├── LEGAL.md                 ← 第三方依赖许可证声明
 ├── assets/                  ← 公共资源
 │   └── mano/                ← MANO 模型下载脚本
-├── open-aoe-2000h/          ← 数据集文档与使用指南
-├── aoe-visualization/       ← 数据可视化工具
+├── open-aoe-2000h/          ← 数据集文档 / Dataset
+├── aoe-visualization/       ← 数据可视化 / Visualization
 ├── aoe-retarget-replay/     ← Human-to-Robot 重映射 / 人机重映射
 │   └── phantom/             ← [Phantom](aoe-retarget-replay/phantom/) (G1 + Dex3/Inspire)
 └── aoe-training-ready/      ← 模型训练格式转换 / Training-Ready
@@ -32,16 +32,15 @@ Open-AoE/
 | 交付物 | 形态 | 价值锚点 | 状态 |
 |--------|------|---------|------|
 | **Open-AoE-2000H** | 2000H 视频 + 原子动作描述(双语) + MANO 标注 + 相机轨迹 | 1000H 是加入基模 pretrain 的入门门槛 | 🟡 数据筛选中 |
-| **AoE-Visualization** | 数据浏览器与渲染工具 | 方便使用者进行数据洞察、过滤、对比 | ✅ 已发布 |
+| **AoE-Visualization** | 数据可视化与渲染 / Visualization | 方便使用者进行数据洞察、过滤、对比 | ✅ 已发布 |
 | **AoE-Retarget-Replay** | 人机动作重映射 + 真机回放 | 对有真机的团队，直接 replay 到 G1 等机器人 | ✅ 已发布（[Phantom](aoe-retarget-replay/phantom/)，规划 [AGILE]() / [SPIDER]()） |
 | **AoE-Training-Ready** | 模型训练格式转换 + 多模型 recipe | 打通主流 VLA 模型训练 | ✅ 已发布（[VITRA](aoe-training-ready/vitra/)、[GR00T N1.7](aoe-training-ready/gr00t_n1d7/)、[H-RDT](aoe-training-ready/H-RDT/)） |
 
 ## 核心差异化
 
-- **成本**: <$20/人（vs 竞品 $300–$3,500）
+- **成本**: 仅需一台消费级手机即可采集数据，单人硬件准备成本 <$20（vs 竞品 $300–$3,500）
 - **工具链**: 唯一同时提供 Visualization + Retarget-Replay + Training-Ready 的开源数据集
 - **可参与性**: 任何人用自己的手机即可贡献数据
-- **双语标注**: 中英文原子动作描述
 
 ## 前置准备
 
@@ -57,13 +56,13 @@ bash assets/mano/download_mano.sh ~/Downloads/MANO_RIGHT.pkl ~/Downloads/MANO_LE
 
 ## 快速开始
 
-### 数据访问
+### 数据访问 / Dataset
 
 数据集托管在 HuggingFace：
 
 > 🔗 [数据集链接]（待发布）
 
-### 可视化
+### 可视化 / Visualization
 
 ```bash
 cd aoe-visualization
