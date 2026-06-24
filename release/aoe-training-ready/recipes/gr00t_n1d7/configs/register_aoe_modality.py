@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """
 Modality config registrar for AoE ego-hand embodiments (sharpa / gripper).
 

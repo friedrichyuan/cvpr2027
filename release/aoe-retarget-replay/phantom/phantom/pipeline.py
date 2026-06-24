@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """Phantom pipeline: AoE data → robot action sequences.
 
 Orchestrates: load → shoulder synthesis → coordinate transform →

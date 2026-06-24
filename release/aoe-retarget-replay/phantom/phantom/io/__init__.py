@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """LeRobot v2.1 dataset writer."""
 
 from __future__ import annotations

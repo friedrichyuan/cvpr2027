@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
 # smoke_e2e.sh — One-click AoE → GR00T N1.7 end-to-end pipeline
 #
 # Covers: data conversion → merge → validate → visualize → pretrain

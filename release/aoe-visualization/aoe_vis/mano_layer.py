@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """Self-contained, pure-NumPy MANO forward kinematics.
 
 This module re-renders the MANO hand model from the pose/shape parameters stored

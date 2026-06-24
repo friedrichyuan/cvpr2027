@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """MuJoCo visualization for retargeted G1 trajectories.
 
 Streaming MP4 writer avoids holding all frames in memory at once,

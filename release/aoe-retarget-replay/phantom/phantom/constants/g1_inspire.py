@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """Inspire-specific constants: 26-DoF action layout [L_arm(7), R_arm(7), L_hand(6), R_hand(6)]."""
 
 from phantom.constants import (

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """Dex3 hand retargeting (3 fingertips → 7 actuated joint angles)."""
 
 from __future__ import annotations

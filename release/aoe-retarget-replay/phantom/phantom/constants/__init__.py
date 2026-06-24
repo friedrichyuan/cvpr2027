@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """Hand-agnostic constants for the AoE → G1 retargeting pipeline.
 
 Single source of truth for coordinate transforms, scaling parameters, IK

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """
 Retarget MANO 21 keypoints → Sharpa Wave 22-DoF joint angles.
 

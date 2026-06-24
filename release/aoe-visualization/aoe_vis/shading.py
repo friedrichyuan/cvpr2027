@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """Faithful reproduction of the reference renderer's lighting/material model.
 
 The reference high-quality hand visualization uses an OpenGL renderer whose

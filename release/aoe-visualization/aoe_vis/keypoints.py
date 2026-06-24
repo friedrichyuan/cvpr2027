@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """MANO -> 21 keypoints conversion, projection and on-frame drawing.
 
 This module follows the reference keypoint convention so the keypoint overlay

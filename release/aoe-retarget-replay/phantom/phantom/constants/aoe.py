@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """AOE-specific constants.
 
 Coordinate-axis conventions for the OpenCV camera frame, the cam-local

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """
 Convert AoE Egocentric dataset (poc_deliver) → LeRobot V2 format for GR00T N1.7.
 

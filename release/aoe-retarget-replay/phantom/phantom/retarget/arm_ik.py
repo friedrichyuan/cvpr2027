@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """G1 7-DOF arm IK solver using mink (MuJoCo-based IK)."""
 
 import logging

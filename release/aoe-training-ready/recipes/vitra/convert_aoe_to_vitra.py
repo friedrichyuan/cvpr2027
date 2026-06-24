@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """Convert AoE ego-centric datasets to VITRA Human-VLA episode_info format.
 
 Source data layout (AoE standard):

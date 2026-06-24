@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """High-quality offscreen OpenGL rendering of the MANO hand mesh.
 
 The reference high-quality visualization path (the non-OpenCV branch of the AoE

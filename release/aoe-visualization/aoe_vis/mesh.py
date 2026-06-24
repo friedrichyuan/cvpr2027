@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """Lightweight shaded rendering of the MANO triangle mesh.
 
 Both the camera-frame video overlay and the world-frame 3D panel need to draw

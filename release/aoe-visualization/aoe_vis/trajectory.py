@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """Wrist trajectory trails and world-frame hand rendering.
 
 Provides two pieces used by the end-to-end visualizer:

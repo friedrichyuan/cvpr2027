@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """
 Batch convert hands.npz (MANO params) → hands_keypoints.npz (21 3D keypoints).
 

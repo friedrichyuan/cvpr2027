@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """AOE cam-local → G1 base coordinate transform.
 
 Converts episode wrist SE(3) poses from OpenCV camera-local frame

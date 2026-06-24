@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """Edge-fusion compositing for the M3 G1 overlay.
 
 M2 pastes the MuJoCo-rendered G1 onto the E2FGVI-inpainted background with a

@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
 # Launch GR00T N1.7 pre-training on AoE egocentric human hand data.
 #
 # This corresponds to EgoScale Stage I: large-scale human pretraining with

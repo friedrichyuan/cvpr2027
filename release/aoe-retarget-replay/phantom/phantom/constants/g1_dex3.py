@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """Dex3-specific constants: 28-DoF action layout [L_arm(7), R_arm(7), L_hand(7), R_hand(7)]."""
 
 from phantom.constants import (

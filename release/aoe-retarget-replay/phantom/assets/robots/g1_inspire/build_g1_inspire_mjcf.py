@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 #!/usr/bin/env python3
 """Build a G1 + Inspire-hand MJCF by surgery on the existing Dex3 MJCF.
 
