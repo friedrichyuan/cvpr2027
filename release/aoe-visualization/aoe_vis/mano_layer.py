@@ -94,9 +94,22 @@ class ManoLayer:
         fname = "MANO_RIGHT.npz" if is_rhand else "MANO_LEFT.npz"
         path = os.path.join(model_dir, fname)
         if not os.path.exists(path):
-            raise FileNotFoundError(
-                f"MANO model not found: {path}. The release must ship vendored "
-                f"MANO_*.npz under assets/mano/.")
+            # Try to auto-convert from .pkl in shared assets/mano/
+            _pkl_fname = "MANO_RIGHT.pkl" if is_rhand else "MANO_LEFT.pkl"
+            _pkl_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))), "assets", "mano", _pkl_fname)
+            if os.path.exists(_pkl_path):
+                import sys
+                _convert_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "convert_mano_pkl_to_npz.py")
+                if os.path.exists(_convert_script):
+                    import subprocess
+                    subprocess.run([sys.executable, _convert_script, _pkl_path, path], check=True)
+            if not os.path.exists(path):
+                raise FileNotFoundError(
+                    f"MANO model not found: {path}. Run assets/mano/download_mano.sh "
+                    f"from the repo root to set up MANO models, then run "
+                    f"release/aoe-visualization/scripts/convert_mano_pkl_to_npz.py "
+                    f"to convert them to .npz format.")
         m = np.load(path)
         self.faces = m["f"].astype(np.int64)
         self.v_template = m["v_template"].astype(np.float64)          # (778,3)

@@ -70,5 +70,14 @@ if [ -d "$(dirname "$PHANTOM_DIR")" ]; then
     echo "✓ Symlinks created: $PHANTOM_DIR/"
 fi
 
+# ── Visualization (converts .pkl → .npz) ─────────────────────────────────────
+VIS_DIR="$SHARED_DIR/../../release/aoe-visualization/assets/mano"
+VIS_SCRIPT="$SHARED_DIR/../../release/aoe-visualization/scripts/convert_mano_pkl_to_npz.py"
+if [ -d "$VIS_DIR" ] && [ -f "$VIS_SCRIPT" ]; then
+    python3 "$VIS_SCRIPT" "$SHARED_DIR/MANO_RIGHT.pkl" "$VIS_DIR/MANO_RIGHT.npz"
+    python3 "$VIS_SCRIPT" "$SHARED_DIR/MANO_LEFT.pkl"  "$VIS_DIR/MANO_LEFT.npz"
+    echo "✓ MANO .npz files generated for visualization: $VIS_DIR/"
+fi
+
 echo ""
 echo "Done. You may now delete the original downloaded files if you wish."

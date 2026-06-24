@@ -67,7 +67,9 @@ All MANO dependencies load **only from inside this folder**:
 
 - `assets/mano/MANO_RIGHT.npz`, `assets/mano/MANO_LEFT.npz` — the MANO model
   tensors (`v_template`, `shapedirs`, `posedirs`, `J_regressor`, `weights`,
-  `kintree_table`, faces) as **plain NumPy** arrays.
+  `kintree_table`, faces) as **plain NumPy** arrays. **Not bundled** — generate
+  from .pkl files via `scripts/convert_mano_pkl_to_npz.py`. Run
+  `assets/mano/download_mano.sh` from the repo root first.
 - `aoe_vis/mano_layer.py` — a pure-NumPy MANO LBS forward pass (no deep-learning
   framework or other heavy dependencies required at runtime).
 
