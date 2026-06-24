@@ -1,38 +1,34 @@
-# AoE-Training-Ready
+## AoE Training-Ready
 
-Open-AoE 数据到主流模型训练的格式转换工具和 Training Recipe。
+Zero-setup recipes for training state-of-the-art vision-language-action (VLA) models on [AoE](https://github.com/AoE-Ego) ego-centric data.
 
-## 架构
+### Architecture
+
+AoE Training-Ready provides **per-model conversion recipes** that respect each model's native training data format, rather than forcing all data through a single intermediate representation. The goal is **train ready** — users can go from raw AoE data to a running training job with minimal effort.
 
 ```
-AoE NPZ → retarget_npz_to_lerobot.py → LeRobot v2.1 格式
-                                            │
-                        ┌───────────────────┼───────────────────┐
-                        ▼                   ▼                   ▼
-                   fastWAM Recipe     GR00T Recipe        π₀.₅ Recipe
-                   (已验证 ✅)       (已验证基础 🟡)     (待打通 🔴)
+AoE Data ──→ recipes/vitra/     ──→ VITRA episodic format ──→ VITRA pretraining
+         └──→ (future recipes)  ──→ ...                   ──→ ...
 ```
 
-## 已支持模型
+### Available Recipes
 
-| 模型 | Stars | 状态 | 验证结果 |
-|------|-------|------|---------|
-| fastWAM | — | ✅ 已验证 | multihead, Step 100, Loss 0.523 |
-| GR00T N1.5 | 7,280⭐ | 🟡 有验证基础 | Close Laptop SR 45%→95% (via FLARE) |
-| π₀.₅ (OpenPI) | 12,220⭐ | 🔴 待打通 | — |
-| RDT-1B | 1,717⭐ | 🔴 待打通 | — |
+| Model | Recipe | Status | Description |
+|-------|--------|--------|-------------|
+| [VITRA](https://github.com/microsoft/VITRA) | [`recipes/vitra/`](recipes/vitra/) | ✅ Verified | Ego-centric hand manipulation pretraining via MANO FK conversion |
 
-## 数据格式中枢
+### Getting Started
 
-以 **LeRobot v2.1** (24,781⭐) 作为数据格式标准层，所有模型适配从 LeRobot 格式出发。
+Each recipe is self-contained under `recipes/<model_name>/` with its own README, conversion scripts, and configuration templates. Navigate to the recipe directory for model-specific instructions.
 
-## 核心文件
+### Contributing a New Recipe
 
-- `retarget_npz_to_lerobot.py` — AoE NPZ → LeRobot v2.1 (完成度 60%)
-- `recipes/fastwam/` — fastWAM 训练配置
-- `recipes/groot/` — GR00T N1.7 训练配置 (待完善)
-- `recipes/openpi/` — π₀.₅ 训练配置 (待开发)
+To add support for a new VLA model:
 
-## 当前状态
-
-fastWAM 已验证，格式转换器 60% 完成，详见 [PROJECT.md](../../PROJECT.md) WP4。
+1. Create `recipes/<model_name>/` with at minimum:
+   - A conversion script (`convert_aoe_to_<model>.py`)
+   - A verification script
+   - A training config template
+   - A `README.md` with Quick Start instructions
+2. Verify end-to-end: convert → train → confirm loss convergence
+3. Submit a PR to this repository

@@ -1,0 +1,11 @@
+# Dependencies for convert_aoe_to_vitra.py and verify_conversion.py
+numpy
+torch
+smplx
+scipy
+opencv-python
+tqdm
+chumpy
+
+# Optional: decord (faster video decoding, falls back to OpenCV if unavailable)
+# decord
