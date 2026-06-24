@@ -19,11 +19,12 @@ Open-AoE/
 │   └── mano/                ← MANO 模型下载脚本
 ├── open-aoe-2000h/          ← 数据集文档与使用指南
 ├── aoe-visualization/       ← 数据可视化工具
-├── aoe-retarget-replay/     ← Human-to-Robot 重映射工具
-│   └── phantom/             ← Phantom 重映射方法 (G1 + Dex3/Inspire)
-└── aoe-training-ready/      ← 模型训练格式转换工具
-    ├── vitra/               ← VITRA 训练配方
-    └── gr00t_n1d7/          ← GR00T N1.7 训练配方
+├── aoe-retarget-replay/     ← Human-to-Robot 重映射 / 人机重映射
+│   └── phantom/             ← [Phantom](aoe-retarget-replay/phantom/) (G1 + Dex3/Inspire)
+└── aoe-training-ready/      ← 模型训练格式转换 / Training-Ready
+    ├── vitra/               ← [VITRA](aoe-training-ready/vitra/)
+    ├── gr00t_n1d7/          ← [GR00T N1.7](aoe-training-ready/gr00t_n1d7/)
+    └── H-RDT/               ← [H-RDT](aoe-training-ready/H-RDT/)
 ```
 
 ## 开源交付物
@@ -32,8 +33,8 @@ Open-AoE/
 |--------|------|---------|------|
 | **Open-AoE-2000H** | 2000H 视频 + 原子动作描述(双语) + MANO 标注 + 相机轨迹 | 1000H 是加入基模 pretrain 的入门门槛 | 🟡 数据筛选中 |
 | **AoE-Visualization** | 数据浏览器与渲染工具 | 方便使用者进行数据洞察、过滤、对比 | ✅ 已发布 |
-| **AoE-Retarget-Replay** | 人机动作重映射 + 真机回放 | 对有真机的团队，直接 replay 到 G1 等机器人 | ✅ 已发布 (Phantom) |
-| **AoE-Training-Ready** | LeRobot 格式转换器 + GR00T / VITRA training recipe | 打通主流 VLA 模型训练 | ✅ 已发布 |
+| **AoE-Retarget-Replay** | 人机动作重映射 + 真机回放 | 对有真机的团队，直接 replay 到 G1 等机器人 | ✅ 已发布（[Phantom](aoe-retarget-replay/phantom/)，规划 [AGILE]() / [SPIDER]()） |
+| **AoE-Training-Ready** | 模型训练格式转换 + 多模型 recipe | 打通主流 VLA 模型训练 | ✅ 已发布（[VITRA](aoe-training-ready/vitra/)、[GR00T N1.7](aoe-training-ready/gr00t_n1d7/)、[H-RDT](aoe-training-ready/H-RDT/)） |
 
 ## 核心差异化
 
@@ -72,21 +73,25 @@ python visualize.py --data <path_to_aoe_data>
 
 详见 [aoe-visualization/README.md](aoe-visualization/README.md)
 
-### 模型训练
+### 模型训练 / Training-Ready
 
 ```bash
+# VITRA 训练配方
+cd aoe-training-ready/vitra
+# 详见 README.md
+
 # GR00T N1.7 训练配方
 cd aoe-training-ready/gr00t_n1d7
 # 详见 README.md
 
-# VITRA 训练配方
-cd aoe-training-ready/vitra
+# H-RDT 训练配方
+cd aoe-training-ready/H-RDT
 # 详见 README.md
 ```
 
 详见 [aoe-training-ready/README.md](aoe-training-ready/README.md)
 
-### 人机重映射
+### 人机重映射 / Retarget-Replay
 
 ```bash
 # Phantom 重映射方法 (G1 + Dex3/Inspire)
