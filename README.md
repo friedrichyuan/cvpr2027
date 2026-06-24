@@ -29,12 +29,12 @@ Open-AoE/
 
 ## 开源交付物
 
-| 交付物 | 形态 | 价值锚点 | 状态 |
-|--------|------|---------|------|
-| **Open-AoE-2000H** | 2000H 视频 + 原子动作描述(双语) + MANO 标注 + 相机轨迹 | 1000H 是加入基模 pretrain 的入门门槛 | 🟡 数据筛选中 |
-| **AoE-Visualization** | 数据可视化与渲染 / Visualization | 方便使用者进行数据洞察、过滤、对比 | ✅ 已发布 |
-| **AoE-Retarget-Replay** | 人机动作重映射 + 真机回放 | 对有真机的团队，直接 replay 到 G1 等机器人 | ✅ 已发布（[Phantom](aoe-retarget-replay/phantom/)，规划 [AGILE]() / [SPIDER]()） |
-| **AoE-Training-Ready** | 模型训练格式转换 + 多模型 recipe | 打通主流 VLA 模型训练 | ✅ 已发布（[VITRA](aoe-training-ready/vitra/)、[GR00T N1.7](aoe-training-ready/gr00t_n1d7/)、[H-RDT](aoe-training-ready/H-RDT/)） |
+| 交付物 | 说明 | 状态 |
+|--------|------|------|
+| **Open-AoE-2000H** | 2000 小时 ego-centric 操作视频数据集，包含 MANO 手部重建、相机轨迹、中英双语原子动作描述，通过 HuggingFace 分发 | 🟡 数据筛选中 |
+| **AoE-Visualization** | 数据可视化与渲染工具，将 MANO 手部重建结果叠加到去畸变视频上，同时展示动作标注信息面板和 3D 世界帧，为每个样本生成端到端复核视频 | ✅ 已发布 |
+| **AoE-Retarget-Replay** | 人机动作重映射工具集，将人类手部动作转换为机器人可执行的关节轨迹，支持 MuJoCo 仿真验证和真机回放 | ✅ 已发布（[Phantom](aoe-retarget-replay/phantom/)，规划 [AGILE]() / [SPIDER]()） |
+| **AoE-Training-Ready** | 模型训练格式转换工具，提供多模型训练配方，将 AoE 原始数据转换为各 VLA 模型的原生训练格式，实现从数据到训练的一键启动 | ✅ 已发布（[VITRA](aoe-training-ready/vitra/)、[GR00T N1.7](aoe-training-ready/gr00t_n1d7/)、[H-RDT](aoe-training-ready/H-RDT/)） |
 
 ## 核心差异化
 
