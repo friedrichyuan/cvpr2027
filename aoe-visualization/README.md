@@ -10,6 +10,11 @@ The MANO→keypoint conversion and on-frame overlay style follow the reference
 keypoint convention, so the keypoint overlay matches the delivery convention
 exactly.
 
+<p align="center">
+  <img src="docs/demo.gif" width="100%" alt="AoE-Visualization 输出演示">
+</p>
+<p align="center"><em>预期输出示例：ego 视频 + MANO 手部渲染 + 动作标注 + 3D 世界帧 + 时间轴</em></p>
+
 ## What it renders
 
 A single combined frame contains:
