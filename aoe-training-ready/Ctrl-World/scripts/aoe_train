@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INTEGRATION_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+UPSTREAM_ROOT="${CTRLWORLD_UPSTREAM_ROOT:-$INTEGRATION_ROOT}"
+
+CONDA_BIN="${CONDA_BIN:-conda}"
+CONDA_ENV="${CONDA_ENV:-ctrl-world}"
+RAW_ROOT="${OPEN_AOE_RAW_ROOT:-/PATH_TO/general_datasets/Open-AoE/poc_deliver}"
+DATA_ROOT="${OPEN_AOE_CTRLWORLD_ROOT:-/PATH_TO/dataset/Open_AoE/open_aoe_mano_nextstate_224_110d_ctrlworld_full}"
+DATASET_NAME="${OPEN_AOE_CTRLWORLD_DATASET_NAME:-open_aoe_ctrlworld}"
+CKPT_ROOT="${CKPT_ROOT:-/PATH_TO/ckpts/HF_ckpts/Ctrl-World}"
+RESULTS_DIR="${AOE_RESULTS_DIR:-/PATH_TO/aoe_runs/wm_ctrl_world_open_aoe}"
+GPUS="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
+NUM_PROCESSES="${NUM_PROCESSES:-8}"
+
+export CUDA_VISIBLE_DEVICES="$GPUS"
+export PYTHONPATH="$UPSTREAM_ROOT:$INTEGRATION_ROOT:${PYTHONPATH:-}"
+export WANDB_MODE="${WANDB_MODE:-offline}"
+export USE_TF="${USE_TF:-0}"
+export TRANSFORMERS_NO_TF="${TRANSFORMERS_NO_TF:-1}"
+export USE_FLAX="${USE_FLAX:-0}"
+export TF_CPP_MIN_LOG_LEVEL="${TF_CPP_MIN_LOG_LEVEL:-3}"
+export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+
+run_or_print() {
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    printf '[dry-run]'
+    printf ' %q' "$@"
+    printf '\n'
+  else
+    "$@"
+  fi
+}
+
+convert_data() {
+  run_or_print "$CONDA_BIN" run --no-capture-output -n "$CONDA_ENV" python "$INTEGRATION_ROOT/scripts/convert_open_aoe_to_ctrlworld.py" \
+    --input-root "$RAW_ROOT" \
+    --output-root "$DATA_ROOT" \
+    --svd-model-path "${SVD_MODEL_PATH:-$CKPT_ROOT/stable-video-diffusion-img2vid}" \
+    --dataset-name "$DATASET_NAME" \
+    --max-frames-per-episode "${MAX_FRAMES_PER_EPISODE:-192}" \
+    --rgb-skip "${RGB_SKIP:-3}" \
+    --height "${HEIGHT:-192}" \
+    --width "${WIDTH:-320}" \
+    --batch-size "${CONVERT_BATCH_SIZE:-32}" \
+    --overwrite
+}
+
+train_model() {
+  cd "$UPSTREAM_ROOT"
+  local argv=(
+    "$CONDA_BIN" run --no-capture-output -n "$CONDA_ENV" accelerate launch
+    --num_processes "$NUM_PROCESSES" \
+    --num_machines 1 \
+    "$INTEGRATION_ROOT/scripts/train_open_aoe.py" \
+    --ctrl-world-root "$UPSTREAM_ROOT" \
+    --svd-model-path "${SVD_MODEL_PATH:-$CKPT_ROOT/stable-video-diffusion-img2vid}" \
+    --clip-model-path "${CLIP_MODEL_PATH:-$CKPT_ROOT/clip-vit-base-patch32}" \
+    --ckpt-path "${CTRLWORLD_CKPT_PATH:-$CKPT_ROOT/Ctrl-World/checkpoint-10000.pt}" \
+    --dataset-root-path "$DATA_ROOT" \
+    --dataset-meta-info-path "$DATA_ROOT/dataset_meta_info" \
+    --dataset-names "$DATASET_NAME" \
+    --dataset-format open_aoe_ctrlworld \
+    --action-dim 110 \
+    --down-sample "${DOWN_SAMPLE:-3}" \
+    --output-dir "$RESULTS_DIR/train" \
+    --max-train-steps "${STEPS:-1000000}" \
+    --checkpointing-steps "${CHECKPOINTING_STEPS:-0}" \
+    --validation-steps "${VALIDATION_STEPS:-1000000000}" \
+    --log-steps "${LOG_STEPS:-20}" \
+    --train-batch-size "${BATCH_SIZE:-1}" \
+    --num-workers "${NUM_WORKERS:-0}" \
+    --learning-rate "${LR:-1e-5}" \
+    --mixed-precision "${MIXED_PRECISION:-fp16}" \
+    --final-visualization-steps "${FINAL_VIS_STEPS:-20}" \
+    --tag "${TAG:-wm_ctrl_world_open_aoe}" \
+    --wandb-project-name "${WANDB_PROJECT_NAME:-aoe_ctrl_world}"
+  )
+  argv+=("$@")
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    run_or_print "${argv[@]}"
+  else
+    mkdir -p "$RESULTS_DIR/logs" "$RESULTS_DIR/train"
+    "${argv[@]}" 2>&1 | tee "$RESULTS_DIR/logs/train.log"
+  fi
+}
+
+plot_curves() {
+  run_or_print "$CONDA_BIN" run -n "$CONDA_ENV" python "$INTEGRATION_ROOT/scripts/plot_loss_curves.py" \
+    --input "$RESULTS_DIR/logs/train.log" \
+    --output-dir "$RESULTS_DIR/loss_curves" \
+    --name ctrl_world
+}
+
+cmd="${1:-train}"
+shift || true
+if [[ "$cmd" == "--dry-run" ]]; then
+  DRY_RUN=1
+  cmd="${1:-train}"
+  shift || true
+fi
+
+case "$cmd" in
+  convert) convert_data ;;
+  train) train_model "$@"; plot_curves ;;
+  curves) plot_curves ;;
+  *) echo "Usage: $0 [--dry-run] {convert|train|curves}" >&2; exit 2 ;;
+esac

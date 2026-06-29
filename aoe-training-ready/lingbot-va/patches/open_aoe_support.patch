@@ -1,0 +1,399 @@
+diff --git a/script/run_launch_va_server_sync.sh b/script/run_launch_va_server_sync.sh
+index 405e976..1ffecb4 100644
+--- a/script/run_launch_va_server_sync.sh
++++ b/script/run_launch_va_server_sync.sh
+@@ -28,7 +28,6 @@ export TOKENIZERS_PARALLELISM=false
+ PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" TORCHFT_LIGHTHOUSE=${torchft_lighthouse} \
+ python -m torch.distributed.run \
+     --nproc_per_node=${num_gpu} \
+-    --local-ranks-filter=${log_rank} \
+     --master_port ${master_port} \
+     --tee 3 \
+     -m wan_va.wan_va_server --config-name ${config_name} $overrides
+diff --git a/script/run_va_posttrain.sh b/script/run_va_posttrain.sh
+index 86bdb0a..57af16a 100644
+--- a/script/run_va_posttrain.sh
++++ b/script/run_va_posttrain.sh
+@@ -9,6 +9,8 @@ MASTER_PORT=${MASTER_PORT:-"29501"}
+ PORT=${PORT:-"1106"}
+ LOG_RANK=${LOG_RANK:-"0"}
+ TORCHFT_LIGHTHOUSE=${TORCHFT_LIGHTHOUSE:-"http://localhost:29510"}
++LINGBOT_TEE=${LINGBOT_TEE:-0}
++
+ CONFIG_NAME=${CONFIG_NAME:-"robotwin_train"} # robotwin_train, libero_train
+ 
+ overrides=""
+@@ -26,14 +28,16 @@ num_gpu=${NGPU}
+ master_port=${MASTER_PORT}
+ log_rank=${LOG_RANK}
+ torchft_lighthouse=${TORCHFT_LIGHTHOUSE}
++LINGBOT_TEE=${LINGBOT_TEE:-0}
+ config_name=${CONFIG_NAME}
+ 
+ ## cmd setting
+ export TOKENIZERS_PARALLELISM=false
+ PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" TORCHFT_LIGHTHOUSE=${torchft_lighthouse} \
++LINGBOT_TEE=${LINGBOT_TEE:-0}
++
+ python -m torch.distributed.run \
+     --nproc_per_node=${num_gpu} \
+-    --local-ranks-filter=${log_rank} \
+     --master_port ${master_port} \
+-    --tee 3 \
++    --tee ${LINGBOT_TEE} \
+     -m wan_va.train --config-name ${config_name} $overrides
+diff --git a/wan_va/configs/__init__.py b/wan_va/configs/__init__.py
+index fe3791d..18900ea 100644
+--- a/wan_va/configs/__init__.py
++++ b/wan_va/configs/__init__.py
+@@ -10,6 +10,7 @@ from .va_demo_i2va import va_demo_i2va_cfg
+ from .va_libero_cfg import va_libero_cfg
+ from .va_libero_train_cfg import va_libero_train_cfg
+ from .va_libero_i2va import va_libero_i2va_cfg
++from .va_open_aoe_train_cfg import va_open_aoe_i2va_cfg, va_open_aoe_train_cfg
+ 
+ VA_CONFIGS = {
+     'robotwin': va_robotwin_cfg,
+@@ -23,4 +24,6 @@ VA_CONFIGS = {
+     'libero': va_libero_cfg,
+     'libero_train': va_libero_train_cfg,
+     'libero_i2av': va_libero_i2va_cfg,
+-}
+\ No newline at end of file
++    'open_aoe_train': va_open_aoe_train_cfg,
++    'open_aoe_i2av': va_open_aoe_i2va_cfg,
++}
+diff --git a/wan_va/dataset/lerobot_latent_dataset.py b/wan_va/dataset/lerobot_latent_dataset.py
+index b286087..f11aee4 100644
+--- a/wan_va/dataset/lerobot_latent_dataset.py
++++ b/wan_va/dataset/lerobot_latent_dataset.py
+@@ -47,6 +47,8 @@ def construct_lerobot_multi_processor(config,
+     )
+     repo_list = recursive_find_file(config.dataset_path, 'info.json')
+     repo_list = [v.split('/meta/info.json')[0] for v in repo_list]
++    if num_init_worker <= 1:
++        return [construct_func(repo_id) for repo_id in repo_list]
+     with Pool(num_init_worker) as pool:
+         datasets_out_lst = pool.map(construct_func, repo_list)
+                 
+@@ -73,6 +75,7 @@ class MultiLatentLeRobotDataset(torch.utils.data.Dataset):
+         config,
+         num_init_worker=128,
+     ):
++        num_init_worker = int(os.environ.get("LINGBOT_NUM_INIT_WORKER", num_init_worker))
+         self._datasets = construct_lerobot_multi_processor(config, 
+                                                            num_init_worker, 
+                                                            )
+diff --git a/wan_va/modules/model.py b/wan_va/modules/model.py
+index 25b45e5..d7ee188 100644
+--- a/wan_va/modules/model.py
++++ b/wan_va/modules/model.py
+@@ -28,8 +28,11 @@ from functools import partial
+ 
+ try:
+     from flash_attn_interface import flash_attn_func
+-except:
+-    from flash_attn import flash_attn_func
++except Exception:
++    try:
++        from flash_attn import flash_attn_func
++    except Exception:
++        flash_attn_func = None
+ 
+ __all__ = ['WanTransformer3DModel']
+ 
+@@ -100,6 +103,7 @@ class FlexAttnFunc(nn.Module):
+         window_size,
+         patch_size,
+         device,
++        text_length=512,
+     ):
+         torch._inductor.config.realize_opcount_threshold = 100
+         B, _, L_F, L_H, L_W = latent_shape
+@@ -133,7 +137,7 @@ class FlexAttnFunc(nn.Module):
+             )
+         FlexAttnFunc.attention_mask = block_mask
+ 
+-        text_seq_ids = torch.arange(B)[:, None].expand(-1, 512).flatten()
++        text_seq_ids = torch.arange(B)[:, None].expand(-1, text_length).flatten()
+         mask_mod_cross = FlexAttnFunc._get_cross_mask_mod(seq_ids.long().to(device), text_seq_ids.long().to(device))
+         block_mask_cross = FlexAttnFunc.compiled_create_block_mask(
+                 mask_mod_cross, 1, 1, len(seq_ids), len(text_seq_ids), device=device, _compile=True
+@@ -302,6 +306,10 @@ class WanAttention(torch.nn.Module):
+         if attn_mode == 'torch':
+             self.attn_op = custom_sdpa
+         elif attn_mode == 'flashattn':
++            if flash_attn_func is None:
++                raise ImportError(
++                    "flash_attn is required when attn_mode='flashattn'"
++                )
+             self.attn_op = flash_attn_func
+         elif attn_mode == 'flex':
+             self.attn_op = FlexAttnFunc(cross_attention_dim_head is not None)
+@@ -768,7 +776,8 @@ class WanTransformer3DModel(ModelMixin, ConfigMixin):
+                                input_dict["chunk_size"],
+                                window_size=input_dict['window_size'],
+                                patch_size=self.patch_size,
+-                               device=hidden_states.device
++                               device=hidden_states.device,
++                               text_length=text_hidden_states.shape[1] // batch_size,
+                                )
+ 
+         for block in self.blocks:
+diff --git a/wan_va/train.py b/wan_va/train.py
+index ea3a7d5..2bcecc9 100644
+--- a/wan_va/train.py
++++ b/wan_va/train.py
+@@ -8,6 +8,7 @@ import wandb
+ import torch
+ import torch.distributed as dist
+ import torch.nn.functional as F
++import torch.nn as nn
+ from torch.utils.data import DataLoader, DistributedSampler
+ from tqdm import tqdm
+ from torch.distributed.checkpoint.state_dict import (
+@@ -47,6 +48,52 @@ from dataset import MultiLatentLeRobotDataset
+ import gc
+ 
+ 
++def aoe_debug(message: str) -> None:
++    if os.environ.get("LINGBOT_DEBUG") != "1":
++        return
++    path = Path(os.environ.get("LINGBOT_DEBUG_PATH", f"/tmp/lingbot_aoe_debug_{os.getpid()}.log"))
++    with path.open("a", encoding="utf-8") as f:
++        f.write(f"{message}\n")
++        f.flush()
++
++
++def resize_action_layers(transformer: nn.Module, action_dim: int) -> None:
++    embedder = getattr(transformer, "action_embedder", None)
++    if isinstance(embedder, nn.Linear) and embedder.in_features != action_dim:
++        new_embedder = nn.Linear(
++            action_dim,
++            embedder.out_features,
++            bias=embedder.bias is not None,
++            device=embedder.weight.device,
++            dtype=embedder.weight.dtype,
++        )
++        with torch.no_grad():
++            new_embedder.weight.zero_()
++            keep = min(embedder.in_features, action_dim)
++            new_embedder.weight[:, :keep].copy_(embedder.weight[:, :keep])
++            if embedder.bias is not None:
++                new_embedder.bias.copy_(embedder.bias)
++        transformer.action_embedder = new_embedder
++
++    proj_out = getattr(transformer, "action_proj_out", None)
++    if isinstance(proj_out, nn.Linear) and proj_out.out_features != action_dim:
++        new_proj_out = nn.Linear(
++            proj_out.in_features,
++            action_dim,
++            bias=proj_out.bias is not None,
++            device=proj_out.weight.device,
++            dtype=proj_out.weight.dtype,
++        )
++        with torch.no_grad():
++            new_proj_out.weight.zero_()
++            keep = min(proj_out.out_features, action_dim)
++            new_proj_out.weight[:keep].copy_(proj_out.weight[:keep])
++            if proj_out.bias is not None:
++                new_proj_out.bias.zero_()
++                new_proj_out.bias[:keep].copy_(proj_out.bias[:keep])
++        transformer.action_proj_out = new_proj_out
++
++
+ class Trainer:
+     def __init__(self, config):
+         if config.enable_wandb and config.rank == 0:
+@@ -67,12 +114,14 @@ class Trainer:
+         self.device = torch.device(f"cuda:{config.local_rank}")
+         self.dtype = config.param_dtype
+         self.patch_size = config.patch_size
++        aoe_debug("trainer_init_start")
+ 
+         # Load models
+         logger.info("Loading models...")
+ 
+         # Load and shard transformer with FSDP
+         logger.info("Loading transformer...")
++        aoe_debug("load_transformer_start")
+ 
+         if hasattr(config, 'resume_from') and config.resume_from:
+             transformer_path = os.path.join(config.resume_from, 'transformer')
+@@ -87,11 +136,16 @@ class Trainer:
+             torch_device='cpu',
+             attn_mode="flex"
+         )
++        resize_action_layers(self.transformer, int(config.action_dim))
++        if config.rank == 0:
++            logger.info(f"Resized action embed/proj layers to {config.action_dim} dims")
++        aoe_debug("load_transformer_done")
+ 
+         logger.info("Setting up activation checkpointing ...")
+         apply_ac(self.transformer)
+ 
+         logger.info("Setting up FSDP...")
++        aoe_debug("fsdp_start")
+         shard_fn = shard_model
+         self.transformer = _configure_model(
+             model=self.transformer,
+@@ -100,6 +154,7 @@ class Trainer:
+             device=self.device,
+             eval_mode=False,
+         )
++        aoe_debug("fsdp_done")
+         self.transformer.train()
+         self.transformer.requires_grad_(True)
+ 
+@@ -119,7 +174,12 @@ class Trainer:
+ 
+         # Setup dataloaders
+         logger.info("Setting up datasets...")
++        aoe_debug(
++            f"dataset_start init_worker={os.environ.get('LINGBOT_NUM_INIT_WORKER')} "
++            f"load_worker={config.load_worker} batch_size={config.batch_size}"
++        )
+         train_dataset = MultiLatentLeRobotDataset(config=config)
++        aoe_debug(f"dataset_done len={len(train_dataset)}")
+         train_sampler = DistributedSampler(
+             train_dataset,
+             num_replicas=config.world_size,
+@@ -134,6 +194,7 @@ class Trainer:
+             num_workers=config.load_worker,
+             sampler=train_sampler,
+         )
++        aoe_debug("dataloader_done")
+ 
+         self.train_scheduler_latent = FlowMatchScheduler(shift=self.config.snr_shift, sigma_min=0.0, extra_one_step=True)
+         self.train_scheduler_latent.set_timesteps(1000, training=True)
+@@ -151,16 +212,21 @@ class Trainer:
+     def _get_next_batch(self):
+         """Get next batch from iterator, reset if epoch is finished."""
+         if self.train_loader_iter is None:
++            aoe_debug("iter_create_start")
+             self.train_loader_iter = iter(self.train_loader)
++            aoe_debug("iter_create_done")
+         
+         try:
++            aoe_debug("next_batch_start")
+             batch = next(self.train_loader_iter)
++            aoe_debug("next_batch_done")
+         except StopIteration:
+             # Reset sampler and iterator when epoch finishes
+             if hasattr(self.train_loader.sampler, 'set_epoch'):
+                 self.train_loader.sampler.set_epoch(self.train_loader.sampler.epoch + 1)
+             self.train_loader_iter = iter(self.train_loader)
+             batch = next(self.train_loader_iter)
++            aoe_debug("next_batch_done_after_reset")
+         
+         return batch
+ 
+@@ -440,9 +506,12 @@ class Trainer:
+ 
+         while self.step < self.config.num_steps:
+             # Get next batch (handles epoch reset automatically)
++            aoe_debug(f"loop_step_start step={self.step}")
+             batch = self._get_next_batch()
+             
++            aoe_debug(f"train_step_start step={self.step}")
+             losses = self._train_step(batch, step_in_accumulation)
++            aoe_debug(f"train_step_done step={self.step}")
+             
+             # Accumulate losses for logging
+             accumulated_latent_losses.append(losses['latent_loss'])
+@@ -550,4 +619,4 @@ def main():
+ 
+ if __name__ == "__main__":
+     init_logger()
+-    main()
+\ No newline at end of file
++    main()
+diff --git a/wan_va/configs/va_open_aoe_train_cfg.py b/wan_va/configs/va_open_aoe_train_cfg.py
+new file mode 100644
+index 0000000..dea1ce3
+--- /dev/null
++++ b/wan_va/configs/va_open_aoe_train_cfg.py
+@@ -0,0 +1,83 @@
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++
++from easydict import EasyDict
++
++from .shared_config import va_shared_cfg
++
++
++def _norm_stat(dataset_path: str, action_dim: int) -> dict:
++    path = Path(dataset_path) / "meta" / "open_aoe_action_norm.json"
++    if path.exists():
++        with path.open("r", encoding="utf-8") as f:
++            return json.load(f)
++    return {"q01": [-1.0] * action_dim, "q99": [1.0] * action_dim}
++
++
++def _inverse_channels(used: list[int], action_dim: int) -> list[int]:
++    inverse = [len(used)] * action_dim
++    for out_idx, src_idx in enumerate(used):
++        inverse[src_idx] = out_idx
++    return inverse
++
++
++ACTION_DIM = int(os.environ.get("OPEN_AOE_ACTION_DIM", "110"))
++DATASET_PATH = os.environ.get(
++    "OPEN_AOE_WAM_ROOT",
++    "/PATH_TO/dataset/Open_AoE/open_aoe_mano_nextstate_224_110d_wam_v2",
++)
++MODEL_PATH = os.environ.get(
++    "LINGBOT_MODEL_PATH",
++    "/PATH_TO/ckpts/HF_ckpts/LingBot-VA/lingbot-va-base",
++)
++
++va_open_aoe_train_cfg = EasyDict(__name__="Config: VA Open-AoE train")
++va_open_aoe_train_cfg.update(va_shared_cfg)
++va_open_aoe_train_cfg.infer_mode = "server"
++va_open_aoe_train_cfg.wan22_pretrained_model_name_or_path = MODEL_PATH
++va_open_aoe_train_cfg.dataset_path = DATASET_PATH
++va_open_aoe_train_cfg.empty_emb_path = os.path.join(DATASET_PATH, "empty_emb.pt")
++va_open_aoe_train_cfg.enable_wandb = False
++va_open_aoe_train_cfg.load_worker = int(os.environ.get("LINGBOT_LOAD_WORKER", "4"))
++va_open_aoe_train_cfg.save_interval = int(os.environ.get("LINGBOT_SAVE_INTERVAL", os.environ.get("LINGBOT_STEPS", "50")))
++va_open_aoe_train_cfg.gc_interval = 10
++va_open_aoe_train_cfg.cfg_prob = 0.0
++va_open_aoe_train_cfg.learning_rate = float(os.environ.get("LINGBOT_LR", "1e-5"))
++va_open_aoe_train_cfg.beta1 = 0.9
++va_open_aoe_train_cfg.beta2 = 0.95
++va_open_aoe_train_cfg.weight_decay = 0.1
++va_open_aoe_train_cfg.warmup_steps = 10
++va_open_aoe_train_cfg.batch_size = int(os.environ.get("LINGBOT_BATCH", "1"))
++va_open_aoe_train_cfg.gradient_accumulation_steps = int(os.environ.get("LINGBOT_GRAD_ACCUM", "1"))
++va_open_aoe_train_cfg.num_steps = int(os.environ.get("LINGBOT_STEPS", "50"))
++va_open_aoe_train_cfg.attn_window = 30
++va_open_aoe_train_cfg.frame_chunk_size = 4
++va_open_aoe_train_cfg.env_type = "none"
++va_open_aoe_train_cfg.height = 256
++va_open_aoe_train_cfg.width = 256
++va_open_aoe_train_cfg.action_dim = ACTION_DIM
++va_open_aoe_train_cfg.action_per_frame = 4
++va_open_aoe_train_cfg.obs_cam_keys = ["observation.images.front"]
++va_open_aoe_train_cfg.guidance_scale = 5
++va_open_aoe_train_cfg.action_guidance_scale = 1
++va_open_aoe_train_cfg.num_inference_steps = 5
++va_open_aoe_train_cfg.video_exec_step = -1
++va_open_aoe_train_cfg.action_num_inference_steps = 10
++va_open_aoe_train_cfg.snr_shift = 5.0
++va_open_aoe_train_cfg.action_snr_shift = 1.0
++va_open_aoe_train_cfg.used_action_channel_ids = list(range(ACTION_DIM))
++va_open_aoe_train_cfg.inverse_used_action_channel_ids = _inverse_channels(
++    va_open_aoe_train_cfg.used_action_channel_ids, ACTION_DIM
++)
++va_open_aoe_train_cfg.action_norm_method = "quantiles"
++va_open_aoe_train_cfg.norm_stat = _norm_stat(DATASET_PATH, ACTION_DIM)
++
++va_open_aoe_i2va_cfg = EasyDict(__name__="Config: VA Open-AoE i2va")
++va_open_aoe_i2va_cfg.update(va_open_aoe_train_cfg)
++va_open_aoe_i2va_cfg.infer_mode = "i2va"
++va_open_aoe_i2va_cfg.input_img_path = os.environ.get("LINGBOT_INPUT_IMG_PATH", "")
++va_open_aoe_i2va_cfg.prompt = os.environ.get("LINGBOT_PROMPT", "egocentric hand manipulation")
++va_open_aoe_i2va_cfg.num_chunks_to_infer = int(os.environ.get("LINGBOT_NUM_CHUNKS", "2"))
