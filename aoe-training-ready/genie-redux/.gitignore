@@ -1,0 +1,15 @@
+# Local outputs / datasets / upstream checkout — never commit
+output/
+outputs/
+data/
+GenieRedux/
+upstream/
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.csv
+*.gif
+__pycache__/
+*.py[codz]
