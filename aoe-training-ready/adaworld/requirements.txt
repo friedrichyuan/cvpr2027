@@ -1,0 +1,4 @@
+# Open-AoE AdaWorld recipe — data-loading dependency only.
+# Training runs inside the upstream Little-Podi/AdaWorld environment (torch, the lam
+# package, etc.; their pins resolve from a py3.10 base — see README).
+numpy

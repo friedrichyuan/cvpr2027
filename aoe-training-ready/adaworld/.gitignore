@@ -1,0 +1,14 @@
+# Local outputs / datasets / upstream checkout — never commit
+output/
+outputs/
+data/
+AdaWorld/
+upstream/
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.csv
+__pycache__/
+*.py[codz]
