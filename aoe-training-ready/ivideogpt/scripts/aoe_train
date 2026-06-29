@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# Open-AoE iVideoGPT launcher: compute action stats, export action-conditioned npz,
+# train the action-conditioned world model in an upstream iVideoGPT checkout, and run
+# controllability / tokenizer eval. Paths are env-var driven (see README.md); the
+# placeholders below are not real locations.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INTEGRATION_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+UPSTREAM_ROOT="${IVIDEOGPT_UPSTREAM_ROOT:-$INTEGRATION_ROOT}"
+
+PYTHON_BIN="${IVIDEOGPT_PYTHON:-python}"
+RAW_ROOT="${OPEN_AOE_RAW_ROOT:-/PATH_TO/Open-AoE/poc_deliver}"
+NPZ_ROOT="${OPEN_AOE_NPZ_ROOT:-/PATH_TO/aoe_npz_ac}"
+DATASET_NAME="${DATASET_NAME:-aoe26}"
+DIM="${DIM:-26}"
+RESOLUTION="${RESOLUTION:-64}"
+STATS_PATH="${STATS_PATH:-$NPZ_ROOT/action_stats.json}"
+RESULTS_ROOT="${AOE_RESULTS_ROOT:-/PATH_TO/aoe_runs}"
+OUTPUT_DIR="${OUTPUT_DIR:-$RESULTS_ROOT/ivideogpt_${DATASET_NAME}}"
+STEPS="${STEPS:-60000}"
+NP="${NP:-4}"
+TOKENIZER_DIR="${TOKENIZER_DIR:-/PATH_TO/ft_tokenizer}"
+TRANSFORMER_DIR="${TRANSFORMER_DIR:-$OUTPUT_DIR/checkpoints/checkpoint_${STEPS}}"
+NPZ_GLOB="${NPZ_GLOB:-$NPZ_ROOT/$DATASET_NAME/*.npz}"
+
+export IVIDEOGPT_UPSTREAM_ROOT="$UPSTREAM_ROOT"
+export PYTHONPATH="$UPSTREAM_ROOT:$UPSTREAM_ROOT/inference:$SCRIPT_DIR:${PYTHONPATH:-}"
+
+run_or_print() {
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    printf '[dry-run]'
+    printf ' %q' "$@"
+    printf '\n'
+  else
+    "$@"
+  fi
+}
+
+compute_stats() {
+  run_or_print "$PYTHON_BIN" "$SCRIPT_DIR/aoe_to_ivideogpt_actcond.py" \
+    --data-root "$RAW_ROOT" \
+    --compute-stats \
+    --stats "$STATS_PATH"
+}
+
+convert_data() {
+  run_or_print "$PYTHON_BIN" "$SCRIPT_DIR/aoe_to_ivideogpt_actcond.py" \
+    --data-root "$RAW_ROOT" \
+    --stats "$STATS_PATH" \
+    --out-dir "$NPZ_ROOT" \
+    --dataset-name "$DATASET_NAME" \
+    --dim "$DIM" \
+    --resolution "$RESOLUTION"
+}
+
+convert_free() {
+  run_or_print "$PYTHON_BIN" "$SCRIPT_DIR/aoe_to_ivideogpt_npz.py" \
+    --data-root "$RAW_ROOT" \
+    --out-dir "$NPZ_ROOT" \
+    --dataset-name aoe \
+    --resolution "$RESOLUTION"
+}
+
+train_model() {
+  local argv=(
+    accelerate launch --num_processes "$NP" "$UPSTREAM_ROOT/train_gpt.py"
+    --oxe_data_mixes_type "$DATASET_NAME"
+    --action_conditioned
+    --action_dim "$DIM"
+    --special_token
+    --load_internal_llm
+    --max_train_steps "$STEPS"
+    --output_dir "$OUTPUT_DIR"
+  )
+  argv+=("$@")
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    run_or_print "${argv[@]}"
+  else
+    ( cd "$UPSTREAM_ROOT" && "${argv[@]}" )
+  fi
+}
+
+eval_ctrl() {
+  run_or_print "$PYTHON_BIN" "$SCRIPT_DIR/actcond_eval.py" \
+    --tokenizer "$TOKENIZER_DIR" \
+    --transformer "$TRANSFORMER_DIR" \
+    --npz_glob "$NPZ_GLOB" \
+    --action_dim "$DIM" \
+    --dataset_name "$DATASET_NAME"
+}
+
+tok_eval() {
+  run_or_print "$PYTHON_BIN" "$SCRIPT_DIR/tokenizer_recon_eval.py" \
+    --tokenizer "$TOKENIZER_DIR" \
+    --npz_glob "$NPZ_GLOB" \
+    --dataset_name "$DATASET_NAME"
+}
+
+cmd="${1:-train}"
+shift || true
+if [[ "$cmd" == "--dry-run" ]]; then
+  DRY_RUN=1
+  cmd="${1:-train}"
+  shift || true
+fi
+
+case "$cmd" in
+  stats) compute_stats ;;
+  convert) convert_data ;;
+  convert-free) convert_free ;;
+  train) train_model "$@" ;;
+  eval) eval_ctrl ;;
+  tok-eval) tok_eval ;;
+  *) echo "Usage: $0 [--dry-run] {stats|convert|convert-free|train|eval|tok-eval}" >&2; exit 2 ;;
+esac
