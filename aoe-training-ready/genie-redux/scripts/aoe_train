@@ -63,6 +63,7 @@ downsample() {
 }
 
 lam() {
+  [[ "${DRY_RUN:-0}" == "1" ]] || mkdir -p "$OUT_DIR"
   one_run "$SCRIPT_DIR/genie_redux_lam.py" --npz-dir "$NPZ_DIR" --max-clips "$MAX_CLIPS" \
     --batch "$LAM_BATCH" --epochs "$LAM_EPOCHS" --lr "$LR" --out "$OUT_DIR/lam_loss.csv" "$@"
 }

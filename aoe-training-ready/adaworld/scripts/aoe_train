@@ -32,6 +32,7 @@ run_or_print() {
 }
 
 train_model() {
+  [[ "${DRY_RUN:-0}" == "1" ]] || mkdir -p "$(dirname "$OUT_CSV")"
   local argv=(
     "$PYTHON_BIN" "$SCRIPT_DIR/adaworld_lam.py"
     --npz-dir "$NPZ_DIR"

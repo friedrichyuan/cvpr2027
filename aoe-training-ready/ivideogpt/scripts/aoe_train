@@ -38,6 +38,7 @@ run_or_print() {
 }
 
 compute_stats() {
+  [[ "${DRY_RUN:-0}" == "1" ]] || mkdir -p "$(dirname "$STATS_PATH")"
   run_or_print "$PYTHON_BIN" "$SCRIPT_DIR/aoe_to_ivideogpt_actcond.py" \
     --data-root "$RAW_ROOT" \
     --compute-stats \
