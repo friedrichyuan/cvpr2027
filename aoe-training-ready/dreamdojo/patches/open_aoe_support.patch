@@ -1,0 +1,13 @@
+diff --git a/cosmos_predict2/_src/imaginaire/utils/checkpoint_db.py b/cosmos_predict2/_src/imaginaire/utils/checkpoint_db.py
+index aeab281..052344c 100644
+--- a/cosmos_predict2/_src/imaginaire/utils/checkpoint_db.py
++++ b/cosmos_predict2/_src/imaginaire/utils/checkpoint_db.py
+@@ -257,7 +257,7 @@ _register_checkpoint(
+         if EXPERIMENTAL_CHECKPOINTS
+         else CheckpointFileHf(
+             repository="nvidia/Cosmos-Predict2.5-2B",
+-            revision="6787e176dce74a101d922174a95dba29fa5f0c55",
++            revision="main",
+             filename="tokenizer.pth",
+         ),
+     ),

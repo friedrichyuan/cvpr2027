@@ -1,0 +1,6 @@
+# Open-AoE DreamDojo recipe — converter dependencies only (CPU video transcode).
+# Zero-shot inference runs inside the upstream NVIDIA/DreamDojo environment (uv sync +
+# the extra infra noted in the README).
+numpy
+pillow
+imageio[ffmpeg]
