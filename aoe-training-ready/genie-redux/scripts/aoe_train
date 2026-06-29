@@ -2,7 +2,7 @@
 # Open-AoE GenieRedux launcher: train the LAM / full generative Genie (tokenizer +
 # LAM + dynamics) / guided-26D variant on AoE, inside an upstream GenieRedux checkout.
 # Trainers run via torch.distributed.run; the upstream `models` package resolves through
-# PYTHONPATH + GENIE_UPSTREAM_ROOT. Env-var driven (see README.md); placeholders below
+# PYTHONPATH + GENIE_UPSTREAM_ROOT. Env-var driven (see README_OPEN_AOE.md); placeholders below
 # are not real locations.
 set -euo pipefail
 

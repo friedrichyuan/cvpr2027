@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Open-AoE laom (LAOM) launcher: convert AoE npz to laom HDF5, then run LAOM
-# pretraining inside an upstream dunnolab/laom checkout. Env-var driven (see README.md);
+# pretraining inside an upstream dunnolab/laom checkout. Env-var driven (see README_OPEN_AOE.md);
 # the placeholders below are not real locations.
 set -euo pipefail
 

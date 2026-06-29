@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Open-AoE iVideoGPT launcher: compute action stats, export action-conditioned npz,
 # train the action-conditioned world model in an upstream iVideoGPT checkout, and run
-# controllability / tokenizer eval. Paths are env-var driven (see README.md); the
+# controllability / tokenizer eval. Paths are env-var driven (see README_OPEN_AOE.md); the
 # placeholders below are not real locations.
 set -euo pipefail
 

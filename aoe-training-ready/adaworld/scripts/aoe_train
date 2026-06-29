@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Open-AoE AdaWorld launcher: train the official LatentActionModel (LAM) on AoE
 # frame-pairs inside an upstream Little-Podi/AdaWorld checkout. Env-var driven (see
-# README.md); the placeholders below are not real locations.
+# README_OPEN_AOE.md); the placeholders below are not real locations.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
