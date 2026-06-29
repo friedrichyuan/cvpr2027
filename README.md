@@ -87,7 +87,7 @@ Open-AoE/
 |------|------|------|------|
 | [**Ctrl-World**](aoe-training-ready/Ctrl-World/) | 可控世界模型，从手部动作预测未来视频帧 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
 | [**LAOM**](aoe-training-ready/laom/) | 大规模动作观测模型 | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
-| [**DreamDojo**](aoe-training-ready/dreamdojo/) | 世界模型驱动的机器人技能学习（zero-shot 预览） | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+| [**DreamDojo**](aoe-training-ready/dreamdojo/) | 世界模型驱动的机器人技能学习 — **zero-shot preview only**（数据管道 + 推理已通，post-train 待 8×H100） | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
 | [**AdaWorld**](aoe-training-ready/adaworld/) | 自适应世界模型 | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
 
 ## 核心差异化
