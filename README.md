@@ -24,17 +24,65 @@ Open-AoE/
 └── aoe-training-ready/      ← 模型训练格式转换 / Training-Ready
     ├── vitra/               ← [VITRA](aoe-training-ready/vitra/)
     ├── gr00t_n1d7/          ← [GR00T N1.7](aoe-training-ready/gr00t_n1d7/)
-    └── H-RDT/               ← [H-RDT](aoe-training-ready/H-RDT/)
+    ├── H-RDT/               ← [H-RDT](aoe-training-ready/H-RDT/)
+    ├── dreamzero/           ← [DreamZero](aoe-training-ready/dreamzero/)
+    ├── lingbot-va/          ← [LingBot-VA](aoe-training-ready/lingbot-va/)
+    ├── Ctrl-World/          ← [Ctrl-World](aoe-training-ready/Ctrl-World/)
+    └── lerobot/             ← [LeRobot](aoe-training-ready/lerobot/) (ACT / DP / pi0.5)
 ```
 
-## 开源交付物
+## 集成计划
 
-| 交付物 | 说明 | 状态 |
-|--------|------|------|
-| **Open-AoE-2000H** | 2000 小时 ego-centric 操作视频数据集，包含 MANO 手部重建、相机轨迹、中英双语原子动作描述，通过 HuggingFace 分发 | 🟡 数据筛选中 |
-| **AoE-Visualization** | 数据可视化与渲染工具，将 MANO 手部重建结果叠加到去畸变视频上，同时展示动作标注信息面板和 3D 世界帧，为每个样本生成端到端复核视频 | ✅ 已发布 |
-| **AoE-Retarget-Replay** | 人机动作重映射工具集，将人类手部动作转换为机器人可执行的关节轨迹，支持 MuJoCo 仿真验证和真机回放 | ✅ 已发布（[Phantom](aoe-retarget-replay/phantom/)，规划 [AGILE]() / [SPIDER]()） |
-| **AoE-Training-Ready** | 模型训练格式转换工具，提供多模型训练配方，将 AoE 原始数据转换为各 VLA 模型的原生训练格式，实现从数据到训练的一键启动 | ✅ 已发布（[VITRA](aoe-training-ready/vitra/)、[GR00T N1.7](aoe-training-ready/gr00t_n1d7/)、[H-RDT](aoe-training-ready/H-RDT/)） |
+> 状态说明：✅ 已发布 &nbsp;|&nbsp; 🔵 规划中
+
+### 数据集
+
+| 交付物 | 说明 | 状态 | 贡献 |
+|--------|------|------|------|
+| **Open-AoE-2000H** | 2000 小时 ego-centric 操作视频数据集，包含 MANO 手部重建、相机轨迹、中英双语原子动作描述，通过 HuggingFace 分发 | 🔵 规划中 | — |
+
+### 可视化
+
+| 方法 | 说明 | 状态 | 贡献 |
+|------|------|------|------|
+| [**AoE-Visualization**](aoe-visualization/) | 将 MANO 手部重建结果叠加到去畸变视频上，同时展示动作标注信息面板和 3D 世界帧，为每个样本生成端到端复核视频 | ✅ 已发布 | [@huaijin2787](https://github.com/huaijin2787) |
+
+### 人机重映射
+
+| 方法 | 说明 | 状态 | 贡献 |
+|------|------|------|------|
+| [**Phantom**](aoe-retarget-replay/phantom/) | 通用人机动作重映射框架 (G1 + Dex3/Inspire)，支持 MuJoCo 仿真验证和真机回放 | ✅ 已发布 | [@yfan-yang](https://github.com/yfan-yang) [@woxue](https://github.com/woxue) |
+| **SPIDER** | Object 6-DoF Trajectory 估计管线 | 🔵 规划中 | [@jiadong5](https://github.com/jiadong5) |
+| **EgoInfinity** | Object 6-DoF Trajectory 估计管线 + 小规模数据重定向 | 🔵 规划中 | [@jiadong5](https://github.com/jiadong5) |
+| **Do as I do** | 动作重映射方法复现 | 🔵 规划中 | [@jiadong5](https://github.com/jiadong5) |
+| **银河通用真机** | Retarget 到银河通用真机 | 🔵 规划中 | [@liuyou1103](https://github.com/liuyou1103) |
+
+### 模型训练
+
+#### VLA（Vision-Language-Action）
+
+| 方法 | 说明 | 状态 | 贡献 |
+|------|------|------|------|
+| [**VITRA**](aoe-training-ready/vitra/) | 视觉轨迹推理与动作预测 | ✅ 已发布 | [@woxue](https://github.com/woxue) |
+| [**GR00T N1.7**](aoe-training-ready/gr00t_n1d7/) | NVIDIA 通用机器人基础模型 (sharpa + gripper 模式) | ✅ 已发布 | [@reallm](https://github.com/reallm) |
+| [**H-RDT**](aoe-training-ready/H-RDT/) | 双手操作扩散策略 (48D action) | ✅ 已发布 | [@zhaowenZhou](https://github.com/zhaowenZhou) |
+| [**ACT**](aoe-training-ready/lerobot/) | Action Chunking Transformer，通过 LeRobot 集成 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
+| [**DP**](aoe-training-ready/lerobot/) | Diffusion Policy，通过 LeRobot 集成 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
+| [**pi0.5**](aoe-training-ready/lerobot/) | π0.5 物理智能模型，通过 LeRobot 集成 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
+| [**DreamZero**](aoe-training-ready/dreamzero/) | WAM/VAM 视频动作模型 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
+| [**LingBot-VA**](aoe-training-ready/lingbot-va/) | 灵巧手视觉动作模型 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
+| **iVideoGPT** | 视频生成式世界模型用于动作预测 | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+| **GenieRedux** | 探索驱动的生成式交互环境 | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+| **SmolVLA** | 轻量级视觉-语言-动作模型 (微调) | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+
+#### World Model
+
+| 方法 | 说明 | 状态 | 贡献 |
+|------|------|------|------|
+| [**Ctrl-World**](aoe-training-ready/Ctrl-World/) | 可控世界模型，从手部动作预测未来视频帧 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
+| **LAOM** | 大规模动作观测模型 | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+| **DreamDojo** | 世界模型驱动的机器人技能学习 | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+| **AdaWorld** | 自适应世界模型 | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
 
 ## 核心差异化
 
@@ -86,6 +134,22 @@ cd aoe-training-ready/gr00t_n1d7
 # H-RDT 训练配方
 cd aoe-training-ready/H-RDT
 # 详见 README.md
+
+# DreamZero 训练配方
+cd aoe-training-ready/dreamzero
+# 详见 README_OPEN_AOE.md
+
+# LingBot-VA 训练配方
+cd aoe-training-ready/lingbot-va
+# 详见 README_OPEN_AOE.md
+
+# Ctrl-World 训练配方
+cd aoe-training-ready/Ctrl-World
+# 详见 README_OPEN_AOE.md
+
+# LeRobot 训练配方 (ACT / DP / pi0.5)
+cd aoe-training-ready/lerobot
+# 详见 README_OPEN_AOE.md
 ```
 
 详见 [aoe-training-ready/README.md](aoe-training-ready/README.md)
