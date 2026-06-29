@@ -134,7 +134,6 @@ git commit -m "<类型>: <简短描述>"
   # SPDX-License-Identifier: Apache-2.0
   ```
 
-- **Docstring**：每个模块、类和公开函数需要有文档字符串
 - **类型注解**：公开 API 的函数参数和返回值建议添加类型注解
 - **README**：每个子项目必须有独立的 README.md
 
@@ -269,7 +268,6 @@ Open-AoE 整体采用 **Apache 2.0** 许可证。你贡献的代码将默认以�
 ### 代码质量
 
 - [ ] 所有 `.py` 文件有 SPDX 版权声明头
-- [ ] 模块和公开函数有 docstring
 - [ ] 公开 API 有类型注解
 - [ ] 子项目有独立的 README.md
 
