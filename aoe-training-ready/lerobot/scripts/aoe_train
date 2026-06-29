@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INTEGRATION_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+UPSTREAM_ROOT="${LEROBOT_UPSTREAM_ROOT:-$INTEGRATION_ROOT}"
+
+PYTHON_BIN="${LEROBOT_PYTHON:-python}"
+RAW_ROOT="${OPEN_AOE_RAW_ROOT:-/PATH_TO/general_datasets/Open-AoE/poc_deliver}"
+DATA_ROOT="${OPEN_AOE_LEROBOT_ROOT:-/PATH_TO/dataset/Open_AoE/open_aoe_mano_nextstate_224_110d}"
+REPO_ID="${OPEN_AOE_REPO_ID:-local/open-aoe-mano-nextstate-224-110d}"
+RESULTS_ROOT="${AOE_RESULTS_ROOT:-/PATH_TO/aoe_runs}"
+MODEL="${MODEL:-act}"
+GPUS="${CUDA_VISIBLE_DEVICES:-0}"
+USER_STEPS="${STEPS:-}"
+USER_SAVE_FREQ="${SAVE_FREQ:-}"
+STEPS="${STEPS:-5000}"
+LOG_FREQ="${LOG_FREQ:-20}"
+SAVE_FREQ="${SAVE_FREQ:-9999999}"
+BATCH_SIZE="${BATCH_SIZE:-}"
+
+export CUDA_VISIBLE_DEVICES="$GPUS"
+export PYTHONPATH="$UPSTREAM_ROOT/src:$INTEGRATION_ROOT:${PYTHONPATH:-}"
+export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
+export TORCH_HOME="${TORCH_HOME:-/PATH_TO/ckpts/checkpoints/resnet}"
+
+run_or_print() {
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    printf '[dry-run]'
+    printf ' %q' "$@"
+    printf '\n'
+  else
+    "$@"
+  fi
+}
+
+convert_data() {
+  run_or_print "$PYTHON_BIN" "$INTEGRATION_ROOT/scripts/convert_open_aoe_to_lerobot.py" \
+    --input-root "$RAW_ROOT" \
+    --output-root "$DATA_ROOT" \
+    --repo-id "$REPO_ID" \
+    --dataset-fps "${DATASET_FPS:-30}" \
+    --image-size "${IMAGE_SIZE:-224}" \
+    --stride "${STRIDE:-1}" \
+    --vcodec "${VCODEC:-h264}" \
+    --encoder-threads "${ENCODER_THREADS:-2}" \
+    --image-writer-threads "${IMAGE_WRITER_THREADS:-8}" \
+    --overwrite
+}
+
+policy_args() {
+  case "$MODEL" in
+    act)
+      printf '%s\n' \
+        --policy.type=act \
+        --policy.vision_backbone=resnet18 \
+        --policy.pretrained_backbone_weights=ResNet18_Weights.IMAGENET1K_V1 \
+        --policy.n_obs_steps=1 \
+        --policy.chunk_size=20 \
+        --policy.n_action_steps=20 \
+        --policy.optimizer_lr="${LR:-1e-5}"
+      ;;
+    dp|diffusion)
+      printf '%s\n' \
+        --policy.type=diffusion \
+        --policy.vision_backbone=resnet18 \
+        --policy.pretrained_backbone_weights=ResNet18_Weights.IMAGENET1K_V1 \
+        --policy.use_group_norm=false \
+        --policy.n_obs_steps=1 \
+        --policy.horizon=24 \
+        --policy.n_action_steps=20 \
+        --policy.optimizer_lr="${LR:-1e-4}" \
+        --policy.resize_shape='[224,224]'
+      ;;
+    pi0.5|pi05)
+      printf '%s\n' \
+        --policy.type=pi05 \
+        --policy.pretrained_path="${PI05_PRETRAINED_PATH:-/PATH_TO/ckpts/checkpoints/pi05_base}" \
+        --policy.max_state_dim=110 \
+        --policy.max_action_dim=110 \
+        --policy.n_obs_steps=1 \
+        --policy.chunk_size=20 \
+        --policy.n_action_steps=20 \
+        --policy.optimizer_lr="${LR:-2.5e-5}" \
+        --policy.dtype=bfloat16 \
+        --policy.gradient_checkpointing=true \
+        --policy.compile_model=false \
+        --policy.freeze_vision_encoder=true \
+        --policy.train_expert_only=false
+      ;;
+    *) echo "Unknown MODEL=$MODEL" >&2; return 2 ;;
+  esac
+}
+
+train_model() {
+  local output_dir="$RESULTS_ROOT/vla_${MODEL}_open_aoe/${MODEL}_open_aoe"
+  local log_dir="$RESULTS_ROOT/vla_${MODEL}_open_aoe/logs"
+  local argv=(
+    "$PYTHON_BIN" "$UPSTREAM_ROOT/src/lerobot/scripts/lerobot_train.py"
+    --dataset.repo_id="$REPO_ID"
+    --dataset.root="$DATA_ROOT"
+    --dataset.image_transforms.enable=false
+    --policy.device=cuda
+    --policy.push_to_hub=false
+    --wandb.enable=false
+    --seed="${SEED:-42}"
+    --steps="$STEPS"
+    --log_freq="$LOG_FREQ"
+    --save_freq="$SAVE_FREQ"
+    --eval_freq=0
+    --save_checkpoint="${SAVE_CHECKPOINT:-true}"
+    --output_dir="$output_dir"
+    --job_name="${JOB_NAME:-${MODEL}_open_aoe}"
+  )
+  if [[ -n "$BATCH_SIZE" ]]; then
+    argv+=(--batch_size="$BATCH_SIZE")
+  fi
+  while IFS= read -r arg; do
+    argv+=("$arg")
+  done < <(policy_args)
+  argv+=("$@")
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    run_or_print "${argv[@]}"
+  else
+    mkdir -p "$output_dir" "$log_dir"
+    "${argv[@]}" 2>&1 | tee "$log_dir/${MODEL}.log"
+  fi
+}
+
+plot_curves() {
+  run_or_print "$PYTHON_BIN" "$INTEGRATION_ROOT/scripts/plot_loss_curves.py" \
+    --input "$RESULTS_ROOT/vla_${MODEL}_open_aoe/logs/${MODEL}.log" \
+    --output-dir "$RESULTS_ROOT/vla_${MODEL}_open_aoe/loss_curves" \
+    --name "$MODEL"
+}
+
+cmd="${1:-train}"
+shift || true
+if [[ "$cmd" == "--dry-run" ]]; then
+  DRY_RUN=1
+  cmd="${1:-train}"
+  shift || true
+fi
+if [[ "$cmd" == "--model" ]]; then
+  MODEL="$1"
+  shift
+  cmd="${1:-train}"
+  shift || true
+fi
+if [[ "$MODEL" == "pi0.5" || "$MODEL" == "pi05" ]]; then
+  if [[ -z "$USER_STEPS" ]]; then
+    STEPS=2200
+  fi
+  if [[ -z "$USER_SAVE_FREQ" ]]; then
+    SAVE_FREQ="$STEPS"
+  fi
+fi
+
+case "$cmd" in
+  convert) convert_data ;;
+  train) train_model "$@"; plot_curves ;;
+  curves) plot_curves ;;
+  *) echo "Usage: $0 [--dry-run] [--model act|dp|pi05] {convert|train|curves}" >&2; exit 2 ;;
+esac

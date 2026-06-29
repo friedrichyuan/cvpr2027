@@ -1,0 +1,613 @@
+diff --git a/groot/vla/configs/data/dreamzero/base_48_wan_fine_aug_relative.yaml b/groot/vla/configs/data/dreamzero/base_48_wan_fine_aug_relative.yaml
+index 99545ee..5e8c409 100644
+--- a/groot/vla/configs/data/dreamzero/base_48_wan_fine_aug_relative.yaml
++++ b/groot/vla/configs/data/dreamzero/base_48_wan_fine_aug_relative.yaml
+@@ -341,6 +341,69 @@ transform_yam:
+     # Model-specific transform
+     - ${model_specific_transform}
+ 
++################################################################################
++# open_aoe (Open-AoE egocentric hands: single RGB view, 64-dim hand state,
++#           40-dim next hand target action)
++################################################################################
++
++modality_config_open_aoe:
++  video:
++    _target_: groot.vla.data.dataset.ModalityConfig
++    delta_indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
++    eval_delta_indices: [0]
++    modality_keys:
++      - video.front
++  state:
++    _target_: groot.vla.data.dataset.ModalityConfig
++    delta_indices: [0]
++    modality_keys:
++      - state.hand_state
++  action:
++    _target_: groot.vla.data.dataset.ModalityConfig
++    delta_indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
++    modality_keys:
++      - action.hand_target
++  language:
++    _target_: groot.vla.data.dataset.ModalityConfig
++    delta_indices: [0]
++    modality_keys:
++      - annotation.task
++
++transform_open_aoe:
++  _target_: groot.vla.data.transform.ComposedModalityTransform
++  transforms:
++    - <<: *totensor_cfg
++      apply_to: ${modality_config_open_aoe.video.modality_keys}
++    - <<: *crop_cfg
++      apply_to: ${modality_config_open_aoe.video.modality_keys}
++    - <<: *resize_cfg
++      apply_to: ${modality_config_open_aoe.video.modality_keys}
++    - <<: *color_jitter_cfg
++      apply_to: ${modality_config_open_aoe.video.modality_keys}
++    - <<: *to_numpy_cfg
++      apply_to: ${modality_config_open_aoe.video.modality_keys}
++
++    - _target_: groot.vla.data.transform.StateActionToTensor
++      apply_to: ${modality_config_open_aoe.state.modality_keys}
++    - _target_: groot.vla.data.transform.StateActionTransform
++      apply_to: ${modality_config_open_aoe.state.modality_keys}
++      normalization_modes:
++        state.hand_state: q99
++
++    - _target_: groot.vla.data.transform.StateActionToTensor
++      apply_to: ${modality_config_open_aoe.action.modality_keys}
++    - _target_: groot.vla.data.transform.StateActionTransform
++      apply_to: ${modality_config_open_aoe.action.modality_keys}
++      normalization_modes:
++        action.hand_target: q99
++
++    - _target_: groot.vla.data.transform.ConcatTransform
++      video_concat_order: ${modality_config_open_aoe.video.modality_keys}
++      state_concat_order: ${modality_config_open_aoe.state.modality_keys}
++      action_concat_order: ${modality_config_open_aoe.action.modality_keys}
++
++    - ${model_specific_transform}
++
+ 
+ ################################################################################
+ # Modality Configs
+@@ -350,6 +413,7 @@ modality_configs:
+   oxe_droid: ${modality_config_oxe_droid}
+   agibot: ${modality_config_agibot}
+   yam: ${modality_config_yam}
++  open_aoe: ${modality_config_open_aoe}
+ 
+ ################################################################################
+ # Transforms
+@@ -359,6 +423,7 @@ transforms:
+   oxe_droid: ${transform_oxe_droid}
+   agibot: ${transform_agibot}
+   yam: ${transform_yam}
++  open_aoe: ${transform_open_aoe}
+ 
+ ################################################################################
+ # Metadata Versions
+@@ -368,6 +433,7 @@ metadata_versions:
+   oxe_droid: '0221'
+   agibot: '0221'
+   yam: '0221'
++  open_aoe: '0221'
+ 
+ ################################################################################
+ # FPS (per embodiment, null means use dataset default)
+@@ -375,3 +441,4 @@ metadata_versions:
+ 
+ fps:
+   yam: 30
++  open_aoe: 30
+diff --git a/groot/vla/configs/model/dreamzero/action_head/wan_flow_matching_action_tf.yaml b/groot/vla/configs/model/dreamzero/action_head/wan_flow_matching_action_tf.yaml
+index 8cccdc6..7978b76 100644
+--- a/groot/vla/configs/model/dreamzero/action_head/wan_flow_matching_action_tf.yaml
++++ b/groot/vla/configs/model/dreamzero/action_head/wan_flow_matching_action_tf.yaml
+@@ -74,6 +74,8 @@ action_head_cfg:
+       num_frame_per_block: ${num_frame_per_block}
+       num_action_per_block: ${num_action_per_block}
+       num_state_per_block: ${num_state_per_block}
++      action_dim: ${max_action_dim}
++      max_state_dim: ${max_state_dim}
+     text_encoder_cfg:
+       _target_: groot.vla.model.dreamzero.modules.wan_video_text_encoder.WanTextEncoder
+       _convert_: object
+diff --git a/groot/vla/configs/model/dreamzero/transform/base.yaml b/groot/vla/configs/model/dreamzero/transform/base.yaml
+index 3873b9a..d4ebdea 100644
+--- a/groot/vla/configs/model/dreamzero/transform/base.yaml
++++ b/groot/vla/configs/model/dreamzero/transform/base.yaml
+@@ -33,6 +33,7 @@ embodiment_tag_to_projector_index:
+   oxe_plex: 30
+   dream: 31
+   yam: 32
++  open_aoe: 33
+   xdof: 22
+   gr1_unified_segmentation: 14
+   language_table_sim: 7
+diff --git a/groot/vla/data/dataset/lerobot.py b/groot/vla/data/dataset/lerobot.py
+index f8efc6e..6b3f01d 100644
+--- a/groot/vla/data/dataset/lerobot.py
++++ b/groot/vla/data/dataset/lerobot.py
+@@ -1036,14 +1036,25 @@ class LeRobotSingleDataset(Dataset):
+             le_video_meta = le_info["features"][original_key]
+             height = le_video_meta["shape"][le_video_meta["names"].index("height")]
+             width = le_video_meta["shape"][le_video_meta["names"].index("width")]
+-            # NOTE(FH): different lerobot dataset versions have different keys for the number of channels and fps
+-            try:
++            # NOTE(FH): different lerobot dataset versions have different keys for the number of channels and fps.
++            # LeRobot v2.1 uses "channels" and may store fps at the dataset level.
++            if "channel" in le_video_meta["names"]:
+                 channels = le_video_meta["shape"][le_video_meta["names"].index("channel")]
+-                fps = le_video_meta["video_info"]["video.fps"]
+-            except (ValueError, KeyError):
+-                # channels = le_video_meta["shape"][le_video_meta["names"].index("channels")]
++            elif "channels" in le_video_meta["names"]:
++                channels = le_video_meta["shape"][le_video_meta["names"].index("channels")]
++            elif "info" in le_video_meta and "video.channels" in le_video_meta["info"]:
+                 channels = le_video_meta["info"]["video.channels"]
++            else:
++                raise KeyError(f"Cannot infer video channels from metadata: {le_video_meta}")
++
++            if "video_info" in le_video_meta and "video.fps" in le_video_meta["video_info"]:
++                fps = le_video_meta["video_info"]["video.fps"]
++            elif "info" in le_video_meta and "video.fps" in le_video_meta["info"]:
+                 fps = le_video_meta["info"]["video.fps"]
++            elif "fps" in le_info:
++                fps = le_info["fps"]
++            else:
++                raise KeyError(f"Cannot infer video fps from metadata: {le_video_meta}")
+             simplified_modality_meta["video"][new_key] = {
+                 "resolution": [width, height],
+                 "channels": channels,
+diff --git a/groot/vla/data/dataset/lerobot_sharded.py b/groot/vla/data/dataset/lerobot_sharded.py
+index 409fa37..ba41612 100755
+--- a/groot/vla/data/dataset/lerobot_sharded.py
++++ b/groot/vla/data/dataset/lerobot_sharded.py
+@@ -626,7 +626,10 @@ class ShardedLeRobotSubLangSingleActionChunkDatasetDROID(LeRobotSingleDataset):
+                 and self.cached_shard is not None
+                 and trajectory_id in self.shard_start_indices
+             ), "Shard not cached. Please call `cache_next_shard` and `use_next_shard` first."
+-            indices_in_shard = self.shard_start_indices[trajectory_id] + step_indices
++            indices_in_shard = np.asarray(
++                self.shard_start_indices[trajectory_id] + step_indices,
++                dtype=np.int64,
++            )
+             return self.cached_shard[key][indices_in_shard]
+         
+         # Find language-consistent ranges and uniformly sample from them
+@@ -645,7 +648,13 @@ class ShardedLeRobotSubLangSingleActionChunkDatasetDROID(LeRobotSingleDataset):
+             and self.cached_shard is not None
+             and trajectory_id in self.shard_start_indices
+         ), "Shard not cached. Please call `cache_next_shard` and `use_next_shard` first."
+-        indices_in_shard = self.shard_start_indices[trajectory_id] + sampled_indices
++        sampled_indices = np.asarray(sampled_indices, dtype=np.int64)
++        if sampled_indices.size == 0:
++            return np.asarray([], dtype=self.cached_shard[key].dtype)
++        indices_in_shard = np.asarray(
++            self.shard_start_indices[trajectory_id] + sampled_indices,
++            dtype=np.int64,
++        )
+         return self.cached_shard[key][indices_in_shard]
+ 
+     def get_data_by_modality(
+@@ -1145,7 +1154,7 @@ class ShardedLeRobotSubLangSingleActionChunkDatasetDROID(LeRobotSingleDataset):
+             np.ndarray: New indices sampled uniformly from the language-consistent range of the first index.
+         """
+         if len(step_indices) == 0:
+-            return np.array([])
++            return np.array([], dtype=np.int64)
+         
+         # Use only the first index to determine the target language
+         first_idx = max(0, min(step_indices[0], trajectory_length - 1))
+@@ -1204,7 +1213,7 @@ class ShardedLeRobotSubLangSingleActionChunkDatasetDROID(LeRobotSingleDataset):
+         
+         # De-duplicate and sort ascending for stable ordering
+         if len(sampled_list) == 0:
+-            return np.array([])
++            return np.array([], dtype=np.int64)
+         unique_sorted = np.array(sorted(set(sampled_list)), dtype=int)
+         # Ensure we return at most 81 frames
+         if unique_sorted.size > max_frames:
+@@ -1223,7 +1232,7 @@ class ShardedLeRobotSubLangSingleActionChunkDatasetDROID(LeRobotSingleDataset):
+                 # Trim to 8n+1 format. Require at least 9 frames so (noisy_frames-1)//num_frame_per_block >= 1
+                 # for action/state model invariant (CausalWanModel); otherwise return empty so sample is skipped.
+                 if unique_sorted.size <= 8:
+-                    return np.array([])
++                    return np.array([], dtype=np.int64)
+                 unique_sorted = unique_sorted[:-7]
+         
+         # ensure that unique_sorted has 4n+1 frames
+diff --git a/groot/vla/data/schema/embodiment_tags.py b/groot/vla/data/schema/embodiment_tags.py
+index e7eaec0..ce7a773 100755
+--- a/groot/vla/data/schema/embodiment_tags.py
++++ b/groot/vla/data/schema/embodiment_tags.py
+@@ -137,6 +137,11 @@ class EmbodimentTag(Enum):
+     The HOT3D dataset with hands only.
+     """
+ 
++    OPEN_AOE = "open_aoe"
++    """
++    The Open-AoE egocentric hand dataset.
++    """
++
+     GR1_UNIFIED = "gr1_unified"
+     """
+     The GR1 unified dataset.
+diff --git a/groot/vla/model/dreamzero/action_head/wan_flow_matching_action_tf.py b/groot/vla/model/dreamzero/action_head/wan_flow_matching_action_tf.py
+index b7cd806..9a4e6a4 100644
+--- a/groot/vla/model/dreamzero/action_head/wan_flow_matching_action_tf.py
++++ b/groot/vla/model/dreamzero/action_head/wan_flow_matching_action_tf.py
+@@ -24,6 +24,41 @@ WAN_HF_REPO_ID = "Wan-AI/Wan2.1-I2V-14B-480P"
+ WAN22_HF_REPO_ID = "Wan-AI/Wan2.2-TI2V-5B"
+ 
+ 
++def _finite_debug_enabled() -> bool:
++    return os.getenv("DREAMZERO_DEBUG_FINITE", "0").lower() in {"1", "true", "yes"}
++
++
++def _finite_debug_rank0() -> bool:
++    return (not dist.is_available()) or (not dist.is_initialized()) or dist.get_rank() == 0
++
++
++def _finite_debug_tensor(name: str, tensor: torch.Tensor | None, step: int | None = None) -> None:
++    if not _finite_debug_enabled() or not _finite_debug_rank0():
++        return
++    if tensor is None:
++        print(f"[FINITE_DEBUG] step={step} {name}: None")
++        return
++    with torch.no_grad():
++        detached = tensor.detach()
++        finite = torch.isfinite(detached)
++        finite_count = int(finite.sum().item())
++        total = detached.numel()
++        nan_count = int(torch.isnan(detached).sum().item()) if torch.is_floating_point(detached) else 0
++        inf_count = int(torch.isinf(detached).sum().item()) if torch.is_floating_point(detached) else 0
++        if finite_count:
++            finite_values = detached[finite].float()
++            min_value = float(finite_values.min().item())
++            max_value = float(finite_values.max().item())
++            mean_value = float(finite_values.mean().item())
++        else:
++            min_value = max_value = mean_value = float("nan")
++        print(
++            f"[FINITE_DEBUG] step={step} {name}: shape={tuple(detached.shape)} "
++            f"dtype={detached.dtype} finite={finite_count}/{total} nan={nan_count} inf={inf_count} "
++            f"min={min_value:.6g} max={max_value:.6g} mean={mean_value:.6g}"
++        )
++
++
+ def hf_download(filename: str, repo_id: str = WAN_HF_REPO_ID) -> str:
+     """Download a file from the specified HuggingFace repo to HF cache."""
+     path = hf_hub_download(repo_id=repo_id, filename=filename)
+@@ -198,6 +233,7 @@ class WANPolicyHead(ActionHead):
+         self.ys = None
+         self.current_start_frame = 0
+         self.language = None
++        self._finite_grad_hooks_registered = False
+ 
+         self.ip_rank = 0
+         self.ip_size = 1
+@@ -322,6 +358,21 @@ class WANPolicyHead(ActionHead):
+         print("defer_lora_injection@@", self.defer_lora_injection)
+         self.set_trainable_parameters(config.tune_projector, config.tune_diffusion_model)
+ 
++    def _ensure_finite_gradient_hooks(self):
++        if self._finite_grad_hooks_registered:
++            return
++        hook_count = 0
++        for param in self.parameters():
++            if param.requires_grad:
++                param.register_hook(
++                    lambda grad: torch.nan_to_num(grad, nan=0.0, posinf=0.0, neginf=0.0)
++                    if grad is not None else grad
++                )
++                hook_count += 1
++        self._finite_grad_hooks_registered = True
++        if hook_count:
++            print(f"[FINITE_GRAD] registered nan/inf gradient hooks for {hook_count} trainable tensors")
++
+     def set_trainable_parameters(self, tune_projector: bool, tune_diffusion_model: bool):
+         self.tune_projector = tune_projector
+         self.tune_diffusion_model = tune_diffusion_model
+@@ -603,6 +654,8 @@ class WANPolicyHead(ActionHead):
+     def forward(self, backbone_output: BatchFeature, action_input: BatchFeature) -> BatchFeature:
+         # Set frozen modules to eval
+         self.set_frozen_modules_to_eval_mode()
++        if self.training:
++            self._ensure_finite_gradient_hooks()
+ 
+         data = action_input 
+         # Get embodiment ID.
+@@ -620,7 +673,8 @@ class WANPolicyHead(ActionHead):
+         videos = data["images"]
+ 
+         videos = rearrange(videos, "b t h w c -> b c t h w")
+-        print("videos", videos.shape)
++        if os.getenv("DREAMZERO_DEBUG_FINITE", "0").lower() in ("1", "true", "yes"):
++            print("videos", videos.shape)
+         
+ 
+         if videos.dtype == torch.uint8:
+@@ -668,6 +722,16 @@ class WANPolicyHead(ActionHead):
+         clip_feas = clip_feas.to(self._device)
+         ys = ys.to(self._device)
+         prompt_embs = prompt_embs.to(self._device)
++        debug_step = getattr(self, "global_step", None)
++        _finite_debug_tensor("videos", videos, debug_step)
++        _finite_debug_tensor("latents", latents, debug_step)
++        _finite_debug_tensor("clip_feas", clip_feas, debug_step)
++        _finite_debug_tensor("ys", ys, debug_step)
++        _finite_debug_tensor("prompt_embs", prompt_embs, debug_step)
++        _finite_debug_tensor("state_features", state_features, debug_step)
++        _finite_debug_tensor("actions", actions if actions.numel() > 0 else None, debug_step)
++        _finite_debug_tensor("action_mask", action_mask if actions.numel() > 0 else None, debug_step)
++        _finite_debug_tensor("has_real_action", has_real_action if actions.numel() > 0 else None, debug_step)
+        
+         # Loss
+         noise = torch.randn_like(latents)
+@@ -697,6 +761,28 @@ class WANPolicyHead(ActionHead):
+         timestep_id_block = timestep_id[:, 1:].reshape(
+                     timestep_id.shape[0], -1, self.num_frame_per_block)
+         timestep_id_block[:, :, 1:] = timestep_id_block[:, :, 0:1]
++
++        max_timestep_value_env = os.getenv("DREAMZERO_MAX_TIMESTEP_VALUE")
++        min_timestep_id = None
++        max_timestep_label = None
++        if max_timestep_value_env:
++            max_timestep_value = float(max_timestep_value_env)
++            valid_ids = (self.scheduler.timesteps <= max_timestep_value).nonzero(as_tuple=False)
++            if valid_ids.numel() > 0:
++                min_timestep_id = int(valid_ids[0].item())
++            else:
++                min_timestep_id = self.scheduler.num_train_timesteps - 1
++            timestep_id = torch.clamp(timestep_id, min=min_timestep_id)
++            timestep_id_block = torch.clamp(timestep_id_block, min=min_timestep_id)
++            max_timestep_label = f"value<={max_timestep_value:g}, id>={min_timestep_id}"
++        else:
++            min_timestep_id_env = os.getenv("DREAMZERO_MIN_TIMESTEP_ID")
++            if min_timestep_id_env:
++                min_timestep_id = int(min_timestep_id_env)
++                min_timestep_id = max(0, min(min_timestep_id, self.scheduler.num_train_timesteps - 1))
++                timestep_id = torch.clamp(timestep_id, min=min_timestep_id)
++                timestep_id_block = torch.clamp(timestep_id_block, min=min_timestep_id)
++                max_timestep_label = f"id>={min_timestep_id}"
+         
+         if actions.numel() > 0:
+             noise_action = torch.randn_like(actions)
+@@ -711,6 +797,8 @@ class WANPolicyHead(ActionHead):
+                     self.scheduler.num_train_timesteps, 
+                     (actions.shape[0], actions.shape[1])
+                 )
++                if min_timestep_id is not None:
++                    timestep_action_id = torch.clamp(timestep_action_id, min=min_timestep_id)
+                 action_mode = "INDEPENDENT"
+             else:
+                 # Original coupled: action timestep derived from video timestep
+@@ -723,11 +811,11 @@ class WANPolicyHead(ActionHead):
+                 video_mean = timestep_id.float().mean().item()
+                 action_mean = timestep_action_id.float().mean().item()
+                 if noise_mode == "DECOUPLED":
+-                    print(f"[NOISE] Mode={noise_mode} | Video: Beta({self.config.video_noise_beta_alpha},1) mean_t={video_mean:.0f} | Action: {action_mode} Uniform mean_t={action_mean:.0f}")
++                    print(f"[NOISE] Mode={noise_mode} max_t={max_timestep_label} | Video: Beta({self.config.video_noise_beta_alpha},1) mean_id={video_mean:.0f} | Action: {action_mode} Uniform mean_id={action_mean:.0f}")
+                 elif noise_mode == "HIGH_NOISE_EMPHASIS":
+-                    print(f"[NOISE] Mode={noise_mode} | Video+Action: Beta({self.config.high_noise_beta_alpha},1) mean_t={video_mean:.0f} | Action: {action_mode}")
++                    print(f"[NOISE] Mode={noise_mode} max_t={max_timestep_label} | Video+Action: Beta({self.config.high_noise_beta_alpha},1) mean_id={video_mean:.0f} | Action: {action_mode}")
+                 else:
+-                    print(f"[NOISE] Mode={noise_mode} | Video+Action: Uniform mean_t={video_mean:.0f} | Action: {action_mode}")
++                    print(f"[NOISE] Mode={noise_mode} max_t={max_timestep_label} | Video+Action: Uniform mean_id={video_mean:.0f} | Action: {action_mode}")
+                 self._noise_logged = True
+         else:
+             noise_action = None
+@@ -743,6 +831,10 @@ class WANPolicyHead(ActionHead):
+         timestep = self.scheduler.timesteps[timestep_id].to(self._device)
+         noisy_latents = self.scheduler.add_noise(latents.flatten(0, 1), noise.flatten(0, 1), timestep.flatten(0, 1)).unflatten(0, (noise.shape[0], noise.shape[1]))
+         training_target = self.scheduler.training_target(latents, noise, timestep).transpose(1, 2)
++        _finite_debug_tensor("noise", noise, debug_step)
++        _finite_debug_tensor("timestep", timestep, debug_step)
++        _finite_debug_tensor("noisy_latents", noisy_latents, debug_step)
++        _finite_debug_tensor("training_target", training_target, debug_step)
+         
+         if actions.numel() > 0:
+             timestep_action = self.scheduler.timesteps[timestep_action_id].to(self._device)
+@@ -752,6 +844,10 @@ class WANPolicyHead(ActionHead):
+                 timestep_action.flatten(0, 1),
+             ).unflatten(0, (noise_action.shape[0], noise_action.shape[1]))
+             training_target_action = self.scheduler.training_target(actions, noise_action, timestep_action)
++            _finite_debug_tensor("noise_action", noise_action, debug_step)
++            _finite_debug_tensor("timestep_action", timestep_action, debug_step)
++            _finite_debug_tensor("noisy_actions", noisy_actions, debug_step)
++            _finite_debug_tensor("training_target_action", training_target_action, debug_step)
+         else:
+             timestep_action = None
+             noisy_actions = None
+@@ -774,6 +870,15 @@ class WANPolicyHead(ActionHead):
+                     clean_x=latents.transpose(1, 2),
+                 )
+ 
++            _finite_debug_tensor("video_noise_pred", video_noise_pred, debug_step)
++            _finite_debug_tensor("action_noise_pred", action_noise_pred if actions.numel() > 0 else None, debug_step)
++            if os.getenv("DREAMZERO_SANITIZE_PRED", "1").lower() not in ("0", "false", "no"):
++                video_noise_pred = torch.nan_to_num(video_noise_pred, nan=0.0, posinf=0.0, neginf=0.0)
++                if action_noise_pred is not None:
++                    action_noise_pred = torch.nan_to_num(action_noise_pred, nan=0.0, posinf=0.0, neginf=0.0)
++                _finite_debug_tensor("video_noise_pred_sanitized", video_noise_pred, debug_step)
++                _finite_debug_tensor("action_noise_pred_sanitized", action_noise_pred if actions.numel() > 0 else None, debug_step)
++
+             # Per-sample dynamics loss
+             # DiT patch_embedding uses stride (1,2,2), so output spatial size can be smaller than
+             # latent when H or W is odd (e.g. latent 11x20 -> model output 10x20). Crop target to match.
+@@ -781,27 +886,53 @@ class WANPolicyHead(ActionHead):
+                 training_target = training_target[
+                     ..., : video_noise_pred.shape[3], : video_noise_pred.shape[4]
+                 ]
+-            dynamics_loss_per_sample = torch.nn.functional.mse_loss(
+-                video_noise_pred.float(), training_target.float(), reduction='none'
+-            ).mean(dim=(1,3,4))  # shape: [B, ...]
+-
+-            weight_dynamics = dynamics_loss_per_sample * self.scheduler.training_weight(timestep.flatten(0, 1)).unflatten(0, (noise.shape[0], noise.shape[1])).to(self._device)
++            video_noise_pred_float = video_noise_pred.float()
++            training_target_float = training_target.float()
++            video_valid = torch.isfinite(video_noise_pred_float) & torch.isfinite(training_target_float)
++            video_target_safe = torch.nan_to_num(training_target_float, nan=0.0, posinf=0.0, neginf=0.0)
++            video_pred_safe = torch.where(video_valid, video_noise_pred_float, video_target_safe)
++            video_sq_error = (video_pred_safe - video_target_safe).square()
++            video_valid_count = video_valid.float().sum(dim=(1, 3, 4)).clamp_min(1.0)
++            dynamics_loss_per_sample = video_sq_error.sum(dim=(1, 3, 4)) / video_valid_count  # shape: [B, ...]
++
++            dynamics_weight = self.scheduler.training_weight(timestep.flatten(0, 1)).unflatten(0, (noise.shape[0], noise.shape[1])).to(self._device)
++            weight_dynamics = dynamics_loss_per_sample * dynamics_weight
+             weighted_dynamics_loss = weight_dynamics.mean()
++            _finite_debug_tensor("cropped_training_target", training_target, debug_step)
++            _finite_debug_tensor("dynamics_loss_per_sample", dynamics_loss_per_sample, debug_step)
++            _finite_debug_tensor("dynamics_weight", dynamics_weight, debug_step)
++            _finite_debug_tensor("weight_dynamics", weight_dynamics, debug_step)
++            _finite_debug_tensor("weighted_dynamics_loss", weighted_dynamics_loss, debug_step)
+             
+             if actions.numel() > 0:
+-                action_loss_per_sample = torch.nn.functional.mse_loss(
+-                    action_noise_pred.float(), training_target_action.float(), reduction='none'
+-                ) * action_mask  # shape: [B, ...]
++                action_noise_pred_float = action_noise_pred.float()
++                training_target_action_float = training_target_action.float()
++                action_valid = (
++                    torch.isfinite(action_noise_pred_float)
++                    & torch.isfinite(training_target_action_float)
++                    & action_mask.bool()
++                )
++                action_target_safe = torch.nan_to_num(training_target_action_float, nan=0.0, posinf=0.0, neginf=0.0)
++                action_pred_safe = torch.where(action_valid, action_noise_pred_float, action_target_safe)
++                action_sq_error = (action_pred_safe - action_target_safe).square()
++                action_valid_count = action_valid.float().sum(dim=2).clamp_min(1.0)
++                action_loss_per_sample = action_sq_error.sum(dim=2) / action_valid_count  # shape: [B, horizon]
+                 action_loss_per_sample = has_real_action[:, None].float() * action_loss_per_sample  # apply has_real_action
+-                weight_action = action_loss_per_sample.mean(dim=2) * self.scheduler.training_weight(
++                action_weight = self.scheduler.training_weight(
+                     timestep_action.flatten(0, 1),
+                 ).unflatten(0, (noise_action.shape[0], noise_action.shape[1])).to(self._device)
++                weight_action = action_loss_per_sample * action_weight
+                 weighted_action_loss = weight_action.mean()
+                 loss = weighted_dynamics_loss + weighted_action_loss
++                _finite_debug_tensor("action_loss_per_sample", action_loss_per_sample, debug_step)
++                _finite_debug_tensor("action_weight", action_weight, debug_step)
++                _finite_debug_tensor("weight_action", weight_action, debug_step)
++                _finite_debug_tensor("weighted_action_loss", weighted_action_loss, debug_step)
+             else:
+                 weighted_action_loss = torch.tensor(0.0, device=self._device)
+                 loss = weighted_dynamics_loss
+             # loss = dynamics_loss_per_sample.mean()
++            _finite_debug_tensor("total_loss", loss, debug_step)
+ 
+         # Record log
+         output_dict = {
+diff --git a/groot/vla/model/dreamzero/transform/dreamzero_cotrain.py b/groot/vla/model/dreamzero/transform/dreamzero_cotrain.py
+index d5c23e0..70da79e 100644
+--- a/groot/vla/model/dreamzero/transform/dreamzero_cotrain.py
++++ b/groot/vla/model/dreamzero/transform/dreamzero_cotrain.py
+@@ -92,6 +92,12 @@ class HuggingfaceTokenizer:
+ def collate(features: List[dict], tokenizer: AutoTokenizer, num_views=3, embodiment_tag_mapping=None) -> dict:
+     batch = {}
+     keys = features[0].keys()
++    single_view_human_ids = {
++        embodiment_tag_mapping[EmbodimentTag.GR1_UNIFIED.value],
++        embodiment_tag_mapping[EmbodimentTag.MECKA_HANDS.value],
++    }
++    if EmbodimentTag.OPEN_AOE.value in embodiment_tag_mapping:
++        single_view_human_ids.add(embodiment_tag_mapping[EmbodimentTag.OPEN_AOE.value])
+ 
+     for key in keys:
+         if key == "text":
+@@ -116,9 +122,7 @@ def collate(features: List[dict], tokenizer: AutoTokenizer, num_views=3, embodim
+                             + " The video is split into three views: The top view shows the camera view from the robot's wrist, the bottom-left view shows the camera view from the left exterior camera, and the bottom-right view shows the camera view from the right exterior camera. During training, one of the two bottom exterior views may be a black screen (dropped view). The robot "
+                             + processed_item.lower()
+                         )
+-                    elif elem["embodiment_id"] == embodiment_tag_mapping[EmbodimentTag.GR1_UNIFIED.value]:
+-                        processed_item = "A single view video shows that a human " + processed_item.lower()
+-                    elif elem["embodiment_id"] == embodiment_tag_mapping[EmbodimentTag.MECKA_HANDS.value]:
++                    elif elem["embodiment_id"] in single_view_human_ids:
+                         processed_item = "A single view video shows that a human " + processed_item.lower()
+                     elif elem["embodiment_id"] == embodiment_tag_mapping[EmbodimentTag.XDOF.value]:
+                         processed_item = "A multi-view video shows that a robot " + processed_item.lower() + " The video is split into four views: The top-left view shows the camera view from the robot's head, the top-right view shows the camera view from the right hand, the bottom-left view shows the camera view from the left hand, and the bottom-right view is a black screen (inactive view). The robot " + processed_item.lower()
+@@ -138,9 +142,7 @@ def collate(features: List[dict], tokenizer: AutoTokenizer, num_views=3, embodim
+                             + " The video is split into three views: The top view shows the camera view from the robot's wrist, the bottom-left view shows the camera view from the left exterior camera, and the bottom-right view shows the camera view from the right exterior camera. During training, one of the two bottom exterior views may be a black screen (dropped view). The robot "
+                             + str(item).lower()
+                         )
+-                    elif elem["embodiment_id"] == embodiment_tag_mapping[EmbodimentTag.GR1_UNIFIED.value]:
+-                        item = "A single view video shows that a human " + str(item).lower() 
+-                    elif elem["embodiment_id"] == embodiment_tag_mapping[EmbodimentTag.MECKA_HANDS.value]:
++                    elif elem["embodiment_id"] in single_view_human_ids:
+                         item = "A single view video shows that a human " + str(item).lower()
+                     elif elem["embodiment_id"] == embodiment_tag_mapping[EmbodimentTag.XDOF.value]:
+                         item = "A multi-view video shows that a robot " + str(item).lower() + " The video is split into four views: The top-left view shows the camera view from the robot's head, the top-right view shows the camera view from the right hand, the bottom-left view shows the camera view from the left hand, and the bottom-right view is a black screen (inactive view). The robot " + str(item).lower()
+@@ -627,4 +629,3 @@ class DreamTransform(InvertibleModalityTransform):
+ 
+     def __call__(self, data: dict) -> dict:
+         return self.apply(data)
+-
+diff --git a/scripts/data/convert_lerobot_to_gear.py b/scripts/data/convert_lerobot_to_gear.py
+index ff7fbfe..0af3c66 100644
+--- a/scripts/data/convert_lerobot_to_gear.py
++++ b/scripts/data/convert_lerobot_to_gear.py
+@@ -59,7 +59,7 @@ VALID_EMBODIMENT_TAGS = [
+     "robocasa_panda_omron",
+     "robocasa_bimanual_panda_parallel_gripper", "robocasa_bimanual_panda_inspire_hand",
+     "oxe_droid", "oxe_fractal", "oxe_language_table", "oxe_bridge",
+-    "real_panda_single_arm", "hot3d_hands_only",
++    "real_panda_single_arm", "hot3d_hands_only", "open_aoe",
+     "gr1_unified", "robocasa_gr1_arms_waist_fourier_hands",
+     "agibot", "lapa", "oxe_mutex", "oxe_roboset", "oxe_plex",
+     "dream", "yam", "xdof",
+diff --git a/groot/vla/configs/data/dreamzero/open_aoe_relative_wan22.yaml b/groot/vla/configs/data/dreamzero/open_aoe_relative_wan22.yaml
+new file mode 100644
+index 0000000..d630a45
+--- /dev/null
++++ b/groot/vla/configs/data/dreamzero/open_aoe_relative_wan22.yaml
+@@ -0,0 +1,47 @@
++# @package _global_
++
++defaults:
++  - dreamzero/base_48_wan_fine_aug_relative
++  - _self_
++
++image_resolution_width: 224
++image_resolution_height: 224
++max_state_dim: 110
++use_global_metadata: false
++relative_action: false
++relative_action_per_horizon: false
++relative_action_keys: []
++max_chunk_size: 5
++dataset_shard_sampling_rate: 1.0
++mixture_dataset_cls: groot.vla.data.dataset.lerobot_sharded.ShardedLeRobotMixtureDataset.from_mixture_spec
++single_dataset_cls: groot.vla.data.dataset.lerobot_sharded.ShardedLeRobotSubLangSingleActionChunkDatasetDROID
++
++open_aoe_data_root: ???
++
++train_dataset:
++  _target_: ${mixture_dataset_cls}
++  _convert_: object
++  mixture_spec:
++    - dataset_path:
++        open_aoe:
++          - ${open_aoe_data_root}
++      dataset_weight: 1.0
++      distribute_weights: true
++
++  dataset_class: ${single_dataset_cls}
++  all_modality_configs: ${modality_configs}
++  all_transforms: ${transforms}
++  metadata_versions: ${metadata_versions}
++  fps: ${fps}
++  dataset_kwargs:
++    video_backend: decord
++    use_global_metadata: ${use_global_metadata}
++    max_chunk_size: ${max_chunk_size}
++    relative_action: ${relative_action}
++    relative_action_keys: ${relative_action_keys}
++    relative_action_per_horizon: ${relative_action_per_horizon}
++  mixture_kwargs:
++    training: true
++    balance_dataset_weights: false
++    seed: 42
++    shard_sampling_rate: ${dataset_shard_sampling_rate}
