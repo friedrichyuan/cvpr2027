@@ -170,7 +170,8 @@ def process_episode(episode_dir, output_dir, min_segment_frames=16):
     Returns:
         (num_segments_saved, num_segments_skipped)
     """
-    import shutil
+    import cv2
+    import h5py
 
     episode_name = os.path.basename(episode_dir)
 
@@ -203,73 +204,97 @@ def process_episode(episode_dir, output_dir, min_segment_frames=16):
     episode_output_dir = os.path.join(output_dir, episode_name)
     os.makedirs(episode_output_dir, exist_ok=True)
 
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return 0, 0
+
     saved = 0
     skipped = 0
 
-    for seg_idx, seg in enumerate(annotations):
-        start_frame = int(seg['start_frame'])
-        end_frame = int(seg['end_frame'])
+    try:
+        for seg_idx, seg in enumerate(annotations):
+            # Clamp the annotation range to the available MANO frames.
+            start_frame = max(0, int(seg['start_frame']))
+            end_frame = min(int(seg['end_frame']), total_frames)
+            seg_len = end_frame - start_frame
+            if seg_len < min_segment_frames:
+                skipped += 1
+                continue
 
-        # Clamp to available data
-        start_frame = max(0, start_frame)
-        end_frame = min(end_frame, total_frames)
+            # Skip segments where either hand has any invalid frame.
+            valid = hands_data['pred_valid'][:, start_frame:end_frame]  # (2, T)
+            if not np.all(valid):
+                skipped += 1
+                continue
 
-        seg_len = end_frame - start_frame
-        if seg_len < min_segment_frames:
-            skipped += 1
-            continue
+            # Decode exactly seg_len video frames starting at start_frame and stream
+            # them into a trimmed clip, so clip frame i corresponds to actions[i].
+            # If the video can't supply all seg_len frames (shorter than the MANO/
+            # annotation range, or a decode error), the segment can't be aligned, so
+            # the partial clip is removed and the segment is dropped.
+            mp4_dst = os.path.join(episode_output_dir, f"{seg_idx}.mp4")
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            writer = None
+            n_written = 0
+            for _ in range(seg_len):
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                if writer is None:
+                    h, w = frame.shape[:2]
+                    writer = cv2.VideoWriter(
+                        mp4_dst, cv2.VideoWriter_fourcc(*'mp4v'), 30, (w, h))
+                writer.write(frame)
+                n_written += 1
+            if writer is not None:
+                writer.release()
+            if n_written < seg_len:
+                if os.path.exists(mp4_dst):
+                    os.remove(mp4_dst)
+                skipped += 1
+                continue
 
-        # Check validity: skip segment if either hand has any invalid frame
-        valid = hands_data['pred_valid'][:, start_frame:end_frame]  # (2, T)
-        if not np.all(valid):
-            skipped += 1
-            continue
+            # Video is confirmed aligned; only now pay for MANO FK.
+            actions, _ = build_segment_actions(hands_data, start_frame, end_frame)
+            if actions is None:
+                if os.path.exists(mp4_dst):
+                    os.remove(mp4_dst)
+                skipped += 1
+                continue
 
-        # Build actions
-        actions, _ = build_segment_actions(hands_data, start_frame, end_frame)
-        if actions is None:
-            skipped += 1
-            continue
+            description = _build_description(seg)
 
-        # Extract description from annotation
-        print(actions.shape)
-        description = _build_description(seg)
-        print(description)
+            hdf5_path = os.path.join(episode_output_dir, f"{seg_idx}.hdf5")
+            with h5py.File(hdf5_path, 'w') as f:
+                f.create_dataset('actions', data=actions, compression='gzip', compression_opts=4)
 
-        # Save HDF5
-        import h5py
-        hdf5_path = os.path.join(episode_output_dir, f"{seg_idx}.hdf5")
-        with h5py.File(hdf5_path, 'w') as f:
-            f.create_dataset('actions', data=actions, compression='gzip', compression_opts=4)
+                f.attrs['llm_description'] = description
+                f.attrs['episode_name'] = episode_name
+                f.attrs['segment_id'] = seg_idx
+                f.attrs['start_frame'] = start_frame
+                f.attrs['end_frame'] = end_frame
+                f.attrs['total_episode_frames'] = total_frames
+                f.attrs['action_dim'] = ACTION_DIM
 
-            f.attrs['llm_description'] = description
-            f.attrs['episode_name'] = episode_name
-            f.attrs['segment_id'] = seg_idx
-            f.attrs['start_frame'] = start_frame
-            f.attrs['end_frame'] = end_frame
-            f.attrs['total_episode_frames'] = total_frames
-            f.attrs['action_dim'] = ACTION_DIM
+                for k, v in ACTION_FORMAT.items():
+                    f.attrs[f'action_{k}'] = str(v)
 
-            fmt = ACTION_FORMAT
-            for k, v in fmt.items():
-                f.attrs[f'action_{k}'] = str(v)
+            # The clip is pre-trimmed, so the loader reads it from frame 0. The
+            # original absolute range is kept under src_* for debugging only.
+            meta_path = os.path.join(episode_output_dir, f"{seg_idx}.meta.json")
+            with open(meta_path, 'w') as f:
+                json.dump({
+                    'start_frame': 0,
+                    'end_frame': seg_len,
+                    'src_start_frame': start_frame,
+                    'src_end_frame': end_frame,
+                    'fps': 30,
+                    'description': description,
+                }, f)
 
-        # Copy video
-        mp4_dst = os.path.join(episode_output_dir, f"{seg_idx}.mp4")
-        if not os.path.exists(mp4_dst):
-            shutil.copy2(video_path, mp4_dst)
-
-        # Save segment frame range for the dataset loader
-        meta_path = os.path.join(episode_output_dir, f"{seg_idx}.meta.json")
-        with open(meta_path, 'w') as f:
-            json.dump({
-                'start_frame': start_frame,
-                'end_frame': end_frame,
-                'fps': 30,
-                'description': description,
-            }, f)
-
-        saved += 1
+            saved += 1
+    finally:
+        cap.release()
 
     return saved, skipped
 
@@ -421,7 +446,7 @@ def main():
                         help='Root directory of AoE 数据集 data')
     parser.add_argument('--output_root', type=str,
                         default='/root/datasets/AoE_processed_data',
-                        help='Output directory (default: H_RDT/processed_data)')
+                        help='Output directory (default: H_RDT/AoE/processed_data)')
     parser.add_argument('--min_segment_frames', type=int, default=16,
                         help='Minimum frames per segment (skip shorter ones)')
     parser.add_argument('--force', action='store_true',
