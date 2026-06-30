@@ -28,7 +28,13 @@ Open-AoE/
     ├── dreamzero/           ← [DreamZero](aoe-training-ready/dreamzero/)
     ├── lingbot-va/          ← [LingBot-VA](aoe-training-ready/lingbot-va/)
     ├── Ctrl-World/          ← [Ctrl-World](aoe-training-ready/Ctrl-World/)
-    └── lerobot/             ← [LeRobot](aoe-training-ready/lerobot/) (ACT / DP / pi0.5)
+    ├── lerobot/             ← [LeRobot](aoe-training-ready/lerobot/) (ACT / DP / pi0.5)
+    ├── smolvla/             ← [SmolVLA](aoe-training-ready/smolvla/)
+    ├── ivideogpt/           ← [iVideoGPT](aoe-training-ready/ivideogpt/)
+    ├── genie-redux/         ← [GenieRedux](aoe-training-ready/genie-redux/)
+    ├── laom/                ← [laom (LAOM)](aoe-training-ready/laom/)
+    ├── adaworld/            ← [AdaWorld](aoe-training-ready/adaworld/)
+    └── dreamdojo/           ← [DreamDojo](aoe-training-ready/dreamdojo/)
 ```
 
 ## 集成计划
@@ -71,18 +77,18 @@ Open-AoE/
 | [**pi0.5**](aoe-training-ready/lerobot/) | π0.5 物理智能模型，通过 LeRobot 集成 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
 | [**DreamZero**](aoe-training-ready/dreamzero/) | WAM/VAM 视频动作模型 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
 | [**LingBot-VA**](aoe-training-ready/lingbot-va/) | 灵巧手视觉动作模型 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
-| **iVideoGPT** | 视频生成式世界模型用于动作预测 | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
-| **GenieRedux** | 探索驱动的生成式交互环境 | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
-| **SmolVLA** | 轻量级视觉-语言-动作模型 (微调) | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+| [**SmolVLA**](aoe-training-ready/smolvla/) | 轻量级视觉-语言-动作策略（lerobot/smolvla_base 微调，hand 20D / 26D） | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
 
 #### World Model
 
 | 方法 | 说明 | 状态 | 贡献 |
 |------|------|------|------|
 | [**Ctrl-World**](aoe-training-ready/Ctrl-World/) | 可控世界模型，从手部动作预测未来视频帧 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
-| **LAOM** | 大规模动作观测模型 | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
-| **DreamDojo** | 世界模型驱动的机器人技能学习 | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
-| **AdaWorld** | 自适应世界模型 | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+| [**iVideoGPT**](aoe-training-ready/ivideogpt/) | 动作条件视频世界模型（26D 手+相机；验证相机自运动主导可控性） | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+| [**GenieRedux**](aoe-training-ready/genie-redux/) | Genie 潜动作生成式世界模型（tokenizer+LAM+dynamics，含 guided-26D 可控性验证） | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+| [**LAOM**](aoe-training-ready/laom/) | 潜动作学习世界模型（手部 20D 监督，相机为干扰） | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+| [**AdaWorld**](aoe-training-ready/adaworld/) | 自适应世界模型（LAM 核心） | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+| [**DreamDojo**](aoe-training-ready/dreamdojo/) | Cosmos-Predict2.5 世界模型 — **zero-shot preview only**（数据管道 + 推理已通，post-train 待 8×H100） | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
 
 ## 核心差异化
 
@@ -150,6 +156,10 @@ cd aoe-training-ready/Ctrl-World
 # LeRobot 训练配方 (ACT / DP / pi0.5)
 cd aoe-training-ready/lerobot
 # 详见 README_OPEN_AOE.md
+
+# 世界模型 / VLA 训练配方 (SmolVLA / iVideoGPT / GenieRedux / laom / AdaWorld / DreamDojo)
+cd aoe-training-ready/ivideogpt
+# 详见 README_OPEN_AOE.md
 ```
 
 详见 [aoe-training-ready/README.md](aoe-training-ready/README.md)
@@ -175,6 +185,12 @@ Open-AoE 建立在以下优秀开源项目之上，感谢所有贡献者：
 | [dex-retargeting](https://github.com/dex-retargeting/dex-retargeting) | 手指重映射 | MIT |
 | [MANO](https://mano.is.tue.mpg.de/) | 手部模型 | MANO License |
 | [HaWoR](https://github.com/ThunderVVV/HaWoR) | 手部重建 | CC-BY-NC-ND 4.0 |
+| [iVideoGPT](https://github.com/thuml/iVideoGPT) | 动作条件世界模型 | MIT |
+| [GenieRedux](https://github.com/insait-institute/GenieRedux) | 潜动作生成式世界模型 (Genie) | MIT |
+| [LeRobot / SmolVLA](https://github.com/huggingface/lerobot) | VLA 策略训练 | Apache 2.0 |
+| [LAOM](https://github.com/dunnolab/laom) | 潜动作学习（带监督） | Apache 2.0 |
+| [AdaWorld](https://github.com/Little-Podi/AdaWorld) | 潜动作世界模型 | Apache 2.0 |
+| [DreamDojo](https://github.com/NVIDIA/DreamDojo) | 世界模型 (Cosmos-Predict2.5) | Apache 2.0 |
 
 ## 相关链接
 

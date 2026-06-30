@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Open-AoE AdaWorld launcher: train the official LatentActionModel (LAM) on AoE
+# frame-pairs inside an upstream Little-Podi/AdaWorld checkout. Env-var driven (see
+# README_OPEN_AOE.md); the placeholders below are not real locations.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INTEGRATION_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+UPSTREAM_ROOT="${ADAWORLD_UPSTREAM_ROOT:-$INTEGRATION_ROOT}"
+
+PYTHON_BIN="${ADAWORLD_PYTHON:-python}"
+NPZ_DIR="${OPEN_AOE_NPZ_DIR:-/PATH_TO/aoe_npz/aoe26}"
+EPOCHS="${EPOCHS:-10}"
+BATCH="${BATCH:-4}"
+MODEL_DIM="${MODEL_DIM:-1024}"
+MAX_CLIPS="${MAX_CLIPS:-6000}"
+RESULTS_ROOT="${AOE_RESULTS_ROOT:-/PATH_TO/aoe_runs}"
+OUT_CSV="${OUT_CSV:-$RESULTS_ROOT/aoe_adaworld_lam_loss.csv}"
+GPUS="${CUDA_VISIBLE_DEVICES:-0}"
+
+export CUDA_VISIBLE_DEVICES="$GPUS"
+export PYTHONPATH="$UPSTREAM_ROOT:$UPSTREAM_ROOT/lam:$SCRIPT_DIR:${PYTHONPATH:-}"
+
+run_or_print() {
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    printf '[dry-run]'
+    printf ' %q' "$@"
+    printf '\n'
+  else
+    "$@"
+  fi
+}
+
+train_model() {
+  [[ "${DRY_RUN:-0}" == "1" ]] || mkdir -p "$(dirname "$OUT_CSV")"
+  local argv=(
+    "$PYTHON_BIN" "$SCRIPT_DIR/adaworld_lam.py"
+    --npz-dir "$NPZ_DIR"
+    --epochs "$EPOCHS"
+    --batch "$BATCH"
+    --model-dim "$MODEL_DIM"
+    --max-clips "$MAX_CLIPS"
+    --out "$OUT_CSV"
+  )
+  argv+=("$@")
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    run_or_print "${argv[@]}"
+  else
+    ( cd "$UPSTREAM_ROOT" && "${argv[@]}" )
+  fi
+}
+
+cmd="${1:-train}"
+shift || true
+if [[ "$cmd" == "--dry-run" ]]; then
+  DRY_RUN=1
+  cmd="${1:-train}"
+  shift || true
+fi
+
+case "$cmd" in
+  train) train_model "$@" ;;
+  *) echo "Usage: $0 [--dry-run] train" >&2; exit 2 ;;
+esac

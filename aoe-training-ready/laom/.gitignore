@@ -1,0 +1,15 @@
+# Local outputs / datasets / upstream checkout — never commit
+output/
+outputs/
+data/
+laom/
+upstream/
+*.hdf5
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.csv
+__pycache__/
+*.py[codz]

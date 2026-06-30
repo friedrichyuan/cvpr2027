@@ -1,0 +1,14 @@
+diff --git a/ivideogpt/data/dataset_mixes.py b/ivideogpt/data/dataset_mixes.py
+index 22cd029..7169ff3 100644
+--- a/ivideogpt/data/dataset_mixes.py
++++ b/ivideogpt/data/dataset_mixes.py
+@@ -183,6 +183,9 @@ DATASET_NAMED_MIXES = {
+     "robonet": [("robo_net", 1.0)],
+     "tfds_robonet": [("tfds_robonet", 1.0)],
+     "bair": [("bair_robot_pushing", 1.0)],
++    "aoe26": [("aoe26", 1.0)],
++    "aoe20": [("aoe20", 1.0)],
++    "aoe": [("aoe", 1.0)],
+     "vp2_robodesk": [("vp2_robodesk", 1.0)],
+     "vp2_robosuite": [("vp2_robosuite", 1.0)],
+     "select": OXE_SELECT,

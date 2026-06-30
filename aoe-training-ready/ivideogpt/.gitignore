@@ -1,0 +1,13 @@
+# Local outputs / datasets / checkpoints / upstream checkout — never commit
+output/
+outputs/
+data/
+iVideoGPT/
+upstream/
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+__pycache__/
+*.py[codz]

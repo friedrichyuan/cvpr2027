@@ -1,0 +1,15 @@
+# Local outputs / videos / upstream checkout — never commit
+output/
+outputs/
+data/
+DreamDojo/
+upstream/
+*.mp4
+*.gif
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+__pycache__/
+*.py[codz]

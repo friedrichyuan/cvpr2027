@@ -1,0 +1,7 @@
+# Open-AoE iVideoGPT recipe — converter dependencies only.
+# Training and eval run inside the upstream iVideoGPT checkout, whose environment
+# provides torch, transformers, safetensors, piqa, lpips, accelerate, etc.
+# (see README "Notes" for the upstream version pins).
+numpy
+pillow
+imageio[ffmpeg]

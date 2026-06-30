@@ -1,0 +1,11 @@
+# Local outputs / datasets / checkpoints — never commit
+output/
+outputs/
+data/
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+__pycache__/
+*.py[codz]

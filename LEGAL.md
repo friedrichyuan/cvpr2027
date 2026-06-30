@@ -48,6 +48,45 @@ Users must clone H-RDT separately and apply the provided patch. The recipe
 also depends on [HaWoR](https://github.com/ThunderVVV/HaWoR) (CC-BY-NC-ND 4.0)
 for MANO forward kinematics — users must clone HaWoR separately.
 
+### iVideoGPT
+
+The iVideoGPT training recipe under `aoe-training-ready/ivideogpt/` is an adaptation
+layer for the [iVideoGPT](https://github.com/thuml/iVideoGPT) project (MIT). Users must
+clone iVideoGPT separately and apply the provided patch.
+
+### GenieRedux
+
+The GenieRedux training recipe under `aoe-training-ready/genie-redux/` is an adaptation
+layer for the [GenieRedux](https://github.com/insait-institute/GenieRedux) project (MIT).
+Users must clone GenieRedux separately; no patch is required.
+
+### SmolVLA / LeRobot
+
+The SmolVLA training recipe under `aoe-training-ready/smolvla/` depends on the
+[LeRobot](https://github.com/huggingface/lerobot) library (Apache 2.0) and the
+`lerobot/smolvla_base` model from HuggingFace. LeRobot is a pip dependency (not vendored);
+no patch is required. Base weights are downloaded from HuggingFace under their model-card license.
+
+### LAOM
+
+The laom training recipe under `aoe-training-ready/laom/` is an adaptation layer for the
+[laom](https://github.com/dunnolab/laom) project (Apache 2.0). Users must clone laom
+separately; no patch is required.
+
+### AdaWorld
+
+The AdaWorld training recipe under `aoe-training-ready/adaworld/` is an adaptation layer for
+the [AdaWorld](https://github.com/Little-Podi/AdaWorld) project (Apache 2.0). Users must
+clone AdaWorld separately; no patch is required.
+
+### DreamDojo
+
+The DreamDojo training recipe under `aoe-training-ready/dreamdojo/` is an adaptation layer for
+the [DreamDojo](https://github.com/NVIDIA/DreamDojo) project (Cosmos-Predict2.5, Apache 2.0).
+Users must clone DreamDojo separately and apply the provided patch (a one-line checkpoint-revision
+fix). Cosmos-Predict2.5 model weights are downloaded from NVIDIA/HuggingFace under their
+respective licenses and are not included.
+
 ## Contributing
 
 By contributing to this project, you agree that your contributions will be licensed

@@ -1,0 +1,8 @@
+# Open-AoE SmolVLA recipe dependencies.
+# The upstream model is the lerobot package below (pip-installable, not vendored);
+# the base weights `lerobot/smolvla_base` are downloaded from HuggingFace at runtime.
+lerobot==0.4.4
+numpy
+pillow
+av              # PyAV decoder used by the full (raw-video) converter
+matplotlib      # loss-curve plotting

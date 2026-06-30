@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Open-AoE DreamDojo launcher (zero-shot preview): convert AoE undistorted video to the
+# 480x640 MP4 that DreamDojo's generic VideoDataset consumes, then run zero-shot
+# action-conditioned inference in an upstream NVIDIA/DreamDojo checkout. Env-var driven
+# (see README_OPEN_AOE.md); the placeholders below are not real locations.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INTEGRATION_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+UPSTREAM_ROOT="${DREAMDOJO_UPSTREAM_ROOT:-$INTEGRATION_ROOT}"
+
+PYTHON_BIN="${DREAMDOJO_PYTHON:-python}"
+RAW_ROOT="${OPEN_AOE_RAW_ROOT:-/PATH_TO/Open-AoE/poc_deliver}"
+DD_VIDEO_DIR="${DD_VIDEO_DIR:-/PATH_TO/aoe_dd_videos}"
+NUM_CLIPS="${NUM_CLIPS:-3}"
+FRAMES="${FRAMES:-150}"
+DD_CKPT_DIR="${DD_CKPT_DIR:-/PATH_TO/hf_ckpt/2B_GR1_post-train}"
+EXPERIMENT="${EXPERIMENT:-dreamdojo_2b_480_640_gr1}"
+SAVE_DIR="${SAVE_DIR:-/PATH_TO/aoe_runs/dreamdojo_aoe}"
+NUM_FRAMES="${NUM_FRAMES:-49}"
+NUM_SAMPLES="${NUM_SAMPLES:-3}"
+GPUS="${CUDA_VISIBLE_DEVICES:-0}"
+
+export CUDA_VISIBLE_DEVICES="$GPUS"
+export PYTHONPATH="$UPSTREAM_ROOT:$SCRIPT_DIR:${PYTHONPATH:-}"
+
+run_or_print() {
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    printf '[dry-run]'
+    printf ' %q' "$@"
+    printf '\n'
+  else
+    "$@"
+  fi
+}
+
+convert_data() {
+  run_or_print "$PYTHON_BIN" "$SCRIPT_DIR/aoe_to_dreamdojo.py" \
+    --data-root "$RAW_ROOT" \
+    --out-dir "$DD_VIDEO_DIR" \
+    --num-clips "$NUM_CLIPS" \
+    --frames "$FRAMES"
+}
+
+# Zero-shot action-conditioned inference (needs the DreamDojo env + a >=45GB GPU; see README).
+infer() {
+  local argv=(
+    "$PYTHON_BIN" "$UPSTREAM_ROOT/examples/action_conditioned.py"
+    -o "$SAVE_DIR"
+    --checkpoints-dir "$DD_CKPT_DIR"
+    --experiment "$EXPERIMENT"
+    --save-dir "$SAVE_DIR/results"
+    --num-frames "$NUM_FRAMES"
+    --num-samples "$NUM_SAMPLES"
+    --dataset-path "$DD_VIDEO_DIR"
+    --data-split full
+    --deterministic-uniform-sampling
+  )
+  argv+=("$@")
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    run_or_print "${argv[@]}"
+  else
+    ( cd "$UPSTREAM_ROOT" && "${argv[@]}" )
+  fi
+}
+
+cmd="${1:-convert}"
+shift || true
+if [[ "$cmd" == "--dry-run" ]]; then
+  DRY_RUN=1
+  cmd="${1:-convert}"
+  shift || true
+fi
+
+case "$cmd" in
+  convert) convert_data ;;
+  infer) infer "$@" ;;
+  *) echo "Usage: $0 [--dry-run] {convert|infer}" >&2; exit 2 ;;
+esac
