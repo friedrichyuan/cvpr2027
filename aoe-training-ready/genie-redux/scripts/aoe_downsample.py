@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Copyright (c) 2026 Open-AoE Contributors. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""Downsample v2 npz images to a lower resolution (keeps the action vector unchanged).
+"""Downsample npz images to a lower resolution (keeps the action vector unchanged).
 Range-based for parallel workers: handles files[a:b]. Same filenames in DST (preserves order)."""
 import sys, glob, os
 import numpy as np

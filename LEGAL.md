@@ -58,7 +58,7 @@ clone iVideoGPT separately and apply the provided patch.
 
 The GenieRedux training recipe under `aoe-training-ready/genie-redux/` is an adaptation
 layer for the [GenieRedux](https://github.com/insait-institute/GenieRedux) project (MIT).
-Users must clone GenieRedux separately; no patch is required.
+Users must clone GenieRedux separately and apply the provided patch (a VQ codebook-collapse fix).
 
 ### SmolVLA / LeRobot
 
