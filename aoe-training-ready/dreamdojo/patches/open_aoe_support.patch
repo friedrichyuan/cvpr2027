@@ -11,3 +11,80 @@ index aeab281..052344c 100644
              filename="tokenizer.pth",
          ),
      ),
+diff --git a/groot_dreams/data/dataset_mano.py b/groot_dreams/data/dataset_mano.py
+index e193bb1..1d7ee7c 100644
+--- a/groot_dreams/data/dataset_mano.py
++++ b/groot_dreams/data/dataset_mano.py
+@@ -166,7 +166,7 @@ class MANODataset(Dataset):
+             self.episode_pairs = sorted(pairs)
+ 
+     # (FOR EGODEX) always map converted HDF5 to the corresponding MP4 in the fixed 480p dataset
+-    _VIDEO_ROOT = "/mnt/amlfs-03/shared/datasets/egodex_480p"
++    _VIDEO_ROOT = os.path.expanduser(os.environ.get("AOE_EGODEX_VIDEO_ROOT", "/PATH_TO/aoe_egodex_videos"))
+ 
+     def _video_path_from_converted(self, converted_path: str) -> Optional[str]:
+         # find subpath starting at the first directory named like "part*"
+@@ -490,9 +490,10 @@ class MANODataset(Dataset):
+                 # # latent_actions = torch.ones(self.num_frames - 1, 32, dtype=torch.float32)
+                 # # latent_actions = latent_actions * torch.bernoulli(0.8 * torch.ones(1)).type_as(latent_actions)
+                 # action_seq = torch.cat([gt_actions, mano_actions, latent_actions], dim=1)
+-                gt_actions = torch.zeros(self.num_frames - 1, 352, dtype=torch.float32)
+-                latent_actions = torch.ones(self.num_frames - 1, 32, dtype=torch.float32)
+-                action_seq = torch.cat([gt_actions, latent_actions], dim=-1)
++                gt_actions = torch.zeros(self.num_frames - 1, 220, dtype=torch.float32)
++                mano_actions = action_tensor
++                latent_actions = torch.zeros(self.num_frames - 1, 32, dtype=torch.float32)
++                action_seq = torch.cat([gt_actions, mano_actions, latent_actions], dim=1)
+ 
+                 out: Dict[str, object] = {
+                     "video": video_tensor,
+@@ -519,43 +520,16 @@ class MANODataset(Dataset):
+         Returns (list[PIL.Image] length T, start_index).
+         Optimized for high resolution and long videos.
+         """
+-        global _VideoDecoder
+-        if _VideoDecoder is None:
+-            from torchcodec.decoders import VideoDecoder as _VD
+-            _VideoDecoder = _VD
+-        
+-        # Use more threads for better performance (default was 1, which is too low)
+-        # For high-res videos, more threads significantly improve decoding speed
+-        num_threads = max(self.ffmpeg_threads, 4) if self.ffmpeg_threads == 1 else self.ffmpeg_threads
+-        
+-        decoder = _VideoDecoder(
+-            video_path,
+-            dimension_order="NHWC",
+-            num_ffmpeg_threads=num_threads,
+-            seek_mode=self.seek_mode,
+-        )
+-
+-        total = len(decoder)
++        # AoE patch: decode with decord (self-contained; env lacks FFmpeg libs for torchcodec)
++        from decord import VideoReader, cpu
++        vr = VideoReader(video_path, ctx=cpu(0))
++        total = len(vr)
+         if total < num_frames:
+             raise ValueError(f"Video shorter than requested window: {total} < {num_frames}, {video_path}")
+-
+         start = randint(0, total - num_frames - 1) if self.randomize else 0
+-        stop = start + num_frames
+-
+-        batch = decoder.get_frames_in_range(start, stop).data
+-        if batch.device.type != "cpu":
+-            batch = batch.to("cpu", non_blocking=True)
+-
+-        # Optimized batch conversion: convert entire tensor to numpy once, then to PIL
+-        # This is much faster than converting frame-by-frame, especially for high-res videos
+-        batch_np = batch.numpy()  # Shape: (T, H, W, C)
+-        
+-        # Ensure uint8 format for PIL (handle both uint8 and float inputs)
++        idx = list(range(start, start + num_frames))
++        batch_np = vr.get_batch(idx).asnumpy()
+         if batch_np.dtype != "uint8":
+-            # Clamp values to [0, 255] range if float
+             batch_np = batch_np.clip(0, 255).astype("uint8")
+-        
+-        # Batch convert all frames - much faster than individual conversions
+-        # Pre-allocate list and use efficient numpy slicing
+         pil_list = [Image.fromarray(batch_np[i], mode="RGB") for i in range(batch_np.shape[0])]
+         return pil_list, start
