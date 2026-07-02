@@ -86,6 +86,7 @@ def align_actions(a, n_action_frames):
 
 def train_guided(args, ddp, rank, world, local, dev):
     is_main = rank == 0
+    torch.manual_seed(args.seed); np.random.seed(args.seed)        # reproducible (no cudnn-determinism here, keep train fast)
     if is_main:
         os.makedirs(args.out_dir, exist_ok=True)
     model = construct_model(build_cfg_guided(args.image_size, args.action_dim, args.patch_size)).to(dev)
@@ -164,6 +165,33 @@ def psnr(a, b):
     return 99.0 if mse <= 1e-10 else 10.0 * math.log10(1.0 / mse)
 
 
+def set_seed(seed):
+    """make rollout/train reproducible."""
+    import random as _r
+    _r.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def _get_lpips(dev):
+    """Optional LPIPS (perceptual). Returns None if package missing — never blocks the run."""
+    try:
+        import lpips as _l
+        return _l.LPIPS(net="vgg").to(dev).eval()
+    except Exception as e:
+        print(f"[lpips] unavailable ({e}); skipping LPIPS metric", flush=True)
+        return None
+
+
+@torch.no_grad()
+def _lpips_clip(lp, pred, gt):
+    p = (pred.clamp(0, 1) * 2 - 1).permute(1, 0, 2, 3)   # (C,T,H,W)->(T,C,H,W), [-1,1]
+    g = (gt.clamp(0, 1) * 2 - 1).permute(1, 0, 2, 3)
+    return lp(p, g).mean().item()
+
+
 def save_gif(path, *rows_chw_t, scale=4):
     """each arg: (C,T,H,W) in [0,1]; stacked vertically per frame."""
     import imageio.v2 as imageio
@@ -196,6 +224,7 @@ def guided_sample(model, prime_frames, actions_cont, num_frames, inference_steps
 
 @torch.no_grad()
 def rollout_guided(args, dev):
+    set_seed(args.seed)                                            # reproducible
     model = construct_model(build_cfg_guided(args.image_size, args.action_dim, args.patch_size)).to(dev)
     st = torch.load(args.model_ckpt, map_location="cpu"); model.load_state_dict(st["model"])
     tok = torch.load(args.tokenizer_ckpt, map_location="cpu"); model.tokenizer.load_state_dict(tok["model"])
@@ -203,45 +232,66 @@ def rollout_guided(args, dev):
     x, a = load_clips_actions(args.npz_dir, args.clip_len, args.max_clips, skip=args.holdout_skip)
     x, a = x.to(dev), a.to(dev)
     os.makedirs(args.out_dir, exist_ok=True)
-    print(f"[rollout] held-out {tuple(x.shape)} acts {tuple(a.shape)}", flush=True)
+    lp = _get_lpips(dev)
+    print(f"[rollout] held-out {tuple(x.shape)} acts {tuple(a.shape)} seed={args.seed} lpips={lp is not None}", flush=True)
 
     pf, ng = 2, args.clip_len - 2
     n_af = pf + ng - 1
-    pt, pcam, phand, phand6 = [], [], [], []
+    HAND6 = [0, 1, 2, 3, 4, 5]                                     # 6 hand dims = dim-fair to the 6 camera dims
+    P = {"true": [], "cam": [], "hand6": [], "hand20": []}         # per-clip PSNR
+    L = {"true": [], "cam": [], "hand6": []}                       # per-clip LPIPS (optional)
     bs = args.batch
     for i in range(0, x.shape[0], bs):
         vb = x[i:i + bs]; ab = align_actions(a[i:i + bs], n_af)
         prime, gt = vb[:, :, :pf], vb[:, :, pf:]
-        roll = torch.roll(ab, shifts=1, dims=0)                     # another clip's actions (shuffle source)
-        HAND6 = [0, 1, 2, 3, 4, 5]                                  # 6 hand dims = dim-fair to the 6 camera dims
-        cam_shuf  = ab.clone(); cam_shuf[..., 20:26]   = roll[..., 20:26]   # true hand + shuffled camera (6D)
-        hand_shuf = ab.clone(); hand_shuf[..., 0:20]   = roll[..., 0:20]    # shuffled hand (20D) + true camera
-        hand6_shuf = ab.clone(); hand6_shuf[..., HAND6] = roll[..., HAND6]  # shuffle 6 hand dims (dim-fair to camera)
+        B = ab.shape[0]
+        g = torch.Generator(device=ab.device).manual_seed(args.seed * 100003 + i)
+        src = ab[torch.randperm(B, generator=g, device=ab.device)]  # real random shuffle (vs deterministic roll)
+        cam_shuf   = ab.clone(); cam_shuf[..., 20:26]   = src[..., 20:26]   # true hand + shuffled camera (6D)
+        hand_shuf  = ab.clone(); hand_shuf[..., 0:20]   = src[..., 0:20]    # shuffled hand (20D) + true camera
+        hand6_shuf = ab.clone(); hand6_shuf[..., HAND6] = src[..., HAND6]   # shuffle 6 hand dims (dim-fair)
         with torch.autocast("cuda", dtype=torch.bfloat16):
             p_true  = guided_sample(model, prime, ab,         ng, args.inference_steps)
             p_cam   = guided_sample(model, prime, cam_shuf,   ng, args.inference_steps)
             p_hand  = guided_sample(model, prime, hand_shuf,  ng, args.inference_steps)
             p_hand6 = guided_sample(model, prime, hand6_shuf, ng, args.inference_steps)
-        for j in range(vb.shape[0]):
-            pt.append(psnr(p_true[j], gt[j])); pcam.append(psnr(p_cam[j], gt[j]))
-            phand.append(psnr(p_hand[j], gt[j])); phand6.append(psnr(p_hand6[j], gt[j]))
-            g = i + j
-            if g < args.n_gifs:
-                save_gif(os.path.join(args.out_dir, f"guided_rollout_{g}.gif"), gt[j], p_true[j], p_cam[j])
-        print(f"[rollout] b{i//bs}: true={np.mean(pt):.2f} camShuf={np.mean(pcam):.2f} "
-              f"hand6Shuf={np.mean(phand6):.2f} hand20Shuf={np.mean(phand):.2f} | "
-              f"Δcam={np.mean(pt)-np.mean(pcam):.2f} vs Δhand6={np.mean(pt)-np.mean(phand6):.2f} (dim-fair) "
-              f"| Δhand20={np.mean(pt)-np.mean(phand):.2f}", flush=True)
+        for j in range(B):
+            P["true"].append(psnr(p_true[j], gt[j])); P["cam"].append(psnr(p_cam[j], gt[j]))
+            P["hand6"].append(psnr(p_hand6[j], gt[j])); P["hand20"].append(psnr(p_hand[j], gt[j]))
+            if lp is not None:
+                L["true"].append(_lpips_clip(lp, p_true[j], gt[j]))
+                L["cam"].append(_lpips_clip(lp, p_cam[j], gt[j]))
+                L["hand6"].append(_lpips_clip(lp, p_hand6[j], gt[j]))
+            gg = i + j
+            if gg < args.n_gifs:
+                save_gif(os.path.join(args.out_dir, f"guided_rollout_{gg}.gif"), gt[j], p_true[j], p_cam[j])
+        print(f"[rollout] b{i//bs}: true={np.mean(P['true']):.2f} camShuf={np.mean(P['cam']):.2f} "
+              f"hand6Shuf={np.mean(P['hand6']):.2f} | running Δcam={np.mean(P['true'])-np.mean(P['cam']):.2f} "
+              f"Δhand6={np.mean(P['true'])-np.mean(P['hand6']):.2f}", flush=True)
 
-    s = dict(n=len(pt), psnr_true=float(np.mean(pt)), psnr_cam_shuf=float(np.mean(pcam)),
-             psnr_hand6_shuf=float(np.mean(phand6)), psnr_hand20_shuf=float(np.mean(phand)),
-             delta_psnr_camera=float(np.mean(pt) - np.mean(pcam)),
-             delta_psnr_hand6_dimfair=float(np.mean(pt) - np.mean(phand6)),
-             delta_psnr_hand20=float(np.mean(pt) - np.mean(phand)),
-             camera_vs_hand6_ratio=float((np.mean(pt) - np.mean(pcam)) / max(1e-6, np.mean(pt) - np.mean(phand6))))
+    pt = np.array(P["true"]); pc = np.array(P["cam"]); p6 = np.array(P["hand6"]); p20 = np.array(P["hand20"])
+    dcam, dh6, dh20 = pt - pc, pt - p6, pt - p20                   # PER-CLIP PAIRED deltas (proper variance)
+    rng = np.random.RandomState(args.seed); n = len(pt); boots = []
+    for _ in range(2000):                                          # bootstrap CI on the camera:hand6 ratio
+        idx = rng.randint(0, n, n)
+        boots.append((pt[idx] - pc[idx]).mean() / max(1e-6, (pt[idx] - p6[idx]).mean()))
+    s = dict(n=int(n), seed=int(args.seed), shuffle="random_permutation_seeded",
+             psnr_true_mean=float(pt.mean()),
+             delta_psnr_camera_mean=float(dcam.mean()), delta_psnr_camera_std=float(dcam.std()),
+             delta_psnr_hand6_dimfair_mean=float(dh6.mean()), delta_psnr_hand6_dimfair_std=float(dh6.std()),
+             delta_psnr_hand20_mean=float(dh20.mean()), delta_psnr_hand20_std=float(dh20.std()),
+             camera_vs_hand6_ratio=float(dcam.mean() / max(1e-6, dh6.mean())),
+             ratio_bootstrap_ci95=[float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))])
+    if lp is not None:
+        lt = np.array(L["true"]); lc = np.array(L["cam"]); l6 = np.array(L["hand6"])
+        s.update(lpips_true_mean=float(lt.mean()),                 # LPIPS: higher=worse; shuffle cam should hurt more
+                 dlpips_camera_mean=float((lc - lt).mean()), dlpips_hand6_mean=float((l6 - lt).mean()),
+                 lpips_camera_vs_hand6_ratio=float((lc - lt).mean() / max(1e-6, (l6 - lt).mean())))
+    np.savez(os.path.join(args.out_dir, "guided_rollout_perclip.npz"),
+             psnr_true=pt, psnr_cam=pc, psnr_hand6=p6, psnr_hand20=p20)
     with open(os.path.join(args.out_dir, "guided_rollout_summary.json"), "w") as f:
         json.dump(s, f, indent=2)
-    print(f"[rollout DONE] {s}", flush=True)
+    print(f"[rollout DONE] {json.dumps(s, indent=2)}", flush=True)
 
 
 def main():
@@ -266,6 +316,7 @@ def main():
     ap.add_argument("--holdout-skip", type=int, default=1100)
     ap.add_argument("--n-gifs", type=int, default=8)
     ap.add_argument("--save-every", type=int, default=2000)
+    ap.add_argument("--seed", type=int, default=0)                 # hardening
     args = ap.parse_args()
     if args.stage == "rollout":
         rollout_guided(args, "cuda" if torch.cuda.is_available() else "cpu")

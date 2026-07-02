@@ -86,11 +86,14 @@ $OUTPUT_DIR/checkpoints/checkpoint_<step>/   # accelerate checkpoints
 - `--context_length` must equal the tokenizer's (`= 2` for the 64px act-free checkpoint).
 - The eval scripts import the upstream `ivideogpt` package + `inference/utils.py`; run them with `IVIDEOGPT_UPSTREAM_ROOT` set (the launcher puts it on `PYTHONPATH`).
 
-## Results (POC, 2.9h subset, 30k steps, 4×4090)
+## Results
 
+POC (2.9h subset, 30k steps, 4×4090):
 - Training loss `2.78 → 1.63`.
-- Controllability: zero-action loss exceeds true-action by `25% → 49% → 62%` (10k/20k/30k) — monotonic.
+- Controllability: zero-action loss exceeds true-action by `25% → 49% → 62%` (10k/20k/30k) — monotonic; hand-only 20D ≈ −3%.
 - Tokenizer AoE-finetune (10k): `+1.6 dB PSNR`, `−36% LPIPS`.
+
+At 100 hours (60k steps): controllability is **weaker** than the 2.9h proof-of-concept (true / shuffle / zero teacher-forced loss `1.85 / 2.09 / 2.25`; the zero÷true loss ratio falls `1.62 → 1.22`). This is likely a **data-quality** effect — the 100h set uses consumer-phone (vivo/OPPO/Xiaomi) monocular-SLAM camera trajectories, noisier than the POC's HoloLens — and is still under investigation (a validity/NaN audit of the 100h data is the open follow-up), not a known model regression.
 
 ## License
 

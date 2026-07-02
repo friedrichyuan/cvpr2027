@@ -22,6 +22,7 @@ LR="${LR:-1e-4}"
 INFER_STEPS="${INFER_STEPS:-25}"
 HOLDOUT_SKIP="${HOLDOUT_SKIP:-1100}"
 ROLLOUT_CLIPS="${ROLLOUT_CLIPS:-64}"
+SEED="${SEED:-0}"
 TOK_EPOCHS="${TOK_EPOCHS:-40}";    TOK_BATCH="${TOK_BATCH:-8}"
 GENIE_EPOCHS="${GENIE_EPOCHS:-22}"; GENIE_BATCH="${GENIE_BATCH:-4}"
 GUIDED_EPOCHS="${GUIDED_EPOCHS:-22}"; GUIDED_BATCH="${GUIDED_BATCH:-6}"
@@ -32,6 +33,11 @@ export CUDA_VISIBLE_DEVICES="$GPUS"
 export GENIE_UPSTREAM_ROOT="$UPSTREAM_ROOT"
 export PYTHONPATH="$UPSTREAM_ROOT:$SCRIPT_DIR:${PYTHONPATH:-}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+# Tokenizer codebook-collapse fix: the upstream VQ (models/components/stvivit.py) needs EMA +
+# dead-code revival, env-gated. Required for EVERY stage. Apply patches/open_aoe_support.patch
+# to the upstream checkout first. See README_OPEN_AOE.md.
+export AOE_VQ_EMA="${AOE_VQ_EMA:-1}"
+export AOE_VQ_DEADCODE="${AOE_VQ_DEADCODE:-2}"
 
 stream_flag=()
 [[ -n "${STREAM:-}" ]] && stream_flag=(--stream)   # set STREAM=1 for the file-amortized streaming loader (100h+)
@@ -91,16 +97,19 @@ plot_full() { one_run "$SCRIPT_DIR/plot_genie_full.py" "$OUT_DIR"; }
 guided() {
   ddp_run "$SCRIPT_DIR/genie_redux_guided26d.py" --stage guided --tokenizer-ckpt "$TOK_CKPT" \
     --npz-dir "$NPZ_DIR" --max-clips "$MAX_CLIPS" --train-eps "$TRAIN_EPS" --epochs "$GUIDED_EPOCHS" \
-    --batch "$GUIDED_BATCH" --lr "$LR" --save-every 2000 --out-dir "$OUT_DIR/guided" "${stream_flag[@]}" "$@"
+    --batch "$GUIDED_BATCH" --lr "$LR" --save-every 2000 --seed "$SEED" --out-dir "$OUT_DIR/guided" "${stream_flag[@]}" "$@"
 }
 
 guided_rollout() {
   one_run "$SCRIPT_DIR/genie_redux_guided26d.py" --stage rollout --tokenizer-ckpt "$TOK_CKPT" \
     --model-ckpt "$OUT_DIR/guided/guided.pt" --holdout-skip "$HOLDOUT_SKIP" --max-clips "$ROLLOUT_CLIPS" \
-    --inference-steps "$INFER_STEPS" --n-gifs 8 --batch 8 --out-dir "$OUT_DIR/guided" "$@"
+    --inference-steps "$INFER_STEPS" --n-gifs 8 --batch 8 --seed "$SEED" --out-dir "$OUT_DIR/guided" "$@"
 }
 
 plot_guided() { one_run "$SCRIPT_DIR/plot_guided.py" "$OUT_DIR/guided"; }
+
+# Go/no-go: codebook utilization of the tokenizer (want >= 111 used codes before genie).
+gate() { one_run "$SCRIPT_DIR/aoe_codebook_util.py" "$TOK_CKPT"; }
 
 cmd="${1:-full}"
 shift || true
@@ -120,5 +129,6 @@ case "$cmd" in
   guided) guided "$@" ;;
   guided-rollout) guided_rollout "$@" ;;
   guided-all) guided; guided_rollout; plot_guided ;;
-  *) echo "Usage: $0 [--dry-run] {downsample|lam|tokenizer|genie|rollout|full|guided|guided-rollout|guided-all}" >&2; exit 2 ;;
+  gate) gate ;;
+  *) echo "Usage: $0 [--dry-run] {downsample|lam|tokenizer|genie|rollout|full|guided|guided-rollout|guided-all|gate}" >&2; exit 2 ;;
 esac

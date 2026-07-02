@@ -34,7 +34,7 @@ hand vector at the method-specific action stride.
 | H-RDT | [`H-RDT/`](H-RDT/) | [`H-RDT/README.md`](H-RDT/README.md) | [`H-RDT/hrdt_aoe_support.patch`](H-RDT/hrdt_aoe_support.patch) |
 | SmolVLA | [`smolvla/`](smolvla/) | [`smolvla/README_OPEN_AOE.md`](smolvla/README_OPEN_AOE.md) | none |
 | iVideoGPT | [`ivideogpt/`](ivideogpt/) | [`ivideogpt/README_OPEN_AOE.md`](ivideogpt/README_OPEN_AOE.md) | [`ivideogpt/patches/open_aoe_support.patch`](ivideogpt/patches/open_aoe_support.patch) |
-| GenieRedux | [`genie-redux/`](genie-redux/) | [`genie-redux/README_OPEN_AOE.md`](genie-redux/README_OPEN_AOE.md) | none |
+| GenieRedux | [`genie-redux/`](genie-redux/) | [`genie-redux/README_OPEN_AOE.md`](genie-redux/README_OPEN_AOE.md) | [`genie-redux/patches/open_aoe_support.patch`](genie-redux/patches/open_aoe_support.patch) |
 | laom (LAOM) | [`laom/`](laom/) | [`laom/README_OPEN_AOE.md`](laom/README_OPEN_AOE.md) | none |
 | AdaWorld | [`adaworld/`](adaworld/) | [`adaworld/README_OPEN_AOE.md`](adaworld/README_OPEN_AOE.md) | none |
 | DreamDojo | [`dreamdojo/`](dreamdojo/) | [`dreamdojo/README_OPEN_AOE.md`](dreamdojo/README_OPEN_AOE.md) | [`dreamdojo/patches/open_aoe_support.patch`](dreamdojo/patches/open_aoe_support.patch) |
