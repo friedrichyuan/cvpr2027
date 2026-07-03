@@ -11,20 +11,23 @@ external upstream checkout (**not** vendored):
 
 > **Status.**
 > - Zero-shot preview: ✅ works (numbers below).
-> - MANO post-train: 🟡 **harness ready, a run is in progress — results pending.** The data
->   builder, the action-injection patch, and the launcher are complete and a 2B post-train is
->   training; **held-out / rollout / controllability numbers are not in yet.** Treat this as a
->   reproducible harness, not a validated result.
+> - MANO post-train: a reproducible harness — AoE MANO action export/adaptation, the
+>   action-embedder `fc1` init fix, and the training launcher. Run it on your own hardware
+>   (see *Data conversion* and *Post-train*).
 
 ## Version
 
 - Upstream: [NVIDIA/DreamDojo](https://github.com/NVIDIA/DreamDojo) (Cosmos-Predict2.5) — verified commit `02f119b`
-- Patch: `patches/open_aoe_support.patch` — **2 files**:
+- Patch: `patches/open_aoe_support.patch` — **3 files**:
   - `checkpoint_db.py`: pin a checkpoint `revision` to `main` (a 404 infra fix).
   - `groot_dreams/data/dataset_mano.py`: **inject the real MANO action into the action vector
     `[220:352]`** (the upstream egodex path zeroed that slot — see *Post-train*), read the egodex
     video root from `$AOE_EGODEX_VIDEO_ROOT`, and decode video with `decord` (self-contained;
     avoids torchcodec's FFmpeg-lib requirement).
+  - `cosmos_predict2/…/networks/minimal_v4_dit.py`: **action-embedder `fc1` init** — upstream leaves
+    the action embedder's `fc1` uninitialized (all-zero on meta-device builds); the patch
+    `trunc_normal_`-inits it (+ a startup assert) so injected MANO actions propagate through
+    DreamDojo's conditioning path.
 
 ## Environment
 
@@ -74,13 +77,15 @@ export FRAMES=150        # must exceed the inference --num-frames
 ./scripts/aoe_train convert
 ```
 
-## Post-train (MANO-conditioned) — results pending
+## Post-train (MANO-conditioned)
 
 **What the patch changes and why it matters.** DreamDojo's action vector is 384-dim with a built-in
 **MANO slot at `[220:352]`**. The upstream egodex path shipped that slot **zeroed** (`gt=zeros(352)`,
 `latent=ones(32)`) — i.e. it trained *without* real hand conditioning. The patch injects the real
 AoE MANO action: `gt=zeros(220)` + `mano=action(132)` + `latent=zeros(32)` → concat 384. This turns
-a nominal egodex run into a genuine **MANO-action-conditioned post-train**.
+a nominal egodex run into a genuine **MANO-action-conditioned post-train**. The patch *also* initializes
+the action embedder's `fc1` (`minimal_v4_dit.py`, see *Version*) so the injected action propagates
+through DreamDojo's conditioning path.
 
 ```bash
 export CUDA_VISIBLE_DEVICES=0,1,2,3,4        # nproc_per_node & fsdp_shard follow this
@@ -116,8 +121,8 @@ export CUDA_VISIBLE_DEVICES=0
 - **Zero-shot (GR1 robot post-train weights):** PSNR `10.01` / SSIM `0.214` / LPIPS `0.702` — scene +
   hands qualitatively preserved, pixel fidelity low (a **robot→human domain gap**, not a data-format
   problem). This is the motivation for the MANO post-train.
-- **MANO post-train:** 🟡 **pending** — training in progress; no held-out / rollout / controllability
-  numbers yet. Update this section once the run finishes and is evaluated against the zero-shot base.
+- **MANO post-train:** provided as a reproducible harness (`build-egodex` → `posttrain`); run it on
+  your own hardware and evaluate against your target.
 
 ## Notes
 
@@ -131,8 +136,9 @@ export CUDA_VISIBLE_DEVICES=0
 
 Apache-2.0 (Open-AoE Contributors) for the Open-AoE converter/launcher. The upstream
 DreamDojo / Cosmos-Predict2.5 is NVIDIA's (Apache-2.0) and is referenced by checkout (not vendored);
-the patch modifies two upstream files (a checkpoint-revision pin and a data-loader change that
-injects AoE hand actions + swaps the video decoder). Model weights are downloaded from
+the patch modifies three upstream files (a checkpoint-revision pin; a data-loader change that injects
+AoE hand actions + swaps the video decoder; and an action-embedder weight-init fix). Model weights
+are downloaded from
 NVIDIA/HuggingFace under their own licenses and are not included. See the root
 [`LEGAL.md`](../../LEGAL.md) and the upstream license for terms.
 
@@ -143,4 +149,4 @@ NVIDIA/HuggingFace under their own licenses and are not included. See the root
 | `scripts/aoe_train` | Launcher: `convert` / `infer` (zero-shot) · `build-egodex` / `posttrain` (MANO) |
 | `scripts/aoe_to_dreamdojo.py` | AoE undistorted video → 480×640 MP4 (zero-shot generic `VideoDataset`) |
 | `scripts/aoe_to_dd_mano.py` | AoE `hands.npz` → egodex rot6d HDF5 + paired mp4 (MANO post-train), analytic FK |
-| `patches/open_aoe_support.patch` | 2-file upstream patch (checkpoint revision + MANO `[220:352]` injection / decord) |
+| `patches/open_aoe_support.patch` | 3-file upstream patch (checkpoint revision + MANO `[220:352]` injection/decord + action-embedder init fix) |

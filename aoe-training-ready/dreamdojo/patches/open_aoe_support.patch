@@ -88,3 +88,47 @@ index e193bb1..1d7ee7c 100644
 -        # Pre-allocate list and use efficient numpy slicing
          pil_list = [Image.fromarray(batch_np[i], mode="RGB") for i in range(batch_np.shape[0])]
          return pil_list, start
+diff --git a/cosmos_predict2/_src/predict2/networks/minimal_v4_dit.py b/cosmos_predict2/_src/predict2/networks/minimal_v4_dit.py
+index 6a8bc3a..76954ec 100644
+--- a/cosmos_predict2/_src/predict2/networks/minimal_v4_dit.py
++++ b/cosmos_predict2/_src/predict2/networks/minimal_v4_dit.py
+@@ -1628,11 +1628,34 @@ class MiniTrainDIT(WeightTrainingStat):
+         if self.extra_image_context_dim is not None:
+             self.img_context_proj[0].reset_parameters()
+ 
+-        if self.zero_init_action_embedder and hasattr(self, "action_embedder_B_D") and hasattr(self, "action_embedder_B_3D"):
+-            nn.init.zeros_(self.action_embedder_B_D.fc2.weight)
+-            nn.init.zeros_(self.action_embedder_B_D.fc2.bias)
+-            nn.init.zeros_(self.action_embedder_B_3D.fc2.weight)
+-            nn.init.zeros_(self.action_embedder_B_3D.fc2.bias)
++        # AoE: initialize the action embedder's fc1 (input) layer. Upstream only zero-inits
++        # fc2 and never initializes fc1, so on meta-device `to_empty()` builds fc1 stays
++        # all-zero -- with fc1 at zero the embedder output does not depend on the action,
++        # so injected MANO actions cannot propagate through DreamDojo's conditioning path.
++        # Initialize fc1 (trunc_normal) so the action embedder is functional; keep fc2 as
++        # the intended zero-init warm-start (the adapter starts as a no-op and learns from
++        # there). The startup assert below guards against fc1 being left all-zero after
++        # init on any future build/refactor.
++        if hasattr(self, "action_embedder_B_D") and hasattr(self, "action_embedder_B_3D"):
++            for _emb in (self.action_embedder_B_D, self.action_embedder_B_3D):
++                nn.init.trunc_normal_(_emb.fc1.weight, std=0.02)
++                nn.init.zeros_(_emb.fc1.bias)
++                if self.zero_init_action_embedder:
++                    nn.init.zeros_(_emb.fc2.weight)
++                    nn.init.zeros_(_emb.fc2.bias)
++                else:
++                    nn.init.trunc_normal_(_emb.fc2.weight, std=0.02)
++                    nn.init.zeros_(_emb.fc2.bias)
++            # Startup guard: verify fc1 was initialized (not left all-zero) so the action
++            # embedder is functional on any future build/refactor.
++            assert not bool((self.action_embedder_B_D.fc1.weight == 0).all()), (
++                "action_embedder_B_D.fc1.weight is all-zero after init_weights() -- "
++                "the action embedder would not propagate the injected action."
++            )
++            assert not bool((self.action_embedder_B_3D.fc1.weight == 0).all()), (
++                "action_embedder_B_3D.fc1.weight is all-zero after init_weights() -- "
++                "the action embedder would not propagate the injected action."
++            )
+ 
+     def build_patch_embed(self):
+         (

@@ -2,7 +2,7 @@
 # Open-AoE DreamDojo launcher. Two routes into an upstream NVIDIA/DreamDojo checkout:
 #   zero-shot preview : convert AoE video -> 480x640 MP4 (generic VideoDataset), run inference.
 #   MANO post-train   : build egodex HDF5 (real AoE hand actions) -> action-conditioned post-train
-#                       (results pending; injects AoE MANO into the action vector [220:352]).
+#                       (injects real AoE MANO into the action vector [220:352]).
 # Env-var driven (see README_OPEN_AOE.md); the placeholders below are not real locations.
 set -euo pipefail
 
@@ -84,7 +84,7 @@ build_egodex() {
     --limit "$NUM_CLIPS"
 }
 
-# MANO-conditioned post-train (needs the DreamDojo env + >=45GB GPUs; results pending).
+# MANO-conditioned post-train (needs the DreamDojo env + >=45GB GPUs).
 # The applied patch injects real AoE MANO hand actions into the action vector [220:352].
 # nproc_per_node / fsdp_shard_size follow CUDA_VISIBLE_DEVICES; single-node.
 posttrain() {
