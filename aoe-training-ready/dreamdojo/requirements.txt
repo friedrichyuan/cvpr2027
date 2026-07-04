@@ -1,6 +1,9 @@
-# Open-AoE DreamDojo recipe — converter dependencies only (CPU video transcode).
-# Zero-shot inference runs inside the upstream NVIDIA/DreamDojo environment (uv sync +
-# the extra infra noted in the README).
+# Open-AoE DreamDojo recipe — converter dependencies only.
+# The zero-shot 480x640 MP4 converter uses numpy/pillow/imageio; the MANO egodex builder
+# (aoe_to_dd_mano.py) additionally needs h5py. Inference AND post-training run inside the
+# upstream NVIDIA/DreamDojo environment (uv sync + the extra infra noted in the README);
+# the patched data loader imports `decord`, which belongs to that upstream env.
 numpy
 pillow
 imageio[ffmpeg]
+h5py

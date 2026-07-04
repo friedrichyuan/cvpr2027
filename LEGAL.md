@@ -83,9 +83,13 @@ clone AdaWorld separately; no patch is required.
 
 The DreamDojo training recipe under `aoe-training-ready/dreamdojo/` is an adaptation layer for
 the [DreamDojo](https://github.com/NVIDIA/DreamDojo) project (Cosmos-Predict2.5, Apache 2.0).
-Users must clone DreamDojo separately and apply the provided patch (a one-line checkpoint-revision
-fix). Cosmos-Predict2.5 model weights are downloaded from NVIDIA/HuggingFace under their
-respective licenses and are not included.
+Users must clone DreamDojo separately and apply the provided patch, which modifies three upstream
+files: a checkpoint-revision pin (a 404 fix); a data-loader change that injects AoE MANO hand
+actions into the model action vector and swaps the video decoder to `decord`; and an action-embedder
+weight-init fix (initializes an action-embedder layer the upstream leaves uninitialized). No upstream
+code is vendored. Cosmos-Predict2.5 model weights are downloaded from NVIDIA/HuggingFace under their
+respective licenses and are not included; no MANO model file is used or shipped (finger kinematics
+are computed analytically from the standard MANO joint tree).
 
 ## Contributing
 
