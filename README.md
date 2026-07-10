@@ -1,201 +1,190 @@
 # Open-AoE
 
-**Open-AoE: The First Open-Source Egocentric Dataset with a Complete Data-to-Model Toolchain, Collected Entirely from Consumer Smartphones**
+<p align="center">
+  <strong>Open-Source Egocentric Data and Toolchain for Embodied Intelligence</strong>
+</p>
 
-延续 AoE (Always-on Egocentric) CVPR Workshop 2026 的工作，Open-AoE 开源 2000 小时 ego-centric 操作数据及完整工具链，打通**原始数据→可视化→机器人重映射→模型训练**的最后一公里。
+<p align="center">
+  English | <a href="README_zh.md">简体中文</a>
+</p>
 
----
+> [!IMPORTANT]
+> Open-AoE-2000H and the accompanying technical report are being prepared for public release. This repository contains the open-source toolchain and data documentation; dataset download and citation links will be added when the release is finalized.
 
-## 项目结构
+<p align="center">
+  <img src="docs/fig1-open-aoe-overview.png" width="100%" alt="Open-AoE dataset, processing pipeline, and open-source toolchain overview">
+</p>
 
-```
-Open-AoE/
-├── README.md                ← 项目总览
-├── CONTRIBUTING.md          ← 贡献指南
-├── CLAUDE.md                ← AI 协作规范
-├── LICENSE                  ← Apache 2.0
-├── LEGAL.md                 ← 第三方依赖许可证声明
-├── assets/                  ← 公共资源
-│   └── mano/                ← MANO 模型下载脚本
-├── open-aoe-2000h/          ← 数据集文档 / Dataset
-├── aoe-visualization/       ← 数据可视化 / Visualization
-├── aoe-retarget-replay/     ← Human-to-Robot 重映射 / 人机重映射
-│   └── phantom/             ← [Phantom](aoe-retarget-replay/phantom/) (G1 + Dex3/Inspire)
-└── aoe-training-ready/      ← 模型训练格式转换 / Training-Ready
-    ├── vitra/               ← [VITRA](aoe-training-ready/vitra/)
-    ├── gr00t_n1d7/          ← [GR00T N1.7](aoe-training-ready/gr00t_n1d7/)
-    ├── H-RDT/               ← [H-RDT](aoe-training-ready/H-RDT/)
-    ├── dreamzero/           ← [DreamZero](aoe-training-ready/dreamzero/)
-    ├── lingbot-va/          ← [LingBot-VA](aoe-training-ready/lingbot-va/)
-    ├── Ctrl-World/          ← [Ctrl-World](aoe-training-ready/Ctrl-World/)
-    ├── lerobot/             ← [LeRobot](aoe-training-ready/lerobot/) (ACT / DP / pi0.5)
-    ├── smolvla/             ← [SmolVLA](aoe-training-ready/smolvla/)
-    ├── ivideogpt/           ← [iVideoGPT](aoe-training-ready/ivideogpt/)
-    ├── genie-redux/         ← [GenieRedux](aoe-training-ready/genie-redux/)
-    ├── laom/                ← [laom (LAOM)](aoe-training-ready/laom/)
-    ├── adaworld/            ← [AdaWorld](aoe-training-ready/adaworld/)
-    └── dreamdojo/           ← [DreamDojo](aoe-training-ready/dreamdojo/)
-```
+## Overview
 
-## 集成计划
+Open-AoE is a community-oriented release of large-scale, real-world egocentric manipulation data collected with consumer smartphones. The planned release contains roughly **2,000 hours** of first-person human manipulation video together with synchronized hand motion, camera motion, and atomic action annotations.
 
-> 状态说明：✅ 已发布 &nbsp;|&nbsp; 🔵 规划中
+Open-AoE goes beyond publishing video and labels. It provides a reproducible data-to-model path that turns the same synchronized segment into reviewable visualizations, reusable hand-object assets, robot-facing motion, robotized video, and model-specific training interfaces.
 
-### 数据集
+| Scale | Contributors | Device types | Scenes | Tasks |
+|---:|---:|---:|---:|---:|
+| ~2,000 hours | 768 | 200 | 500 | 10,000+ |
 
-| 交付物 | 说明 | 状态 | 贡献 |
-|--------|------|------|------|
-| **Open-AoE-2000H** | 2000 小时 ego-centric 操作视频数据集，包含 MANO 手部重建、相机轨迹、中英双语原子动作描述，通过 HuggingFace 分发 | 🔵 规划中 | — |
+### Why Open-AoE?
 
-### 可视化
+- **Smartphone-first collection.** Consumer devices make real-world egocentric capture easier to scale than specialized headsets or robot-only collection.
+- **Manipulation-aligned signals.** RGB video is synchronized with camera calibration and trajectory, MANO hand reconstruction, validity masks, and atomic action annotations.
+- **A complete toolchain.** The repository connects data inspection, 4D reconstruction, human-to-robot retargeting, robot overlay, action conversion, and downstream training recipes.
+- **Modular by design.** Each component can be used independently; downstream methods consume the representation that matches their task instead of one rigid universal format.
+- **Community extensibility.** New robot embodiments, reconstruction backends, and training recipes can be contributed as self-contained subprojects.
 
-| 方法 | 说明 | 状态 | 贡献 |
-|------|------|------|------|
-| [**AoE-Visualization**](aoe-visualization/) | 将 MANO 手部重建结果叠加到去畸变视频上，同时展示动作标注信息面板和 3D 世界帧，为每个样本生成端到端复核视频 | ✅ 已发布 | [@huaijin2787](https://github.com/huaijin2787) |
+## Open-AoE-2000H Dataset
 
-### 人机重映射
+Each released segment is designed as a synchronized multimodal record of an egocentric manipulation episode.
 
-| 方法 | 说明 | 状态 | 贡献 |
-|------|------|------|------|
-| [**Phantom**](aoe-retarget-replay/phantom/) | 通用人机动作重映射框架 (G1 + Dex3/Inspire)，支持 MuJoCo 仿真验证和真机回放 | ✅ 已发布 | [@yfan-yang](https://github.com/yfan-yang) [@woxue](https://github.com/woxue) |
-| **SPIDER** | Object 6-DoF Trajectory 估计管线 | 🔵 规划中 | [@jiadong5](https://github.com/jiadong5) |
-| **EgoInfinity** | Object 6-DoF Trajectory 估计管线 + 小规模数据重定向 | 🔵 规划中 | [@jiadong5](https://github.com/jiadong5) |
-| **Do as I do** | 动作重映射方法复现 | 🔵 规划中 | [@jiadong5](https://github.com/jiadong5) |
-| **银河通用真机** | Retarget 到银河通用真机 | 🔵 规划中 | [@liuyou1103](https://github.com/liuyou1103) |
+| Signal | Main artifact | What it provides |
+|---|---|---|
+| Raw and undistorted RGB | `raw_video.mp4`, `raw_video_undistorted.mp4` | First-person visual observation and calibrated video |
+| Camera metadata | `video_info.json`, `undistorted_video_info.json` | Device information, intrinsics, distortion, resolution, and frame rate |
+| Camera motion | `camera_traj.npz` and transforms in `hands.npz` | Metric-scale 6-DoF camera trajectory and world/camera transforms |
+| Hand reconstruction | `hands.npz` | Per-frame MANO pose, shape, root transform, and validity for both hands |
+| Atomic actions | `ego_action_annotation.json` | Temporally aligned action segments, verbs, objects, hands, and descriptions |
 
-### 模型训练
+The complete sample layout, field definitions, coordinate conventions, and validation notes are documented in the [Open-AoE-2000H data specification](open-aoe-2000h/README.md).
 
-#### VLA（Vision-Language-Action）
+### Data processing and quality control
 
-| 方法 | 说明 | 状态 | 贡献 |
-|------|------|------|------|
-| [**VITRA**](aoe-training-ready/vitra/) | 视觉轨迹推理与动作预测 | ✅ 已发布 | [@woxue](https://github.com/woxue) |
-| [**GR00T N1.7**](aoe-training-ready/gr00t_n1d7/) | NVIDIA 通用机器人基础模型 (sharpa + gripper 模式) | ✅ 已发布 | [@reallm](https://github.com/reallm) |
-| [**H-RDT**](aoe-training-ready/H-RDT/) | 双手操作扩散策略 (48D action) | ✅ 已发布 | [@zhaowenZhou](https://github.com/zhaowenZhou) |
-| [**ACT**](aoe-training-ready/lerobot/) | Action Chunking Transformer，通过 LeRobot 集成 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
-| [**DP**](aoe-training-ready/lerobot/) | Diffusion Policy，通过 LeRobot 集成 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
-| [**pi0.5**](aoe-training-ready/lerobot/) | π0.5 物理智能模型，通过 LeRobot 集成 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
-| [**DreamZero**](aoe-training-ready/dreamzero/) | WAM/VAM 视频动作模型 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
-| [**LingBot-VA**](aoe-training-ready/lingbot-va/) | 灵巧手视觉动作模型 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
-| [**SmolVLA**](aoe-training-ready/smolvla/) | 轻量级视觉-语言-动作策略（lerobot/smolvla_base 微调，hand 20D / 26D） | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+<p align="center">
+  <img src="docs/fig2-data-pipline.png" width="100%" alt="Open-AoE online capture, offline processing, reconstruction, annotation, and quality-control pipeline">
+</p>
 
-#### World Model
+The release pipeline has four stages:
 
-| 方法 | 说明 | 状态 | 贡献 |
-|------|------|------|------|
-| [**Ctrl-World**](aoe-training-ready/Ctrl-World/) | 可控世界模型，从手部动作预测未来视频帧 | ✅ 已发布 | [@William-wAng618](https://github.com/William-wAng618) [@ChaduCheng](https://github.com/ChaduCheng) |
-| [**iVideoGPT**](aoe-training-ready/ivideogpt/) | 动作条件视频世界模型（26D 手+相机；验证相机自运动主导可控性） | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
-| [**GenieRedux**](aoe-training-ready/genie-redux/) | Genie 潜动作生成式世界模型（tokenizer+LAM+dynamics，含 guided-26D 可控性验证） | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
-| [**LAOM**](aoe-training-ready/laom/) | 潜动作学习世界模型（手部 20D 监督，相机为干扰） | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
-| [**AdaWorld**](aoe-training-ready/adaworld/) | 自适应世界模型（LAM 核心） | ✅ 已发布 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
-| [**DreamDojo**](aoe-training-ready/dreamdojo/) | Cosmos-Predict2.5 世界模型 — **zero-shot preview only**（数据管道 + 推理已通，post-train 待 8×H100） | 🔵 规划中 | [@CharlesPikachu](https://github.com/CharlesPikachu) [@ys-feng](https://github.com/ys-feng) |
+1. **On-device capture control** checks hand visibility, wearing conditions, lighting, motion quality, and device health before upload.
+2. **Offline quality control and scene labeling** filters invalid or sensitive content, standardizes frame rate, slices videos, and assigns scene/task metadata.
+3. **Reconstruction and annotation** estimates camera trajectories, reconstructs MANO hands, and produces atomic action segments.
+4. **Quality inspection and delivery** applies completeness, correctness, and temporal-consistency gates followed by human review.
 
-## 核心差异化
+## Open-AoE Toolchain
 
-- **成本**: 仅需一台消费级手机即可采集数据，单人硬件准备成本 <$20（vs 竞品 $300–$3,500）
-- **工具链**: 唯一同时提供 Visualization + Retarget-Replay + Training-Ready 的开源数据集
-- **可参与性**: 任何人用自己的手机即可贡献数据
+The toolchain projects a common Open-AoE segment into the representation spaces required by different robot-learning workflows.
 
-## 前置准备
+| Component | Purpose | Entry point |
+|---|---|---|
+| **AoE-Visualization** | Inspect RGB, MANO meshes/keypoints, camera motion, action annotations, and timelines in one review video | [`aoe-visualization/`](aoe-visualization/) |
+| **AoE-Retarget-Replay** | Reconstruct hand-object assets, retarget human motion to robot embodiments, validate/render trajectories, and synthesize robotized video | [`aoe-retarget-replay/`](aoe-retarget-replay/) |
+| **AoE-Training-Ready** | Convert synchronized AoE signals into model-specific state/action semantics and reproducible training recipes | [`aoe-training-ready/`](aoe-training-ready/) |
 
-Open-AoE 中的多个工具需要 MANO 手部模型进行渲染和重映射。MANO 模型需要用户在官网注册后下载，详见 [MANO 许可](https://mano.is.tue.mpg.de/license.html)。
+### AoE-Visualization
 
-```bash
-# 1. 注册并下载 MANO 模型: https://mano.is.tue.mpg.de/
-# 2. 运行下载脚本，将模型复制到共享目录
-bash assets/mano/download_mano.sh ~/Downloads/MANO_RIGHT.pkl ~/Downloads/MANO_LEFT.pkl
-```
-
-完成后，所有子项目将自动发现 MANO 模型。你也可以在具体子项目中根据提示单独准备。
-
-## 快速开始
-
-### 数据访问 / Dataset
-
-数据集托管在 HuggingFace：
-
-> 🔗 [数据集链接]（待发布）
-
-### 可视化 / Visualization
+AoE-Visualization produces one end-to-end review video per sample. It overlays MANO hand meshes, 21-keypoint skeletons, future wrist trajectories, atomic-action information, a world-frame 3D view, and a timeline on the undistorted video.
 
 ```bash
 cd aoe-visualization
 pip install -r requirements.txt
-python visualize.py --data <path_to_aoe_data>
+
+# One sample
+python visualize.py --sample /path/to/open_aoe_sample
+
+# A directory of samples
+python visualize.py --data_dir /path/to/open_aoe_data --output_dir ./output
 ```
 
-详见 [aoe-visualization/README.md](aoe-visualization/README.md)
+See the [AoE-Visualization guide](aoe-visualization/README.md) for rendering requirements and output details.
 
-### 模型训练 / Training-Ready
+### Reconstruction and Retargeting
+
+<p align="center">
+  <img src="docs/fig3-reconstruct-retarget.png" width="100%" alt="Open-AoE 4D reconstruction, motion retargeting, and robot-overlay routes">
+</p>
+
+The reconstruction and retargeting stack exposes three complementary outputs: a **4D hand-object representation**, **robot-usable motion**, and a **robotized video** in which rendered robot motion is composited into the original scene.
+
+| Subproject | Robot/method coverage | Main capabilities |
+|---|---|---|
+| [**Phantom**](aoe-retarget-replay/phantom/) | Unitree G1 + Dex3 / Inspire | Arm IK, dexterous-hand retargeting, MuJoCo visualization, and SAM2 + E2FGVI robot overlay |
+| [**Retarget Galbot**](aoe-retarget-replay/retarget_galbot/) | Galbot / Galaxea bimanual platform | Palm-to-TCP Pinocchio IK, parallel-jaw gripper mapping, MuJoCo egoview synthesis, and LeRobot/Rerun export |
+| [**AoE Retarget Lab**](aoe-retarget-replay/retarget-lab/) | EgoInfinity/G1, Do-as-I-Do/Sharpa, SPIDER/XHand | External-method integration, 6-DoF reconstruction adapters, and a 12-cell comparison matrix |
+
+Retarget Lab does not vendor third-party repositories, model weights, robot assets, or generated videos. Follow its installation guide to fetch and configure the required upstream projects locally.
+
+### AoE-Training-Ready
+
+<p align="center">
+  <img src="docs/fig4-training-ready.png" width="100%" alt="Open-AoE training-ready annotation spectrum for VLA, world-action, and world models">
+</p>
+
+Training-Ready treats conversion as **action-semantics adaptation**, not simple file-format translation. The same segment can be represented as dense MANO state/action, robot-facing hand or gripper actions, hand-plus-camera dynamics, or latent/weak actions.
+
+| Model family | Included integration recipes |
+|---|---|
+| VLA policies | VITRA, GR00T N1.7, H-RDT, ACT, Diffusion Policy, π0.5, SmolVLA |
+| World/video action models | DreamZero, LingBot-VA, Ctrl-World, iVideoGPT |
+| Latent-action and world models | GenieRedux, LAOM, AdaWorld, DreamDojo |
+
+Every recipe owns its conversion or launch scripts, documentation, and upstream patch when source changes are required. Start from the [Training-Ready recipe index](aoe-training-ready/README.md) and the shared [action specification](aoe-training-ready/ACTION_SPEC.md).
+
+## Getting Started
+
+### 1. Clone the toolchain
 
 ```bash
-# VITRA 训练配方
-cd aoe-training-ready/vitra
-# 详见 README.md
-
-# GR00T N1.7 训练配方
-cd aoe-training-ready/gr00t_n1d7
-# 详见 README.md
-
-# H-RDT 训练配方
-cd aoe-training-ready/H-RDT
-# 详见 README.md
-
-# DreamZero 训练配方
-cd aoe-training-ready/dreamzero
-# 详见 README_OPEN_AOE.md
-
-# LingBot-VA 训练配方
-cd aoe-training-ready/lingbot-va
-# 详见 README_OPEN_AOE.md
-
-# Ctrl-World 训练配方
-cd aoe-training-ready/Ctrl-World
-# 详见 README_OPEN_AOE.md
-
-# LeRobot 训练配方 (ACT / DP / pi0.5)
-cd aoe-training-ready/lerobot
-# 详见 README_OPEN_AOE.md
-
-# 世界模型 / VLA 训练配方 (SmolVLA / iVideoGPT / GenieRedux / laom / AdaWorld / DreamDojo)
-cd aoe-training-ready/ivideogpt
-# 详见 README_OPEN_AOE.md
+git clone https://github.com/woxue/Open-AoE-dev.git
+cd Open-AoE-dev
 ```
 
-详见 [aoe-training-ready/README.md](aoe-training-ready/README.md)
+### 2. Prepare MANO models when required
 
-### 人机重映射 / Retarget-Replay
+MANO model files are not distributed in this repository. Register and download `MANO_RIGHT.pkl` and `MANO_LEFT.pkl` from the [MANO website](https://mano.is.tue.mpg.de/), then install them into the shared location:
 
 ```bash
-# Phantom 重映射方法 (G1 + Dex3/Inspire)
-cd aoe-retarget-replay/phantom
-# 详见 README.md
+bash assets/mano/download_mano.sh \
+  ~/Downloads/MANO_RIGHT.pkl \
+  ~/Downloads/MANO_LEFT.pkl
 ```
 
-## 致谢
+### 3. Choose a workflow
 
-Open-AoE 建立在以下优秀开源项目之上，感谢所有贡献者：
+| Goal | Start here |
+|---|---|
+| Understand the released sample format | [`open-aoe-2000h/README.md`](open-aoe-2000h/README.md) |
+| Render and inspect samples | [`aoe-visualization/README.md`](aoe-visualization/README.md) |
+| Retarget motion or render robot overlays | [`aoe-retarget-replay/README.md`](aoe-retarget-replay/README.md) |
+| Convert data for model training | [`aoe-training-ready/README.md`](aoe-training-ready/README.md) |
 
-| 项目 | 用途 | 许可证 |
-|------|------|--------|
-| [NVIDIA Isaac GR00T](https://github.com/NVIDIA/Isaac-GR00T) | 模型训练框架 | Apache 2.0 |
-| [H-RDT](https://github.com/HongzheBi/H_RDT) | 双手操作扩散策略 | Apache 2.0 |
-| [Phantom](https://github.com/MarionLepert/phantom) | 人机动作重映射 | MIT |
-| [VITRA](https://github.com/microsoft/VITRA) | 视觉轨迹推理 | MIT |
-| [dex-retargeting](https://github.com/dex-retargeting/dex-retargeting) | 手指重映射 | MIT |
-| [MANO](https://mano.is.tue.mpg.de/) | 手部模型 | MANO License |
-| [HaWoR](https://github.com/ThunderVVV/HaWoR) | 手部重建 | CC-BY-NC-ND 4.0 |
-| [iVideoGPT](https://github.com/thuml/iVideoGPT) | 动作条件世界模型 | MIT |
-| [GenieRedux](https://github.com/insait-institute/GenieRedux) | 潜动作生成式世界模型 (Genie) | MIT |
-| [LeRobot / SmolVLA](https://github.com/huggingface/lerobot) | VLA 策略训练 | Apache 2.0 |
-| [LAOM](https://github.com/dunnolab/laom) | 潜动作学习（带监督） | Apache 2.0 |
-| [AdaWorld](https://github.com/Little-Podi/AdaWorld) | 潜动作世界模型 | Apache 2.0 |
-| [DreamDojo](https://github.com/NVIDIA/DreamDojo) | 世界模型 (Cosmos-Predict2.5) | Apache 2.0 |
+## Repository Layout
 
-## 相关链接
+```text
+Open-AoE-dev/
+├── docs/                    # Technical-report overview figures
+├── open-aoe-2000h/         # Dataset format and usage documentation
+├── aoe-visualization/      # Synchronized data review and rendering
+├── aoe-retarget-replay/    # Reconstruction, retargeting, replay, and overlays
+│   ├── phantom/
+│   ├── retarget_galbot/
+│   └── retarget-lab/
+├── aoe-training-ready/     # Model adapters, converters, launchers, and patches
+├── assets/mano/            # Shared MANO setup helper; model files are not tracked
+├── CONTRIBUTING.md
+├── LEGAL.md
+├── LICENSE
+└── README_old.md           # Archived collaboration/progress-oriented README
+```
 
-- **技术报告**: [arXiv 链接]（待发布）
-- **数据集**: [HuggingFace 链接]（待发布）
-- **AoE 论文** (CVPR Workshop 2026): [链接]（待发布）
-- **贡献指南**: [CONTRIBUTING.md](CONTRIBUTING.md)
-- **第三方许可**: [LEGAL.md](LEGAL.md)
+## Release Resources
+
+- **Open-AoE-2000H dataset:** coming soon
+- **Technical report:** coming soon
+- **AoE capture application:** release information coming soon
+- **Detailed data specification:** [open-aoe-2000h/README.md](open-aoe-2000h/README.md)
+
+## Contributing
+
+We welcome contributions that add robot embodiments, reconstruction or retargeting backends, visualization features, data converters, and training recipes. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Keep each integration self-contained, document external dependencies, and do not commit datasets, model weights, MANO files, or license-incompatible upstream source.
+
+## License and Third-Party Components
+
+Original source code in this repository is released under the [Apache License 2.0](LICENSE). Dataset distribution terms, model weights, robot assets, and third-party components may use different licenses. See [LEGAL.md](LEGAL.md) and each subproject README before redistribution or commercial use.
+
+## Citation
+
+The official BibTeX entry will be added when the Open-AoE technical report is released.
+
+## Acknowledgements
+
+Open-AoE is built by the AoE community and integrates ideas and interfaces from many open-source projects. We thank all data contributors, toolchain contributors, maintainers, and upstream research teams. Component provenance and license notices are maintained in [LEGAL.md](LEGAL.md).
