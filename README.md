@@ -24,10 +24,6 @@
 
 Open-AoE is a large-scale, real-world egocentric manipulation dataset collected entirely with consumer smartphones. It provides approximately **2,000 hours** of first-person video with synchronized hand motion, camera motion, and bilingual atomic-action annotations. The repository connects those signals to visualization, human-to-robot retargeting, robot replay, and model-specific training recipes.
 
-| Scale | Participants | Device types | Scenes | Tasks |
-|---:|---:|---:|---:|---:|
-| ~2,000 hours | 1,000+ | 400+ | 400+ | 8,000+ |
-
 ## Get the Release
 
 | Resource | Access | What you get |
