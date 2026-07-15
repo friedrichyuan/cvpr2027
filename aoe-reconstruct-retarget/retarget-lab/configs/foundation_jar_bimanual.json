@@ -1,7 +1,7 @@
 {
   "run_name": "foundation_jar_bimanual_smoke",
   "workspace_root": "/path/to/workspace",
-  "method_root": "/path/to/Open-AoE-dev/aoe-retarget-replay/retarget-lab",
+  "method_root": "/path/to/Open-AoE/aoe-reconstruct-retarget/retarget-lab",
   "dataset_root": "/path/to/open-aoe/extracted",
   "scene": {
     "segment": "poc_raw_video_20260201_193100_part003",

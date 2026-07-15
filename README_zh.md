@@ -47,7 +47,7 @@ Open-AoE 是完全使用消费级智能手机采集的大规模真实世界第�
 | **先直观看数据，再决定怎么用** | [AoE-Visualization](aoe-visualization/README.md) | 生成包含双手、轨迹、动作和 3D 视图的端到端复核视频 |
 | **训练 VLA 策略** | [LeRobot 配方](aoe-training-ready/lerobot/README_OPEN_AOE.md) · [GR00T N1.7](aoe-training-ready/gr00t_n1d7/README.md) · [H-RDT](aoe-training-ready/H-RDT/README.md) · [VITRA](aoe-training-ready/vitra/README.md) | 转换为模型所需的 state/action 语义并启动训练 |
 | **训练世界模型或 Video Action Model** | [训练配方索引](aoe-training-ready/README.md) | 使用 DreamZero、LingBot-VA、Ctrl-World、iVideoGPT、GenieRedux、LAOM、AdaWorld 或 DreamDojo 适配 |
-| **把人类动作重映射到机器人** | [AoE-Retarget-Replay](aoe-retarget-replay/README.md) | 生成机器人关节轨迹、仿真结果或 robotized video |
+| **重建交互场景或将人类动作映射到机器人** | [AoE-Reconstruct-Retarget](aoe-reconstruct-retarget/README.md) | 重建交互资产，并生成机器人关节轨迹、仿真结果或 robotized video |
 | **增加新模型或新机器人** | [贡献指南](CONTRIBUTING.md) | 按仓库结构和依赖规范添加自包含集成 |
 
 ## 快速开始：看懂一个数据片段
@@ -96,7 +96,7 @@ python visualize.py --sample /path/to/open_aoe_segment
 | 阶段 | 组件 | 输出 |
 |---|---|---|
 | **洞察 / 复核** | [AoE-Visualization](aoe-visualization/README.md) | 每个 segment 一条复核视频，用于检查视觉效果和时序一致性 |
-| **重映射 / 回放** | [AoE-Retarget-Replay](aoe-retarget-replay/README.md) | 机器人轨迹、仿真验证和 robotized video |
+| **重建 / 重映射** | [AoE-Reconstruct-Retarget](aoe-reconstruct-retarget/README.md) | 重建资产、机器人轨迹、仿真验证和 robotized video |
 | **转换 / 训练** | [AoE-Training-Ready](aoe-training-ready/README.md) | 面向具体模型的数据、动作、补丁、启动器和训练配方 |
 
 > [!IMPORTANT]
@@ -116,7 +116,7 @@ python visualize.py --sample /path/to/open_aoe_segment
 
 每份配方都是自包含的，说明了上游仓库和验证 commit、数据转换方式、环境变量、训练命令、输出以及必要补丁。本仓库不会直接 vendor 上游项目或 checkpoint。
 
-## 重映射与回放地图
+## 重建与重映射地图
 
 <p align="center">
   <img src="docs/fig3-reconstruct-retarget.png" width="100%" alt="Open-AoE 重建、运动重映射和机器人叠加路线">
@@ -124,9 +124,9 @@ python visualize.py --sample /path/to/open_aoe_segment
 
 | 子项目 | 覆盖范围 | 主要能力 |
 |---|---|---|
-| [**Phantom**](aoe-retarget-replay/phantom/) | Unitree G1 + Dex3 / Inspire | 臂部 IK、灵巧手重映射、MuJoCo 可视化和机器人叠加 |
-| [**Retarget Galbot**](aoe-retarget-replay/retarget_galbot/) | Galbot / Galaxea 双臂平台 | Palm-to-TCP IK、夹爪映射、egoview 合成和 LeRobot/Rerun 导出 |
-| [**AoE Retarget Lab**](aoe-retarget-replay/retarget-lab/) | EgoInfinity/G1、Do-as-I-Do/Sharpa、SPIDER/XHand | 外部方法适配、6-DoF 重建路线和 12-cell 对比矩阵 |
+| [**Phantom**](aoe-reconstruct-retarget/phantom/) | Unitree G1 + Dex3 / Inspire | 臂部 IK、灵巧手重映射、MuJoCo 可视化和机器人叠加 |
+| [**Retarget Galbot**](aoe-reconstruct-retarget/retarget_galbot/) | Galbot / Galaxea 双臂平台 | Palm-to-TCP IK、夹爪映射、egoview 合成和 LeRobot/Rerun 导出 |
+| [**AoE Retarget Lab**](aoe-reconstruct-retarget/retarget-lab/) | EgoInfinity/G1、Do-as-I-Do/Sharpa、SPIDER/XHand | 外部方法适配、6-DoF 重建路线和 12-cell 对比矩阵 |
 
 本仓库不包含第三方仓库、模型权重、机器人资产或生成视频。请按各子项目的安装指南获取外部依赖。
 
@@ -148,7 +148,7 @@ Open-AoE/
 ├── Open-AoE-tech-report.pdf  # 当前技术报告
 ├── open-aoe-2000h/           # 数据格式与字段级文档
 ├── aoe-visualization/        # 同步数据复核与渲染
-├── aoe-retarget-replay/      # 重建、重映射、回放与机器人叠加
+├── aoe-reconstruct-retarget/ # 重建、重映射、回放与机器人叠加
 ├── aoe-training-ready/       # 模型适配、转换脚本、启动器与补丁
 ├── assets/mano/              # MANO 共享配置脚本；模型文件不纳入 Git
 ├── docs/                     # 总览图与流水线图

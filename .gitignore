@@ -7,10 +7,10 @@ illustrations/
 inner/
 report/
 
-# Add for branch: cooperate/aoe-retarget-replay
+# Local development files
 .vscode/
 CLAUDE.local.md
-release/aoe-retarget-replay/phantom/output_test/
+aoe-reconstruct-retarget/phantom/output_test/
 
 # LaTeX intermediate files
 *.aux

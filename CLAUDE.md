@@ -26,7 +26,7 @@ Open-AoE/
 ├── assets/                # 公共资源（下载脚本等）
 ├── open-aoe-2000h/        # 数据集文档与使用指南
 ├── aoe-visualization/     # 数据可视化工具
-├── aoe-retarget-replay/   # Human-to-Robot 重映射工具 (Phantom)
+├── aoe-reconstruct-retarget/ # 重建与 Human-to-Robot 重映射工具
 └── aoe-training-ready/    # 模型训练格式转换工具
     ├── vitra/             # VITRA 训练配方
     └── gr00t_n1d7/        # GR00T N1.7 训练配方
@@ -68,4 +68,3 @@ raw_{collector_id}_seg_{segment_id}/
     ├── camera_traj.npz                  # 相机轨迹（MegaSAM）
     └── ...
 ```
-

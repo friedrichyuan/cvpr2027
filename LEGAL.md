@@ -26,12 +26,12 @@ are from Sharpa Group, licensed under Apache 2.0.
 
 ### Phantom
 
-The retargeting pipeline under `aoe-retarget-replay/phantom/` is an adaptation of
+The retargeting pipeline under `aoe-reconstruct-retarget/phantom/` is an adaptation of
 [Phantom](https://github.com/MarionLepert/phantom) by MarionLepert, licensed under MIT.
 
 ### dex-retargeting
 
-The Dex3 and Inspire hand URDF files under `aoe-retarget-replay/phantom/assets/robots/hands/`
+The Dex3 and Inspire hand URDF files under `aoe-reconstruct-retarget/phantom/assets/robots/hands/`
 are adapted from the [dex-retargeting](https://github.com/dex-retargeting/dex-retargeting) project.
 
 ### VITRA

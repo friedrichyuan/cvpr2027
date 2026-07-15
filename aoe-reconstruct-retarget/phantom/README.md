@@ -32,14 +32,14 @@ Layer 4: 视频合成       — SAM2 手部分割 (FK seed) + E2FGVI 修复 + �
 bash assets/mano/download_mano.sh ~/Downloads/MANO_RIGHT.pkl ~/Downloads/MANO_LEFT.pkl
 
 # 2. 安装依赖
-cd aoe-retarget-replay/phantom
+cd aoe-reconstruct-retarget/phantom
 pip install -e .
 ```
 
 ### 单 episode 重映射
 
 ```bash
-cd aoe-retarget-replay/phantom
+cd aoe-reconstruct-retarget/phantom
 
 # Inspire (26-DoF, 5 指)
 MUJOCO_GL=egl python scripts/retarget.py \

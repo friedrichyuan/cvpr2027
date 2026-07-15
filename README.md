@@ -47,7 +47,7 @@ The technical report is hosted in this repository while the arXiv page is being 
 | **See the data before writing code** | [AoE-Visualization](aoe-visualization/README.md) | Render an end-to-end review video with hands, trajectories, actions, and a 3D view |
 | **Train a VLA policy** | [LeRobot recipes](aoe-training-ready/lerobot/README_OPEN_AOE.md) · [GR00T N1.7](aoe-training-ready/gr00t_n1d7/README.md) · [H-RDT](aoe-training-ready/H-RDT/README.md) · [VITRA](aoe-training-ready/vitra/README.md) | Convert Open-AoE signals to model-specific state/action semantics and launch training |
 | **Train a world or video-action model** | [Training recipe index](aoe-training-ready/README.md) | Use DreamZero, LingBot-VA, Ctrl-World, iVideoGPT, GenieRedux, LAOM, AdaWorld, or DreamDojo integrations |
-| **Retarget human motion to a robot** | [AoE-Retarget-Replay](aoe-retarget-replay/README.md) | Produce robot joint trajectories, simulation renders, or robotized video |
+| **Reconstruct scenes or retarget human motion** | [AoE-Reconstruct-Retarget](aoe-reconstruct-retarget/README.md) | Reconstruct interaction assets and produce robot trajectories, simulation renders, or robotized video |
 | **Add a model or robot integration** | [Contributing guide](CONTRIBUTING.md) | Follow the repository structure and dependency rules |
 
 ## Quick Start: Inspect One Segment
@@ -96,7 +96,7 @@ The toolchain then maps those synchronized signals into task-specific representa
 | Stage | Component | Output |
 |---|---|---|
 | **Inspect** | [AoE-Visualization](aoe-visualization/README.md) | One review video per segment for visual and temporal quality checks |
-| **Retarget / replay** | [AoE-Retarget-Replay](aoe-retarget-replay/README.md) | Robot trajectories, simulation validation, and robotized video |
+| **Reconstruct / retarget** | [AoE-Reconstruct-Retarget](aoe-reconstruct-retarget/README.md) | Reconstructed assets, robot trajectories, simulation validation, and robotized video |
 | **Convert / train** | [AoE-Training-Ready](aoe-training-ready/README.md) | Model-specific datasets, actions, patches, launchers, and training recipes |
 
 > [!IMPORTANT]
@@ -116,7 +116,7 @@ The toolchain then maps those synchronized signals into task-specific representa
 
 Each recipe is self-contained and documents its upstream repository and verified commit, data conversion, environment variables, training command, outputs, and any required patch. Upstream projects and checkpoints are not vendored into this repository.
 
-## Retargeting and Replay Map
+## Reconstruction and Retargeting Map
 
 <p align="center">
   <img src="docs/fig3-reconstruct-retarget.png" width="100%" alt="Open-AoE reconstruction, motion retargeting, and robot-overlay routes">
@@ -124,9 +124,9 @@ Each recipe is self-contained and documents its upstream repository and verified
 
 | Subproject | Coverage | Main capabilities |
 |---|---|---|
-| [**Phantom**](aoe-retarget-replay/phantom/) | Unitree G1 + Dex3 / Inspire | Arm IK, dexterous-hand retargeting, MuJoCo visualization, and robot overlay |
-| [**Retarget Galbot**](aoe-retarget-replay/retarget_galbot/) | Galbot / Galaxea bimanual platforms | Palm-to-TCP IK, gripper mapping, egoview synthesis, and LeRobot/Rerun export |
-| [**AoE Retarget Lab**](aoe-retarget-replay/retarget-lab/) | EgoInfinity/G1, Do-as-I-Do/Sharpa, SPIDER/XHand | External-method adapters, 6-DoF reconstruction routes, and a 12-cell comparison matrix |
+| [**Phantom**](aoe-reconstruct-retarget/phantom/) | Unitree G1 + Dex3 / Inspire | Arm IK, dexterous-hand retargeting, MuJoCo visualization, and robot overlay |
+| [**Retarget Galbot**](aoe-reconstruct-retarget/retarget_galbot/) | Galbot / Galaxea bimanual platforms | Palm-to-TCP IK, gripper mapping, egoview synthesis, and LeRobot/Rerun export |
+| [**AoE Retarget Lab**](aoe-reconstruct-retarget/retarget-lab/) | EgoInfinity/G1, Do-as-I-Do/Sharpa, SPIDER/XHand | External-method adapters, 6-DoF reconstruction routes, and a 12-cell comparison matrix |
 
 Third-party repositories, model weights, robot assets, and generated videos are not included. Follow each subproject's setup guide to obtain its external dependencies.
 
@@ -148,7 +148,7 @@ Open-AoE/
 ├── Open-AoE-tech-report.pdf  # Current technical report
 ├── open-aoe-2000h/           # Dataset format and field-level documentation
 ├── aoe-visualization/        # Synchronized data review and rendering
-├── aoe-retarget-replay/      # Reconstruction, retargeting, replay, and overlays
+├── aoe-reconstruct-retarget/ # Reconstruction, retargeting, replay, and overlays
 ├── aoe-training-ready/       # Model adapters, converters, launchers, and patches
 ├── assets/mano/              # Shared MANO setup helper; model files are not tracked
 ├── docs/                     # Overview and pipeline figures

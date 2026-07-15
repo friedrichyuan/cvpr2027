@@ -22,7 +22,7 @@
 
 | 你的贡献 | 应该放在 | 举例 |
 |----------|----------|------|
-| 某类任务的完整工具链（训练配方、可视化、仿真等） | 项目根目录下新建子目录 | `aoe-training-ready/`、`aoe-retarget-replay/` |
+| 某类任务的完整工具链（训练配方、可视化、仿真等） | 项目根目录下新建子目录 | `aoe-training-ready/`、`aoe-reconstruct-retarget/` |
 | 对某个已有子项目的功能增强 | 对应子目录内修改 | 在 `aoe-visualization/` 中增加新的渲染器 |
 | 新的模型训练配方 | `aoe-training-ready/<model_name>/` | `aoe-training-ready/vitra/` |
 
@@ -44,7 +44,7 @@ Open-AoE/
 ├── assets/              # 公共资源（下载脚本、共享配置）
 ├── open-aoe-2000h/      # 数据集文档与使用指南
 ├── aoe-visualization/   # 数据可视化工具
-├── aoe-retarget-replay/ # Human-to-Robot 重映射工具
+├── aoe-reconstruct-retarget/ # 重建与 Human-to-Robot 重映射工具
 └── aoe-training-ready/  # 模型训练格式转换工具
 ```
 
@@ -69,7 +69,7 @@ Open-AoE/
 |--------|------|------|
 | aoe-visualization | `aoe-visualization/` | AoE 数据可视化与渲染 |
 | aoe-training-ready | `aoe-training-ready/` | 模型训练配方（GR00T、VITRA） |
-| aoe-retarget-replay | `aoe-retarget-replay/` | 人机动作重映射 (Phantom) |
+| aoe-reconstruct-retarget | `aoe-reconstruct-retarget/` | 重建与人机动作重映射 |
 | open-aoe-2000h | `open-aoe-2000h/` | 数据集文档与下载 |
 
 ---

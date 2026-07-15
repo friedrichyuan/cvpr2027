@@ -1,99 +1,63 @@
 # AoE Training-Ready
 
-This directory keeps each baseline as an independent Open-AoE integration
-recipe. It intentionally does not vendor full upstream projects. Every recipe
-owns its Open-AoE conversion script, launch script, loss-curve script, README,
-and upstream patch when source changes are required.
+Open-AoE Training-Ready is a collection of **model-specific integration recipes**. Each recipe follows the target model's own data design, action semantics, dependencies, and training workflow.
 
-## Data Representation
+> [!IMPORTANT]
+> There is no universal Open-AoE training format, action specification, converter, or launcher across these recipes. Choose a target model below, then treat that submodule's README as the source of truth.
 
-The verified Open-AoE action/state vector is 110D:
+## Choose a Recipe
 
-```text
-left hand  = valid(1) + wrist_trans(3) + wrist_rot_axis_angle(3) + wrist_vel(3) + MANO pose(45)
-right hand = valid(1) + wrist_trans(3) + wrist_rot_axis_angle(3) + wrist_vel(3) + MANO pose(45)
-```
+### VLA and robot policies
 
-`state` uses the current frame hand vector. `action` uses the next-frame target
-hand vector at the method-specific action stride.
+| Target model | Start here | Integration focus |
+|---|---|---|
+| ACT / Diffusion Policy / π0.5 | [LeRobot recipe](lerobot/README_OPEN_AOE.md) | Open-AoE conversion and training through a compatible LeRobot checkout |
+| SmolVLA | [SmolVLA recipe](smolvla/README_OPEN_AOE.md) | Open-AoE conversion, fine-tuning, evaluation, and loss inspection |
+| GR00T N1.7 | [GR00T N1.7 recipe](gr00t_n1d7/README.md) · [中文](gr00t_n1d7/README_zh.md) | End-to-end preparation, embodiment adaptation, validation, and pretraining |
+| H-RDT | [H-RDT recipe](H-RDT/README.md) | H-RDT-specific action preprocessing, language encoding, statistics, and pretraining |
+| VITRA | [VITRA recipe](vitra/README.md) | VITRA episodic conversion, verification, upstream patch, and training setup |
 
-> The world-model recipes (iVideoGPT, GenieRedux, laom, AdaWorld, DreamDojo) and SmolVLA
-> use a different hand-as-EEF + camera action representation (22D state / 20–26D action),
-> documented in [`ACTION_SPEC.md`](ACTION_SPEC.md).
+### Video and world-action models
 
-## Recipes
+| Target model | Start here | Integration focus |
+|---|---|---|
+| DreamZero | [DreamZero recipe](dreamzero/README_OPEN_AOE.md) | Open-AoE conversion, upstream adaptation, training, and loss curves |
+| LingBot-VA | [LingBot-VA recipe](lingbot-va/README_OPEN_AOE.md) | Open-AoE conversion, latent preparation, upstream adaptation, and post-training |
+| Ctrl-World | [Ctrl-World recipe](Ctrl-World/README_OPEN_AOE.md) | Ctrl-World-specific data preparation and training without an upstream patch |
+| iVideoGPT | [iVideoGPT recipe](ivideogpt/README_OPEN_AOE.md) | Action-conditioned video modeling, conversion, training, and evaluation |
 
-| Model | Project | Open-AoE entry | Patch |
-|---|---|---|---|
-| DreamZero | [`dreamzero/`](dreamzero/) | [`dreamzero/README_OPEN_AOE.md`](dreamzero/README_OPEN_AOE.md) | [`dreamzero/patches/open_aoe_support.patch`](dreamzero/patches/open_aoe_support.patch) |
-| LingBot-VA | [`lingbot-va/`](lingbot-va/) | [`lingbot-va/README_OPEN_AOE.md`](lingbot-va/README_OPEN_AOE.md) | [`lingbot-va/patches/open_aoe_support.patch`](lingbot-va/patches/open_aoe_support.patch) |
-| Ctrl-World | [`Ctrl-World/`](Ctrl-World/) | [`Ctrl-World/README_OPEN_AOE.md`](Ctrl-World/README_OPEN_AOE.md) | none |
-| ACT / DP / pi0.5 | [`lerobot/`](lerobot/) | [`lerobot/README_OPEN_AOE.md`](lerobot/README_OPEN_AOE.md) | none |
-| VITRA | [`vitra/`](vitra/) | [`vitra/README.md`](vitra/README.md) | [`vitra/vitra_aoe_support.patch`](vitra/vitra_aoe_support.patch) |
-| GR00T N1.7 | [`gr00t_n1d7/`](gr00t_n1d7/) | [`gr00t_n1d7/README.md`](gr00t_n1d7/README.md) | project-local changes |
-| H-RDT | [`H-RDT/`](H-RDT/) | [`H-RDT/README.md`](H-RDT/README.md) | [`H-RDT/hrdt_aoe_support.patch`](H-RDT/hrdt_aoe_support.patch) |
-| SmolVLA | [`smolvla/`](smolvla/) | [`smolvla/README_OPEN_AOE.md`](smolvla/README_OPEN_AOE.md) | none |
-| iVideoGPT | [`ivideogpt/`](ivideogpt/) | [`ivideogpt/README_OPEN_AOE.md`](ivideogpt/README_OPEN_AOE.md) | [`ivideogpt/patches/open_aoe_support.patch`](ivideogpt/patches/open_aoe_support.patch) |
-| GenieRedux | [`genie-redux/`](genie-redux/) | [`genie-redux/README_OPEN_AOE.md`](genie-redux/README_OPEN_AOE.md) | [`genie-redux/patches/open_aoe_support.patch`](genie-redux/patches/open_aoe_support.patch) |
-| laom (LAOM) | [`laom/`](laom/) | [`laom/README_OPEN_AOE.md`](laom/README_OPEN_AOE.md) | none |
-| AdaWorld | [`adaworld/`](adaworld/) | [`adaworld/README_OPEN_AOE.md`](adaworld/README_OPEN_AOE.md) | none |
-| DreamDojo | [`dreamdojo/`](dreamdojo/) | [`dreamdojo/README_OPEN_AOE.md`](dreamdojo/README_OPEN_AOE.md) | [`dreamdojo/patches/open_aoe_support.patch`](dreamdojo/patches/open_aoe_support.patch) |
+### Latent-action and world models
 
-## Quick Dry Run
+| Target model | Start here | Integration focus |
+|---|---|---|
+| GenieRedux | [GenieRedux recipe](genie-redux/README_OPEN_AOE.md) | Latent-action, tokenizer, dynamics, guided-action, and rollout workflows |
+| LAOM | [LAOM recipe](laom/README_OPEN_AOE.md) | LAOM-specific HDF5 conversion and supervised latent-action training |
+| AdaWorld | [AdaWorld recipe](adaworld/README_OPEN_AOE.md) | Open-AoE frame-pair preparation and latent-action model training |
+| DreamDojo | [DreamDojo recipe](dreamdojo/README_OPEN_AOE.md) | Zero-shot preview and MANO-conditioned post-training workflow |
 
-Each recipe exposes its own launcher. Point the launcher at a separate upstream
-checkout with the method-specific `*_UPSTREAM_ROOT` variable listed in that
-method's README.
+## How to Start
 
-```bash
-cd dreamzero
-./scripts/aoe_train --dry-run train
+1. Get Open-AoE data from [Hugging Face](https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h) or [ModelScope](https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h).
+2. Choose the model family and target recipe from the tables above.
+3. Open that recipe's README and follow its documented upstream version, environment, expected Open-AoE inputs, conversion steps, and training commands.
+4. Keep outputs and intermediate datasets separate between recipes unless both recipe READMEs explicitly document compatibility.
 
-cd ../lingbot-va
-./scripts/aoe_train --dry-run train
+Do not assume that a converter, action representation, environment variable, or launch command from one recipe applies to another.
 
-cd ../Ctrl-World
-./scripts/aoe_train --dry-run train
+## Repository Convention
 
-cd ../lerobot
-./scripts/aoe_train --dry-run --model act train
-./scripts/aoe_train --dry-run --model dp train
-./scripts/aoe_train --dry-run --model pi05 train
-```
+Each model integration lives in its own directory and should document:
 
-World-model recipes (and SmolVLA) expose the same dry-run interface:
+- the target upstream project and compatible version;
+- required data, checkpoints, and external dependencies;
+- model-specific conversion or preprocessing;
+- training, evaluation, and expected outputs;
+- any upstream patch or project-local source changes.
 
-```bash
-cd ../smolvla      && ./scripts/aoe_train --dry-run train
-cd ../ivideogpt    && ./scripts/aoe_train --dry-run train
-cd ../genie-redux  && ./scripts/aoe_train --dry-run full
-cd ../laom         && ./scripts/aoe_train --dry-run train
-cd ../adaworld     && ./scripts/aoe_train --dry-run train
-cd ../dreamdojo    && ./scripts/aoe_train --dry-run convert
-```
+Most upstream projects and model weights are not vendored into this repository. Follow the selected recipe's setup and license notes before use.
 
-Use environment variables to point scripts at local data, checkpoints, and
-outputs. The common variables are:
+## Contributing a Recipe
 
-```bash
-export OPEN_AOE_RAW_ROOT=/PATH_TO/general_datasets/Open-AoE/poc_deliver
-export CKPT_ROOT=/PATH_TO/ckpts/HF_ckpts
-export AOE_RESULTS_DIR=/PATH_TO/aoe_runs/<experiment>
-```
+Add a self-contained directory for the target model. Include a README that explains the complete Open-AoE workflow, plus only the converters, launchers, configuration, evaluation tools, and patches required by that model.
 
-Model-specific README files list the full environment setup, data conversion,
-training commands, outputs, and verified upstream commit. For methods with a
-patch, clone the upstream project separately, check out the verified commit, and
-apply the patch from this repository before running the launcher.
-
-## Contributing a New Recipe
-
-For a new method, add the integration inside that method's own project folder:
-
-1. `README_OPEN_AOE.md` with environment setup, data conversion, training, and outputs.
-2. `scripts/aoe_train` or an equivalent project-local launch script.
-3. Project-local converter and plotting scripts when needed.
-4. `patches/open_aoe_support.patch` when upstream source changes are required.
-
-Avoid hard-copying upstream projects into this repository unless the license has
-been reviewed. Prefer documenting the upstream commit and providing a patch.
+Avoid presenting model-specific representations or commands as repository-wide standards.

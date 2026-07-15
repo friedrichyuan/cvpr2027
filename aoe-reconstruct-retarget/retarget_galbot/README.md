@@ -36,10 +36,10 @@ name; keep it consistent when you set `PROPAINTER_PYTHON` / related env vars.
 
 ### 1. Install this package
 
-From the repository root (`aoe-retarget-replay/retarget_galbot/`):
+From the repository root (`aoe-reconstruct-retarget/retarget_galbot/`):
 
 ```bash
-cd /path/to/aoe-retarget-replay/retarget_galbot
+cd /path/to/Open-AoE/aoe-reconstruct-retarget/retarget_galbot
 pip install -e .
 ```
 
