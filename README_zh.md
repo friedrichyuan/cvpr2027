@@ -1,190 +1,181 @@
 # Open-AoE
 
 <p align="center">
-  <strong>面向具身智能的开源第一视角数据与工具链</strong>
+  <strong>2,000 小时手机采集的第一视角操作数据<br>以及完整的 Data-to-Model 工具链</strong>
 </p>
 
 <p align="center">
   <a href="README.md">English</a> | 简体中文
 </p>
 
-> [!IMPORTANT]
-> Open-AoE-2000H 数据集及配套技术报告正在准备公开发布。本仓库已经提供开源工具链与数据格式文档；数据下载和正式引用链接将在发布定稿后补充。
+<p align="center">
+  <a href="Open-AoE-tech-report.pdf"><strong>技术报告</strong></a> ·
+  <a href="https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h"><strong>Hugging Face 数据集</strong></a> ·
+  <a href="https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h"><strong>ModelScope 数据集</strong></a> ·
+  <strong>采集 APP：即将发布</strong>
+</p>
+
+> [!TIP]
+> 第一次接触 Open-AoE？建议先阅读[数据规格](open-aoe-2000h/README.md)，用 [AoE-Visualization](aoe-visualization/README.md) 渲染一个片段，再从 [AoE-Training-Ready](aoe-training-ready/README.md) 选择目标模型的训练配方。
 
 <p align="center">
   <img src="docs/fig1-open-aoe-overview.png" width="100%" alt="Open-AoE 数据集、处理流水线与开源工具链总览">
 </p>
 
-## 项目概览
+Open-AoE 是完全使用消费级智能手机采集的大规模真实世界第一视角操作数据集，包含约 **2,000 小时**第一人称视频，以及时间同步的手部运动、相机运动和中英双语原子动作标注。本仓库进一步把这些信号连接到数据可视化、人机动作重映射、机器人回放和面向具体模型的训练配方。
 
-Open-AoE 是一个面向社区的大规模真实世界第一视角操作数据项目，全部使用消费级智能手机采集。计划发布的数据包含约 **2,000 小时**第一人称人类操作视频，并提供时间同步的手部运动、相机运动与原子动作标注。
-
-Open-AoE 不止发布视频与标签，还提供一条可复现的 data-to-model 路径：同一段同步数据可以被转换为可检查的可视化、可复用的手物资产、面向机器人本体的运动、robotized video，以及适配不同模型的训练接口。
-
-| 数据规模 | 贡献者 | 设备类型 | 场景 | 任务 |
+| 数据规模 | 采集参与者 | 设备类型 | 场景 | 任务 |
 |---:|---:|---:|---:|---:|
-| 约 2,000 小时 | 768 | 200 | 500 | 10,000+ |
+| 约 2,000 小时 | 1,000+ | 400+ | 400+ | 8,000+ |
 
-### 为什么选择 Open-AoE？
+## 获取发布资源
 
-- **智能手机优先。** 相比专用头显或仅依赖机器人的采集方式，消费级设备更容易扩展到真实日常场景。
-- **面向操作学习的同步信号。** RGB 视频与相机标定及轨迹、MANO 手部重建、有效性标记和原子动作标注保持时间对齐。
-- **完整工具链。** 仓库覆盖数据检查、4D 重建、人机重映射、机器人视频叠加、动作转换和下游训练配方。
-- **模块化设计。** 每个组件都可以独立使用；不同下游方法选择与自身任务匹配的表示，而不是被迫使用单一固定格式。
-- **可持续社区扩展。** 新机器人本体、重建后端和训练配方可以作为自包含子项目持续加入。
-
-## Open-AoE-2000H 数据集
-
-每个发布片段都是一条时间同步的多模态第一视角操作记录。
-
-| 信号 | 主要文件 | 提供内容 |
+| 资源 | 入口 | 内容 |
 |---|---|---|
-| 原始与去畸变 RGB | `raw_video.mp4`、`raw_video_undistorted.mp4` | 第一人称视觉观测与标定后视频 |
-| 相机元数据 | `video_info.json`、`undistorted_video_info.json` | 设备信息、内参、畸变、分辨率与帧率 |
-| 相机运动 | `camera_traj.npz` 及 `hands.npz` 中的变换 | metric-scale 6-DoF 相机轨迹与世界/相机坐标变换 |
-| 手部重建 | `hands.npz` | 双手逐帧 MANO 姿态、形状、根节点变换与有效性 |
-| 原子动作 | `ego_action_annotation.json` | 时间对齐的动作片段、动词、物体、左右手和描述 |
+| **技术报告** | [阅读 PDF](Open-AoE-tech-report.pdf) | 数据集设计、处理流程、数据分析、工具链与实验 |
+| **Open-AoE-2000H** | [Hugging Face](https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h) · [ModelScope](https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h) | 数据集文件和分发信息 |
+| **数据规格** | [字段级文档](open-aoe-2000h/README.md) | 目录结构、字段定义、坐标系和自检说明 |
+| **采集 APP** | **即将发布** | 手机端数据采集客户端 |
 
-完整样本目录、字段定义、坐标系约定和验证说明参见 [Open-AoE-2000H 数据规格](open-aoe-2000h/README.md)。
+在 arXiv 页面准备期间，技术报告暂由本仓库直接托管。
 
-### 数据处理与质量控制
+## 按目标选择入口
 
-<p align="center">
-  <img src="docs/fig2-data-pipline.png" width="100%" alt="Open-AoE 端侧采集、离线处理、重建标注和质量控制流水线">
-</p>
-
-发布流水线包含四个阶段：
-
-1. **端侧采集控制**在上传前检查手部可见性、佩戴规范、光照、运动质量和设备状态。
-2. **离线质量检查与场景标注**过滤无效或敏感内容，统一帧率，切分视频并生成场景/任务元数据。
-3. **重建与标注**估计相机轨迹、重建 MANO 双手并生成原子动作片段。
-4. **质量检查与交付**依次执行完整性、正确性和时序一致性检查，并加入人工复核。
-
-## Open-AoE 工具链
-
-工具链将同一条 Open-AoE 同步片段投射到不同机器人学习工作流需要的表示空间。
-
-| 组件 | 作用 | 入口 |
+| 我想要…… | 从这里开始 | 可以得到什么 |
 |---|---|---|
-| **AoE-Visualization** | 在一个 review video 中检查 RGB、MANO mesh/keypoint、相机运动、动作标注与时间轴 | [`aoe-visualization/`](aoe-visualization/) |
-| **AoE-Retarget-Replay** | 重建手物资产，将人类运动映射到不同机器人本体，验证/渲染轨迹并合成 robotized video | [`aoe-retarget-replay/`](aoe-retarget-replay/) |
-| **AoE-Training-Ready** | 将同步 AoE 信号转换为模型所需的 state/action 语义与可复现训练配方 | [`aoe-training-ready/`](aoe-training-ready/) |
+| **了解一个数据片段里有什么** | [数据规格](open-aoe-2000h/README.md) | 理解视频、相机标定、MANO、相机轨迹和动作标注字段 |
+| **先直观看数据，再决定怎么用** | [AoE-Visualization](aoe-visualization/README.md) | 生成包含双手、轨迹、动作和 3D 视图的端到端复核视频 |
+| **训练 VLA 策略** | [LeRobot 配方](aoe-training-ready/lerobot/README_OPEN_AOE.md) · [GR00T N1.7](aoe-training-ready/gr00t_n1d7/README.md) · [H-RDT](aoe-training-ready/H-RDT/README.md) · [VITRA](aoe-training-ready/vitra/README.md) | 转换为模型所需的 state/action 语义并启动训练 |
+| **训练世界模型或 Video Action Model** | [训练配方索引](aoe-training-ready/README.md) | 使用 DreamZero、LingBot-VA、Ctrl-World、iVideoGPT、GenieRedux、LAOM、AdaWorld 或 DreamDojo 适配 |
+| **把人类动作重映射到机器人** | [AoE-Retarget-Replay](aoe-retarget-replay/README.md) | 生成机器人关节轨迹、仿真结果或 robotized video |
+| **增加新模型或新机器人** | [贡献指南](CONTRIBUTING.md) | 按仓库结构和依赖规范添加自包含集成 |
 
-### AoE-Visualization
+## 快速开始：看懂一个数据片段
 
-AoE-Visualization 为每个样本生成一个端到端复核视频，在去畸变视频上同时展示 MANO 手部 mesh、21 点骨架、未来手腕轨迹、原子动作信息、世界坐标 3D 视图和时间轴。
+### 1. 克隆代码库
 
 ```bash
-cd aoe-visualization
-pip install -r requirements.txt
-
-# 单个样本
-python visualize.py --sample /path/to/open_aoe_sample
-
-# 样本目录
-python visualize.py --data_dir /path/to/open_aoe_data --output_dir ./output
+git clone https://github.com/ant-research/Open-AoE.git
+cd Open-AoE
 ```
 
-渲染依赖和输出说明参见 [AoE-Visualization 使用指南](aoe-visualization/README.md)。
+### 2. 下载数据
 
-### Reconstruction and Retargeting
+从 [Hugging Face](https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h) 或 [ModelScope](https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h) 选择一个下载源，解压后找到一个 segment 目录。标准目录结构参见[数据规格](open-aoe-2000h/README.md)。
 
-<p align="center">
-  <img src="docs/fig3-reconstruct-retarget.png" width="100%" alt="Open-AoE 4D 重建、运动重映射和机器人叠加三条路线">
-</p>
+### 3. 渲染片段
 
-重建与重映射工具链提供三类互补输出：**4D 手物表示**、**机器人可用运动**，以及将机器人渲染结果合成回真实场景的 **robotized video**。
-
-| 子项目 | 机器人/方法覆盖 | 主要能力 |
-|---|---|---|
-| [**Phantom**](aoe-retarget-replay/phantom/) | Unitree G1 + Dex3 / Inspire | 臂部 IK、灵巧手重映射、MuJoCo 可视化和 SAM2 + E2FGVI 机器人叠加 |
-| [**Retarget Galbot**](aoe-retarget-replay/retarget_galbot/) | Galbot / Galaxea 双臂平台 | Palm-to-TCP Pinocchio IK、平行夹爪映射、MuJoCo egoview 合成和 LeRobot/Rerun 导出 |
-| [**AoE Retarget Lab**](aoe-retarget-replay/retarget-lab/) | EgoInfinity/G1、Do-as-I-Do/Sharpa、SPIDER/XHand | 外部方法集成、6-DoF 重建适配和 12-cell 对比矩阵 |
-
-Retarget Lab 不会把第三方仓库、模型权重、机器人资产或生成视频直接 vendor 到本仓库；使用前请按照其安装文档在本地获取并配置上游项目。
-
-### AoE-Training-Ready
-
-<p align="center">
-  <img src="docs/fig4-training-ready.png" width="100%" alt="面向 VLA、世界动作模型和世界模型的 Open-AoE Training-Ready 标注谱系">
-</p>
-
-Training-Ready 将转换理解为**动作语义适配**，而不是简单的文件格式搬运。同一段数据可以被表示为密集 MANO state/action、面向机器人手或夹爪的动作、手部加相机动态，或者 latent/weak action。
-
-| 模型家族 | 已包含的集成配方 |
-|---|---|
-| VLA policy | VITRA、GR00T N1.7、H-RDT、ACT、Diffusion Policy、π0.5、SmolVLA |
-| World/Video Action Model | DreamZero、LingBot-VA、Ctrl-World、iVideoGPT |
-| Latent Action 与 World Model | GenieRedux、LAOM、AdaWorld、DreamDojo |
-
-每个配方独立维护转换或启动脚本、文档，以及必要时使用的上游补丁。请从 [Training-Ready 配方索引](aoe-training-ready/README.md) 和统一的 [动作规格](aoe-training-ready/ACTION_SPEC.md) 开始。
-
-## 快速开始
-
-### 1. 克隆工具链
-
-```bash
-git clone https://github.com/woxue/Open-AoE-dev.git
-cd Open-AoE-dev
-```
-
-### 2. 按需准备 MANO 模型
-
-本仓库不分发 MANO 模型文件。请先在 [MANO 官网](https://mano.is.tue.mpg.de/) 注册并下载 `MANO_RIGHT.pkl` 和 `MANO_LEFT.pkl`，再复制到所有子项目共享的目录：
+部分可视化和重映射流程需要 MANO 模型文件。请先在 [MANO 官网](https://mano.is.tue.mpg.de/) 注册并下载 `MANO_RIGHT.pkl` 和 `MANO_LEFT.pkl`，再安装到仓库共享资源目录：
 
 ```bash
 bash assets/mano/download_mano.sh \
   ~/Downloads/MANO_RIGHT.pkl \
   ~/Downloads/MANO_LEFT.pkl
+
+cd aoe-visualization
+pip install -r requirements.txt
+python visualize.py --sample /path/to/open_aoe_segment
 ```
 
-### 3. 选择工作流
+输出文件为 `output/<segment-name>/AoE_output_vis.mp4`，同步呈现第一视角视频、重建双手、手腕轨迹、原子动作、世界坐标运动和时间轴。EGL/OpenGL 环境要求和批量渲染方法参见[可视化指南](aoe-visualization/README.md)。
 
-| 目标 | 从这里开始 |
-|---|---|
-| 了解发布样本格式 | [`open-aoe-2000h/README.md`](open-aoe-2000h/README.md) |
-| 渲染和检查样本 | [`aoe-visualization/README.md`](aoe-visualization/README.md) |
-| 运动重映射或机器人视频叠加 | [`aoe-retarget-replay/README.md`](aoe-retarget-replay/README.md) |
-| 转换为模型训练数据 | [`aoe-training-ready/README.md`](aoe-training-ready/README.md) |
+## 从原始数据到模型输入
+
+每个 segment 是一条同步多模态记录，而不只是一个视频文件：
+
+| 信号 | 主要文件 | 常见用途 |
+|---|---|---|
+| 原始与去畸变 RGB | `raw_video.mp4`、`raw_video_undistorted.mp4` | 视觉观测、视频建模和渲染叠加 |
+| 相机元数据 | `video_info.json`、`undistorted_video_info.json` | 相机内参、畸变、设备信息、分辨率与帧率 |
+| 相机运动 | `camera_traj.npz` 及 `hands.npz` 中的变换 | metric-scale 6-DoF 轨迹和世界/相机坐标变换 |
+| 手部重建 | `hands.npz` | 双手逐帧 MANO 姿态、形状、根节点变换和有效性 |
+| 原子动作 | `ego_action_annotation.json` | 时间对齐的左右手、动词、物体和双语动作描述 |
+
+工具链再将这些同步信号转换为不同任务需要的表示：
+
+| 阶段 | 组件 | 输出 |
+|---|---|---|
+| **洞察 / 复核** | [AoE-Visualization](aoe-visualization/README.md) | 每个 segment 一条复核视频，用于检查视觉效果和时序一致性 |
+| **重映射 / 回放** | [AoE-Retarget-Replay](aoe-retarget-replay/README.md) | 机器人轨迹、仿真验证和 robotized video |
+| **转换 / 训练** | [AoE-Training-Ready](aoe-training-ready/README.md) | 面向具体模型的数据、动作、补丁、启动器和训练配方 |
+
+> [!IMPORTANT]
+> 训练数据转换本质上是**动作语义适配**，不只是文件格式转换。请先阅读[统一动作规格](aoe-training-ready/ACTION_SPEC.md)，再进入目标模型的 README。
+
+## 训练配方地图
+
+<p align="center">
+  <img src="docs/fig4-training-ready.png" width="100%" alt="面向 VLA、世界动作模型和世界模型的 Open-AoE Training-Ready 标注谱系">
+</p>
+
+| 目标 | 已提供的配方 | 推荐入口 |
+|---|---|---|
+| **VLA 策略** | ACT、Diffusion Policy、π0.5、SmolVLA、GR00T N1.7、H-RDT、VITRA | [Training-Ready 索引](aoe-training-ready/README.md) |
+| **世界模型 / Video Action Model** | DreamZero、LingBot-VA、Ctrl-World、iVideoGPT | [Training-Ready 索引](aoe-training-ready/README.md) |
+| **Latent Action / 世界模型** | GenieRedux、LAOM、AdaWorld、DreamDojo | [Training-Ready 索引](aoe-training-ready/README.md) |
+
+每份配方都是自包含的，说明了上游仓库和验证 commit、数据转换方式、环境变量、训练命令、输出以及必要补丁。本仓库不会直接 vendor 上游项目或 checkpoint。
+
+## 重映射与回放地图
+
+<p align="center">
+  <img src="docs/fig3-reconstruct-retarget.png" width="100%" alt="Open-AoE 重建、运动重映射和机器人叠加路线">
+</p>
+
+| 子项目 | 覆盖范围 | 主要能力 |
+|---|---|---|
+| [**Phantom**](aoe-retarget-replay/phantom/) | Unitree G1 + Dex3 / Inspire | 臂部 IK、灵巧手重映射、MuJoCo 可视化和机器人叠加 |
+| [**Retarget Galbot**](aoe-retarget-replay/retarget_galbot/) | Galbot / Galaxea 双臂平台 | Palm-to-TCP IK、夹爪映射、egoview 合成和 LeRobot/Rerun 导出 |
+| [**AoE Retarget Lab**](aoe-retarget-replay/retarget-lab/) | EgoInfinity/G1、Do-as-I-Do/Sharpa、SPIDER/XHand | 外部方法适配、6-DoF 重建路线和 12-cell 对比矩阵 |
+
+本仓库不包含第三方仓库、模型权重、机器人资产或生成视频。请按各子项目的安装指南获取外部依赖。
+
+## 数据处理与质量控制
+
+<p align="center">
+  <img src="docs/fig2-data-pipline.png" width="100%" alt="Open-AoE 采集、处理、重建标注和质量控制流水线">
+</p>
+
+1. **端侧采集控制**在上传前检查手部可见性、佩戴规范、光照、运动质量和设备状态。
+2. **离线质量检查与场景标注**过滤无效或敏感内容，统一帧率，切分视频并生成场景/任务元数据。
+3. **重建与标注**估计相机轨迹、重建 MANO 双手并生成原子动作片段。
+4. **质量检查与交付**执行完整性、正确性和时序一致性检查，并加入人工复核。
 
 ## 仓库结构
 
 ```text
-Open-AoE-dev/
-├── docs/                    # 技术报告框架图
-├── open-aoe-2000h/         # 数据格式与使用文档
-├── aoe-visualization/      # 同步数据复核与渲染
-├── aoe-retarget-replay/    # 重建、重映射、回放与机器人叠加
-│   ├── phantom/
-│   ├── retarget_galbot/
-│   └── retarget-lab/
-├── aoe-training-ready/     # 模型适配、转换脚本、启动器与补丁
-├── assets/mano/            # MANO 共享配置脚本；模型文件不纳入 Git
+Open-AoE/
+├── Open-AoE-tech-report.pdf  # 当前技术报告
+├── open-aoe-2000h/           # 数据格式与字段级文档
+├── aoe-visualization/        # 同步数据复核与渲染
+├── aoe-retarget-replay/      # 重建、重映射、回放与机器人叠加
+├── aoe-training-ready/       # 模型适配、转换脚本、启动器与补丁
+├── assets/mano/              # MANO 共享配置脚本；模型文件不纳入 Git
+├── docs/                     # 总览图与流水线图
 ├── CONTRIBUTING.md
 ├── LEGAL.md
-├── LICENSE
-└── README_old.md           # 归档的协作/进展记录版 README
+└── LICENSE
 ```
 
-## 发布资源
+## 为什么选择 Open-AoE？
 
-- **Open-AoE-2000H 数据集：** 即将发布
-- **技术报告：** 即将发布
-- **AoE 采集应用：** 发布信息即将补充
-- **详细数据规格：** [open-aoe-2000h/README.md](open-aoe-2000h/README.md)
-
-## 参与贡献
-
-我们欢迎社区贡献新的机器人本体、重建或重映射后端、可视化能力、数据转换器和训练配方。提交 PR 前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。每个集成应保持自包含并说明外部依赖；请勿提交数据集、模型权重、MANO 文件或许可证不兼容的第三方源码。
-
-## 许可证与第三方组件
-
-本仓库原创代码以 [Apache License 2.0](LICENSE) 发布。数据集分发条款、模型权重、机器人资产和第三方组件可能采用不同许可证；重新分发或商业使用前请阅读 [LEGAL.md](LEGAL.md) 和对应子项目 README。
+- **智能手机采集：** 消费级设备让真实世界第一视角采集更易参与、更容易规模化。
+- **面向操作学习的同步信号：** 标定后的 RGB 与相机运动、MANO 手部重建、有效性标记和原子动作保持同步。
+- **完整 Data-to-Model 路径：** 仓库覆盖数据洞察、动作重映射、表示转换和面向具体模型的训练集成。
+- **模块化、可扩展：** 各组件可以独立使用，新机器人本体或模型配方也能作为自包含集成加入。
 
 ## 引用
 
-Open-AoE 技术报告发布后，我们会在此补充正式 BibTeX。
+技术报告当前以[仓库内 PDF](Open-AoE-tech-report.pdf) 提供。arXiv 链接和正式 BibTeX 将在可用后补充。
+
+## 参与贡献
+
+欢迎贡献新的机器人本体、重建或重映射后端、可视化能力、数据转换器和训练配方。提交 PR 前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 许可证与第三方组件
+
+本仓库原创代码以 [Apache License 2.0](LICENSE) 发布。数据集分发条款、模型权重、机器人资产、MANO 文件和第三方组件可能采用不同许可证；重新分发或商业使用前请阅读 [LEGAL.md](LEGAL.md) 和对应子项目 README。
 
 ## 致谢
 
-Open-AoE 由 AoE 社区共同建设，并集成了众多开源项目的思想与接口。感谢所有数据贡献者、工具链贡献者、维护者和上游研究团队。组件来源和许可证声明统一维护在 [LEGAL.md](LEGAL.md) 中。
+Open-AoE 由 AoE 社区共同建设。感谢所有数据贡献者、工具链贡献者、维护者和上游研究团队。
