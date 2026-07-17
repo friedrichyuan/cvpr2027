@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <a href="Open-AoE-tech-report.pdf"><strong>技术报告</strong></a> ·
-  <a href="https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h"><strong>Hugging Face 数据集</strong></a> ·
-  <a href="https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h"><strong>ModelScope 数据集</strong></a> ·
-  <strong>采集 APP：即将发布</strong>
+  <a href="https://arxiv.org/abs/2607.14183"><img src="https://img.shields.io/badge/arXiv-2607.14183-b31b1b.svg" alt="Open-AoE arXiv 技术报告"></a>
+  <a href="https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h"><img src="https://img.shields.io/badge/Hugging%20Face-Dataset-FFD21E.svg" alt="Open-AoE Hugging Face 数据集"></a>
+  <a href="https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h"><img src="https://img.shields.io/badge/ModelScope-Dataset-624AFF.svg" alt="Open-AoE ModelScope 数据集"></a>
+  <img src="https://img.shields.io/static/v1?label=Capture%20App&amp;message=%E5%85%B7%E8%BA%AB%E6%99%BA%E8%83%BD%E6%95%B0%E9%87%87%E5%8A%A9%E6%89%8B&amp;color=2ea44f" alt="在各大应用市场搜索具身智能数采助手">
 </p>
 
 > [!TIP]
@@ -28,12 +28,12 @@ Open-AoE 是完全使用消费级智能手机采集的大规模真实世界第�
 
 | 资源 | 入口 | 内容 |
 |---|---|---|
-| **技术报告** | [阅读 PDF](Open-AoE-tech-report.pdf) | 数据集设计、处理流程、数据分析、工具链与实验 |
+| **技术报告** | [前往 arXiv 阅读](https://arxiv.org/abs/2607.14183) | 数据集设计、处理流程、数据分析、工具链与实验 |
 | **Open-AoE-2000H** | [Hugging Face](https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h) · [ModelScope](https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h) | 数据集文件和分发信息 |
 | **数据规格** | [字段级文档](open-aoe-2000h/README.md) | 目录结构、字段定义、坐标系和自检说明 |
-| **采集 APP** | **即将发布** | 手机端数据采集客户端 |
+| **采集 APP** | 在各大应用市场搜索 **“具身智能数采助手”** | 手机端数据采集客户端 |
 
-在 arXiv 页面准备期间，技术报告暂由本仓库直接托管。
+技术报告已发布在 [arXiv](https://arxiv.org/abs/2607.14183)。
 
 ## 按目标选择入口
 
@@ -162,7 +162,12 @@ Open-AoE/
 
 ## 引用
 
-技术报告当前以[仓库内 PDF](Open-AoE-tech-report.pdf) 提供。arXiv 链接和正式 BibTeX 将在可用后补充。
+技术报告已发布在 [arXiv](https://arxiv.org/abs/2607.14183)。
+
+## 联系我们
+
+- **数据加工管线申请：** [open.aoe@gmail.com](mailto:open.aoe@gmail.com)
+- **产业合作申请：** [kaile.zk@antgroup.com](mailto:kaile.zk@antgroup.com)
 
 ## 参与贡献
 

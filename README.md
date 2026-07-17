@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <a href="Open-AoE-tech-report.pdf"><strong>Technical Report</strong></a> ·
-  <a href="https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h"><strong>Dataset on Hugging Face</strong></a> ·
-  <a href="https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h"><strong>Dataset on ModelScope</strong></a> ·
-  <strong>Capture App: Release Soon</strong>
+  <a href="https://arxiv.org/abs/2607.14183"><img src="https://img.shields.io/badge/arXiv-2607.14183-b31b1b.svg" alt="Open-AoE Technical Report on arXiv"></a>
+  <a href="https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h"><img src="https://img.shields.io/badge/Hugging%20Face-Dataset-FFD21E.svg" alt="Open-AoE Dataset on Hugging Face"></a>
+  <a href="https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h"><img src="https://img.shields.io/badge/ModelScope-Dataset-624AFF.svg" alt="Open-AoE Dataset on ModelScope"></a>
+  <img src="https://img.shields.io/static/v1?label=Capture%20App&amp;message=%E5%85%B7%E8%BA%AB%E6%99%BA%E8%83%BD%E6%95%B0%E9%87%87%E5%8A%A9%E6%89%8B&amp;color=2ea44f" alt="Search for 具身智能数采助手 in major app stores">
 </p>
 
 > [!TIP]
@@ -28,12 +28,12 @@ Open-AoE is a large-scale, real-world egocentric manipulation dataset collected 
 
 | Resource | Access | What you get |
 |---|---|---|
-| **Technical report** | [Read the PDF](Open-AoE-tech-report.pdf) | Dataset design, processing, analysis, toolchain, and experiments |
+| **Technical report** | [Read on arXiv](https://arxiv.org/abs/2607.14183) | Dataset design, processing, analysis, toolchain, and experiments |
 | **Open-AoE-2000H** | [Hugging Face](https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h) · [ModelScope](https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h) | Dataset files and distribution information |
 | **Data specification** | [Field-level documentation](open-aoe-2000h/README.md) | Directory layout, schemas, coordinate systems, and validation notes |
-| **Capture app** | **Release soon** | Smartphone data collection client |
+| **Capture app** | Search for **“具身智能数采助手”** in major app stores | Smartphone data collection client |
 
-The technical report is hosted in this repository while the arXiv page is being prepared.
+The technical report is available on [arXiv](https://arxiv.org/abs/2607.14183).
 
 ## Choose Your Starting Point
 
@@ -162,7 +162,12 @@ Open-AoE/
 
 ## Citation
 
-The technical report is available as a [repository-hosted PDF](Open-AoE-tech-report.pdf). The arXiv link and official BibTeX entry will be added when available.
+The technical report is available on [arXiv](https://arxiv.org/abs/2607.14183).
+
+## Contact
+
+- **Data processing pipeline applications:** [open.aoe@gmail.com](mailto:open.aoe@gmail.com)
+- **Industry collaboration:** [kaile.zk@antgroup.com](mailto:kaile.zk@antgroup.com)
 
 ## Contributing
 
