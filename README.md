@@ -179,4 +179,22 @@ Original source code in this repository is released under the [Apache License 2.
 
 ## Acknowledgements
 
-Open-AoE is built by the AoE community. We thank all data contributors, toolchain contributors, maintainers, and upstream research teams.
+Open-AoE is built by the AoE community. We gratefully acknowledge the following contributors from industry, universities, and research institutions.
+
+### Dataset and Visualization
+
+- **National University of Singapore:** Qingze Guan
+- **University of Chinese Academy of Sciences:** Zhengxing Wu
+- **Ant Digital Technology, Ant Group:** Zishuo Li, Wanke Zhan, Yang Sun, Zhiyi Huang, Zitong Shan
+
+### Open-Source Code, Toolchain, and Experiments
+
+- **Zhejiang University:** Jiadong Hong
+- **The University of Hong Kong:** Zhenchao Jin, Yushi Feng
+- **The Hong Kong University of Science and Technology (Guangzhou):** Taowen Wang
+- **Beijing Academy of Artificial Intelligence:** You Liu, Yibo Wang
+- **University of Chinese Academy of Sciences:** Yifan Yang
+- **The Hong Kong University of Science and Technology:** Hao Cheng
+- **Ant Digital Technology, Ant Group:** Bowen Yang, Changtao Miao, Zhaowen Zhou, Man Luo
+
+We also thank all data contributors, maintainers, and upstream open-source and research communities whose work made this release possible.

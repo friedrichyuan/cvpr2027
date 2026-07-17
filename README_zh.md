@@ -179,4 +179,22 @@ Open-AoE/
 
 ## 致谢
 
-Open-AoE 由 AoE 社区共同建设。感谢所有数据贡献者、工具链贡献者、维护者和上游研究团队。
+Open-AoE 由 AoE 社区共同建设。我们诚挚感谢以下来自企业、高校与科研机构的参与者。
+
+### 数据集与可视化贡献
+
+- **新加坡国立大学（National University of Singapore）：** Qingze Guan
+- **中国科学院大学（University of Chinese Academy of Sciences）：** Zhengxing Wu
+- **蚂蚁集团数字科技（Ant Digital Technology, Ant Group）：** Zishuo Li、Wanke Zhan、Yang Sun、Zhiyi Huang、Zitong Shan
+
+### 开源代码、工具链与实验贡献
+
+- **浙江大学（Zhejiang University）：** Jiadong Hong
+- **香港大学（The University of Hong Kong）：** Zhenchao Jin、Yushi Feng
+- **香港科技大学（广州）（The Hong Kong University of Science and Technology (Guangzhou)）：** Taowen Wang
+- **北京智源人工智能研究院（Beijing Academy of Artificial Intelligence）：** You Liu、Yibo Wang
+- **中国科学院大学（University of Chinese Academy of Sciences）：** Yifan Yang
+- **香港科技大学（The Hong Kong University of Science and Technology）：** Hao Cheng
+- **蚂蚁集团数字科技（Ant Digital Technology, Ant Group）：** Bowen Yang、Changtao Miao、Zhaowen Zhou、Man Luo
+
+同时感谢所有数据贡献者、项目维护者，以及为本次发布提供基础的上游开源与研究社区。
