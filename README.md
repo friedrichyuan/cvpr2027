@@ -13,10 +13,11 @@
   <a href="https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h"><img src="https://img.shields.io/badge/Hugging%20Face-Dataset-FFD21E.svg" alt="Open-AoE Dataset on Hugging Face"></a>
   <a href="https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h"><img src="https://img.shields.io/badge/ModelScope-Dataset-624AFF.svg" alt="Open-AoE Dataset on ModelScope"></a>
   <img src="https://img.shields.io/static/v1?label=Capture%20App&amp;message=%E5%85%B7%E8%BA%AB%E6%99%BA%E8%83%BD%E6%95%B0%E9%87%87%E5%8A%A9%E6%89%8B&amp;color=2ea44f" alt="Search for 具身智能数采助手 in major app stores">
+  <a href="https://dtcoder.antdigital.com/home"><img src="https://img.shields.io/badge/Developer%20Tool-DTCoder-1677FF.svg" alt="Develop Open-AoE experiments with DTCoder"></a>
 </p>
 
 > [!TIP]
-> New to Open-AoE? Start with the [data specification](open-aoe-2000h/README.md), render one segment with [AoE-Visualization](aoe-visualization/README.md), then choose a model recipe from [AoE-Training-Ready](aoe-training-ready/README.md).
+> New to Open-AoE? Start with the [data specification](open-aoe-2000h/README.md), render one segment with [AoE-Visualization](aoe-visualization/README.md), then choose a model recipe from [AoE-Training-Ready](aoe-training-ready/README.md). Use [DTCoder](https://dtcoder.antdigital.com/home) to start your experiment.
 
 <p align="center">
   <img src="docs/fig1-open-aoe-overview.png" width="100%" alt="Open-AoE dataset, processing pipeline, and open-source toolchain overview">

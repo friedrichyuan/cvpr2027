@@ -13,10 +13,11 @@
   <a href="https://huggingface.co/datasets/inclusionAI/OpenAoE-2000h"><img src="https://img.shields.io/badge/Hugging%20Face-Dataset-FFD21E.svg" alt="Open-AoE Hugging Face 数据集"></a>
   <a href="https://www.modelscope.cn/datasets/inclusionAI/OpenAoE-2000h"><img src="https://img.shields.io/badge/ModelScope-Dataset-624AFF.svg" alt="Open-AoE ModelScope 数据集"></a>
   <img src="https://img.shields.io/static/v1?label=Capture%20App&amp;message=%E5%85%B7%E8%BA%AB%E6%99%BA%E8%83%BD%E6%95%B0%E9%87%87%E5%8A%A9%E6%89%8B&amp;color=2ea44f" alt="在各大应用市场搜索具身智能数采助手">
+  <a href="https://dtcoder.antdigital.com/home"><img src="https://img.shields.io/badge/Developer%20Tool-DTCoder-1677FF.svg" alt="使用 DTCoder 开发 Open-AoE 实验"></a>
 </p>
 
 > [!TIP]
-> 第一次接触 Open-AoE？建议先阅读[数据规格](open-aoe-2000h/README.md)，用 [AoE-Visualization](aoe-visualization/README.md) 渲染一个片段，再从 [AoE-Training-Ready](aoe-training-ready/README.md) 选择目标模型的训练配方。
+> 第一次接触 Open-AoE？建议先阅读[数据规格](open-aoe-2000h/README.md)，用 [AoE-Visualization](aoe-visualization/README.md) 渲染一个片段，再从 [AoE-Training-Ready](aoe-training-ready/README.md) 选择目标模型的训练配方。使用 [DTCoder](https://dtcoder.antdigital.com/home) 快速启动实验。
 
 <p align="center">
   <img src="docs/fig1-open-aoe-overview.png" width="100%" alt="Open-AoE 数据集、处理流水线与开源工具链总览">
