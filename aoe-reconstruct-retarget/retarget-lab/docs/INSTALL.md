@@ -7,11 +7,12 @@ Navigation: [README](../README.md) | [API](API.md) | [Principles](PRINCIPLES.md)
 This guide is for public users who want to clone AoE Retarget Lab, connect
 their own Open-AoE data, install third-party packages, and run the demo scripts.
 
-This repository intentionally does not vendor `third_party/EgoInfinity`,
-`third_party/do-as-i-do`, `third_party/SPIDER`, robot meshes/assets, model
-weights, datasets, Hugging Face caches, MANO assets, conda environments, or
-generated experiment outputs. The third-party source trees are fetched locally
-with `scripts/setup_third_party.sh` and are ignored by Git.
+The clean Git checkout intentionally has no `third_party/` directory. The
+repository does not vendor third-party source trees, datasets, model weights,
+Hugging Face caches, MANO assets, conda environments, or generated experiment
+outputs. A source-fetch helper can create machine-local upstream checkouts, but
+all external assets must still be obtained according to the licenses of
+Open-AoE and each upstream project.
 
 ## 1. System Requirements
 
@@ -45,8 +46,8 @@ Install only the environments needed for the pipelines you plan to run.
 ## 2. Clone This Repo
 
 ```bash
-git clone <AOE_RETARGET_LAB_GIT_URL> aoe-retarget-lab
-cd aoe-retarget-lab
+git clone https://github.com/ant-research/Open-AoE.git
+cd Open-AoE/aoe-reconstruct-retarget/retarget-lab
 
 conda create -y -n aoe-base python=3.10 pip
 conda activate aoe-base
@@ -55,46 +56,50 @@ pip install -e .
 export AOE_RETARGET_LAB_ROOT="$PWD"
 ```
 
-## 3. Fetch Third-Party Source Trees
+### 2.1. Fetch Machine-Local Third-Party Sources
 
-Run the setup script once after cloning:
-
-```bash
-bash scripts/setup_third_party.sh
-```
-
-The script creates:
-
-```text
-third_party/EgoInfinity/
-third_party/do-as-i-do/
-third_party/SPIDER/
-third_party/THIRD_PARTY_LOCK.tsv
-```
-
-These paths are machine-local and should not be committed. By default the
-script uses the official upstream repositories:
-
-```text
-EgoInfinity  -> https://github.com/Rice-RobotPI-Lab/EgoInfinity.git
-Do-as-I-Do  -> https://github.com/malik-group/do-as-i-do.git
-SPIDER      -> https://github.com/facebookresearch/spider.git
-```
-
-For reproducible releases, pin the refs explicitly:
+From the Retarget Lab directory:
 
 ```bash
-EGOINFINITY_REF=<commit-or-tag> \
-DO_AS_I_DO_REF=<commit-or-tag> \
-SPIDER_REF=<commit-or-tag> \
-bash scripts/setup_third_party.sh
+bash scripts/maintenance/setup_third_party.sh
 ```
 
-`THIRD_PARTY_LOCK.tsv` records the resolved commits in your local checkout.
+Or, from the Open-AoE repository root:
 
-## 4. Configure Local Paths
+```bash
+bash aoe-reconstruct-retarget/retarget-lab/scripts/maintenance/setup_third_party.sh
+```
 
-Create a machine-local `local_env.sh`; do not commit it.
+It is expected that `third_party/` does not exist before this command. The
+helper creates it and fetches EgoInfinity, Do-as-I-Do (including its configured
+submodules), and SPIDER. It records the resolved revisions in
+`third_party/THIRD_PARTY_LOCK.tsv`.
+
+This helper manages source checkouts only. It does not create Conda
+environments, install all Python/CUDA dependencies, download model or MANO
+assets, or populate Hugging Face caches. Network errors can interrupt clone,
+fetch, or submodule operations; resolve the connectivity issue and rerun the
+command. Do not treat a partially populated `third_party/` directory as a
+successful setup.
+
+For a formal reproduction, explicitly provide immutable revisions instead of
+relying on a moving branch:
+
+```bash
+EGOINFINITY_REF=<commit> \
+DO_AS_I_DO_REF=<commit> \
+SPIDER_REF=<commit> \
+bash scripts/maintenance/setup_third_party.sh
+```
+
+## 3. Configure Local Paths
+
+Copy the supplied template and create a machine-local `local_env.sh`; do not
+commit the edited file.
+
+```bash
+cp local_env.example.sh local_env.sh
+```
 
 ```bash
 export AOE_RETARGET_LAB_ROOT=/path/to/aoe-retarget-lab
@@ -113,7 +118,22 @@ export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
 export MUJOCO_GL=egl
 export PYOPENGL_PLATFORM=egl
 export PYTHONUNBUFFERED=1
+
+# Python executables used by the script API. Keep these machine-local.
+export EGOINFINITY_PYTHON=/path/to/egoinfinity_env/bin/python
+export RETARGETING_PYTHON=/path/to/dai_or_shared_retargeting_env/bin/python
+export SPIDER_PYTHON=/path/to/spider_or_shared_retargeting_env/bin/python
+
+# Optional defaults for front-camera robot re-rendering.
+export ROBOT_RENDER_WIDTH=1280
+export ROBOT_RENDER_HEIGHT=720
+export ROBOT_RENDER_FPS=25
+export ROBOT_RENDER_STRIDE=8
 ```
+
+Production entrypoints use only the configured local paths. Unset Python
+variables fall back only to `python3`; the configuration
+preflight below therefore catches missing environments before a long run.
 
 After caches are populated, offline runs can use:
 
@@ -122,20 +142,68 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 ```
 
-## 5. External Assets
+Run the read-only configuration preflight after installing all environments:
 
-Do-as-I-Do and EgoInfinity use different SAM versions:
+```bash
+source local_env.sh
+python3 scripts/check_third_party_config.py \
+  --json third_party_config_report.json
+```
+
+`status=ok` means the configured executables and source/data directories are
+resolvable and the pinned SAM3D Objects checkpoint bundle is complete. It does
+not claim that every other licensed weight is available or that a GPU has
+sufficient memory; retain the report with each machine's first experiment.
+
+For a portable deployment whose Python environments must remain under one
+runtime directory, also verify the final executable targets (after resolving
+symlinks):
+
+```bash
+python3 scripts/check_third_party_config.py \
+  --required-executable-root /path/to/runtime-root \
+  --json third_party_config_report.json
+```
+
+The equivalent environment variable is `AOE_REQUIRED_EXECUTABLE_ROOT`. The
+option is deliberately optional: use it when the deployment promises colocated
+environments. A configured Python symlink that escapes the required root makes
+the audit fail closed.
+
+
+### Gravity Fallback
+
+`gravity.json` stores the world-up direction in the Do-as-I-Do camera frame
+(`x-right, y-down, z-fwd`), not the MuJoCo gravity vector. GeoCalib output is
+preferred. When GeoCalib is unavailable and the egocentric camera is assumed
+upright, use `[0.0, -1.0, 0.0]` with `semantics=world_up_direction_in_camera_frame`.
+The retargeting stage rotates that vector to MuJoCo `+Z`; MuJoCo scene gravity
+should remain `0 0 -9.81`.
+
+After a reconstruction or before reusing historical runs, check:
+
+```bash
+$RETARGETING_PYTHON scripts/diagnostics/audit_gravity_frames.py \
+  --run-root experiments/<run_or_matrix> \
+  --source-run-root experiments/<source_run> \
+  --task <task_name> \
+  --hand-type left
+```
+
+## 4. External Assets
+
+The validated default for both Retarget Lab entrypoints is the pinned
+`facebook/sam3` checkout:
 
 ```text
 Do-as-I-Do reconstruction Stage 1 -> facebook/sam3, sam3.pt
-EgoInfinity object segmentation     -> facebook/sam3.1, sam3.1_multiplex.pt
+EgoInfinity object segmentation     -> facebook/sam3, sam3.pt
 ```
 
-Do not substitute SAM3.1 for Do-as-I-Do Stage 1. Check local caches with:
+Do not silently substitute a different SAM revision. Check the local cache:
 
 ```bash
 find -L "$HF_HOME/hub/models--facebook--sam3" -name sam3.pt -print
-find -L "$HF_HOME/hub/models--facebook--sam3.1" -name sam3.1_multiplex.pt -print
 ```
 
 Other required assets may include:
@@ -152,7 +220,71 @@ HaWoR and Metric3D weights
 
 Keep all of these outside the Git repo.
 
-## 6. EgoInfinity Environment
+### Download and bind local weights
+
+Choose persistent cache and model directories on a disk with enough space.
+The third-party setup script downloads source code only; it does not download
+gated model weights.
+
+```bash
+export AOE_MODEL_ROOT=/path/to/aoe-retarget-models
+export HF_HOME=/path/to/huggingface-cache
+export TORCH_HOME=/path/to/torch-cache
+mkdir -p "$AOE_MODEL_ROOT" "$HF_HOME" "$TORCH_HOME"
+
+python -m pip install -U huggingface_hub
+hf auth login
+HF_HOME="$HF_HOME" hf download facebook/sam3
+```
+
+Accept each gated model license before downloading. For EgoInfinity, use the
+weight installer from the pinned checkout instead of guessing file names:
+
+```bash
+cd "$AOE_RETARGET_LAB_ROOT/third_party/EgoInfinity"
+bash scripts/setup_weights.sh
+cd "$AOE_RETARGET_LAB_ROOT"
+```
+
+Verify every enabled phase: detector, WiLoR, SAM2, infiller, MANO, MoGe, and
+MEMFOF/ResNet34 optical flow. MoGe and MEMFOF may be fetched only when their
+later pipeline phase is first loaded, so perform one online smoke load before
+setting `HF_HUB_OFFLINE=1`. MANO assets have a separate license and must be
+obtained and placed according to the upstream EgoInfinity/WiLoR instructions.
+
+Download the gated SAM3D Objects bundle using its pinned upstream instructions,
+then preserve the complete `checkpoints/hf` layout. Bind the same complete,
+immutable bundle to both consumers:
+
+```bash
+export SAM3_CHECKPOINT=/path/to/sam3.pt
+export SAM3_BPE_PATH="$SAM3_REPO/assets/bpe_simple_vocab_16e6.txt.gz"
+export SAM3D_CHECKPOINT_DIR="$SAM3D_REPO/checkpoints/hf"
+export FASTSAM3D_CHECKPOINT_DIR="$FASTSAM3D_DIR/checkpoints/hf"
+export TAPNET_CKPT=/path/to/bootstapir_checkpoint_v2.pt
+```
+
+After the first successful online load, run
+`python3 scripts/check_third_party_config.py` and only then enable offline
+mode. Keep tokens, weights, caches, and machine-local hash manifests out of
+Git.
+
+TAPIR is an optional Fast-SAM3D rotation-velocity prior, but its Python entry
+imports the complete pinned inference dependency set, not only `tapir_model`.
+Install that set into the environment used by `SAM3D_PYTHON`:
+
+```bash
+"$SAM3D_PYTHON" -m pip install -r \
+  third_party/do-as-i-do/reconstruction/modules/tapnet/requirements_inference.txt
+"$SAM3D_PYTHON" -c \
+  "import chex, jax, jaxline, haiku, tree, einshape; from tapnet.utils import transforms"
+```
+
+If TAPIR is unavailable, the reconstruction wrapper records
+`tapir_status.json` and continues without the adaptive rotation-velocity
+prior. This explicit fallback is not evidence that TAPIR succeeded.
+
+## 5. EgoInfinity Environment
 
 ```bash
 conda env create -f third_party/EgoInfinity/retarget/environment.yml
@@ -173,7 +305,7 @@ print("trimesh", trimesh.__version__)
 PY
 ```
 
-## 7. SAM3 and SAM3D Workers
+## 6. SAM3 and SAM3D Workers
 
 Install SAM3 and SAM3D Objects according to their upstream instructions, then
 export the Python binaries and source/model roots:
@@ -184,11 +316,36 @@ export SAM3_REPO=/path/to/sam3_source
 
 export SAM3D_PYTHON=/path/to/sam3d_env/bin/python
 export SAM3D_REPO=/path/to/sam-3d-objects
-export SAM3D_REPO_ROOT=/path/to/fastsam3d_or_sam3d_config_root
+export SAM3D_CHECKPOINT_DIR="$SAM3D_REPO/checkpoints/hf"
+# Optional strict integrity audit (sha256sum format, relative filenames):
+export SAM3D_CHECKPOINT_SHA256_MANIFEST=/path/to/sam3d-checkpoints.sha256
+export FASTSAM3D_DIR=/path/to/Fast-SAM3D
+export FASTSAM3D_CHECKPOINT_DIR="$FASTSAM3D_DIR/checkpoints/hf"
+# The official checkpoint filenames are shared, so one manifest may validate
+# both directories when they contain the same verified bundle.
+export FASTSAM3D_CHECKPOINT_SHA256_MANIFEST=/path/to/sam3d-checkpoints.sha256
+
+# Optional isolated package root for a validated Open3D binary compatibility
+# wheel. Do not point this at an entire unrelated site-packages directory.
+# export SAM3D_OPEN3D_COMPAT_ROOT=/path/to/open3d-compat-target
 
 export DINOV2_LOCAL_REPO=/path/to/facebookresearch_dinov2_main
 export DINOV2_REPO_DIR=$DINOV2_LOCAL_REPO
 ```
+
+Download the gated `facebook/sam-3d-objects` bundle with the upstream command
+and keep its `checkpoints/hf` directory intact. The configuration audit checks
+all generator/decoder YAML and checkpoint sizes for the pinned bundle. When
+`SAM3D_CHECKPOINT_SHA256_MANIFEST` is set, it also hashes every required file
+and detects same-size corruption. The audit independently checks the six model
+checkpoint files visible to Fast-SAM3D; a complete SAM3D Objects directory does
+not make a missing or truncated Fast-SAM3D binding acceptable.
+
+When `SAM3D_OPEN3D_COMPAT_ROOT` is set, both pristine SAM3D launchers prepend
+that directory immediately before importing Open3D. The directory must contain
+`open3d/__init__.py`; the configuration audit and launchers fail closed when it
+is incomplete. This keeps a machine-specific binary wheel outside both the
+backend checkout and the main environment.
 
 Verify:
 
@@ -196,6 +353,24 @@ Verify:
 $SAM3_PYTHON -c "import torch; print('sam3 cuda', torch.cuda.is_available())"
 $SAM3D_PYTHON -c "import torch; print('sam3d cuda', torch.cuda.is_available())"
 ```
+
+Fresh Do-as-I-Do reconstruction also requires GeoCalib for camera-frame gravity.
+Use the pinned upstream checkout and v1.0 pinhole weight used by the audited
+runs:
+
+```bash
+git clone https://github.com/cvg/GeoCalib.git /path/to/GeoCalib
+git -C /path/to/GeoCalib checkout 97b8968e7798a66bf04fcf791fb535624241bda7
+export GEOCALIB_DIR=/path/to/GeoCalib
+export TORCH_HOME=/path/to/torch_cache
+# Store geocalib-pinhole.tar as $TORCH_HOME/hub/checkpoints/pinhole.tar
+```
+
+The expected pinhole weight SHA-256 is
+`86d6aeacd8bbd974c59ce39f61854e00d36911c732ad89be471476fd708722ac`.
+Verify `from geocalib import GeoCalib` in `$SAM3D_PYTHON`. Production fresh
+runs stop if gravity estimation fails; `DAI_REQUIRE_GEOCALIB=0` is only for
+explicitly invalid diagnostic runs.
 
 If a run is interrupted, a stale SAM3D worker may keep GPU memory. Check before
 starting a long run:
@@ -207,7 +382,7 @@ nvidia-smi
 
 Only kill a process after confirming it is an orphan from an old run.
 
-## 8. HaWoR / Projection Diagnostics
+## 7. HaWoR / Projection Diagnostics
 
 Follow the upstream HaWoR and Do-as-I-Do reconstruction setup, then set:
 
@@ -225,7 +400,14 @@ $HAWOR_PYTHON -c "import torch; print('hawor cuda', torch.cuda.is_available())"
 Use an environment with `pytorch3d` for Do-as-I-Do mesh projection diagnostics;
 the Do-as-I-Do retargeting environment does not necessarily provide it.
 
-## 9. Do-as-I-Do Retargeting / Sharpa
+Some reconstructed OBJ files intentionally contain geometry only and have no
+MTL or texture atlas. The fresh reconstruction runner binds the pristine
+projector's existing `--object-color 0.6,0.9,0.6` option so these meshes receive
+a deterministic vertex color in diagnostic renders. This changes only the
+projection video's appearance; vertices, faces, poses, camera intrinsics, and
+the physical retarget asset remain untouched.
+
+## 8. Do-as-I-Do Retargeting / Sharpa
 
 ```bash
 conda create -y -n dai-retarget python=3.12 pip
@@ -256,7 +438,18 @@ The wrapper uses the official entrypoint:
 third_party/do-as-i-do/retargeting/launch.py
 ```
 
-## 10. SPIDER / MJWP
+MJWP troubleshooting:
+
+- If logs stop after `Warmup: set initial hand to open`, enable the built-in
+  timing logs and check `MJWP setup_env` stages.
+- `num_samples * num_perturb_samples` is the number of parallel MJWarp worlds.
+  On the NAS cooking-wine scene, `1024 * 4 = 4096` worlds stalled inside
+  `mjwarp.put_data`; `1024 * 1` completed normally.
+- The analytical warmup distance solve is capped by
+  `DAI_MJWP_WARMUP_PAIR_MAX_POINTS` (default `1000`) to avoid constructing huge
+  hand/object pairwise matrices.
+
+## 9. SPIDER / MJWP
 
 ```bash
 conda create -y -n spider python=3.12 pip
@@ -289,17 +482,64 @@ Verify:
 
 ```bash
 python - <<'PY'
-import pathlib, spider, mujoco, mujoco_warp, warp
+import pathlib, spider, mujoco, mujoco_warp, warp, mink
 print("spider", pathlib.Path(spider.__file__).resolve())
 print("mujoco", mujoco.__version__)
 print("mujoco_warp", getattr(mujoco_warp, "__version__", "unknown"))
 print("warp", warp.__version__)
+print("mink", getattr(mink, "__version__", "unknown"))
 PY
 ```
 
 The `spider` path should resolve inside `third_party/SPIDER/spider/`.
 
-## 11. Prepare Open-AoE Inputs
+When Do-as-I-Do and SPIDER share one compatible environment, configure both
+executables explicitly:
+
+```bash
+export RETARGETING_PYTHON=/path/to/retargeting/bin/python
+export SPIDER_PYTHON=/path/to/retargeting/bin/python
+```
+
+That environment has been used successfully for Do-as-I-Do/Sharpa rendering,
+SPIDER/MJWP, and the front-camera re-render scripts. If you split Do-as-I-Do
+and SPIDER into separate conda envs, keep both variables explicit instead of
+relying on whichever `python` is active.
+
+## 9.1. Headless MuJoCo Rendering Configuration
+
+Server runs must initialize EGL before importing MuJoCo:
+
+```bash
+export MUJOCO_GL=egl
+export PYOPENGL_PLATFORM=egl
+export PYTHONUNBUFFERED=1
+```
+
+`scripts/diagnostics/render_mujoco_trajectory.py` also sets these defaults internally, but
+they should still be present in `local_env.sh` so upstream Do-as-I-Do and
+SPIDER renderers behave consistently.
+
+Smoke-test pure robot rendering from an existing `scene.xml +
+trajectory_mjwp.npz`:
+
+```bash
+$RETARGETING_PYTHON scripts/diagnostics/render_mujoco_trajectory.py \
+  --scene experiments/<run>/intermediates/retargeting/do_as_i_do/<cell>/retargeting_outputs/sharpa/<hand_type>/<task>/0/scene.xml \
+  --trajectory experiments/<run>/intermediates/retargeting/do_as_i_do/<cell>/retargeting_outputs/sharpa/<hand_type>/<task>/0/trajectory_mjwp.npz \
+  --output experiments/smoke/aoe_robot_render_smoke.mp4 \
+  --width 320 \
+  --height 180 \
+  --fps 10 \
+  --stride 64 \
+  --camera front
+```
+
+The renderer loads MuJoCo scenes from the scene directory so relative mesh
+paths such as `../../../assets/robots/...` resolve correctly. It also raises
+the MuJoCo offscreen framebuffer size before creating a 1280x720 renderer.
+
+## 10. Prepare Open-AoE Inputs
 
 For EgoInfinity:
 
@@ -321,7 +561,7 @@ For `hand_source=aoe`, provide Open-AoE hand reconstruction such as
 `ego_hands_reconstruction/hands.npz` and make sure the selected adapter can
 convert it into the target retargeter format.
 
-## 12. Preflight
+## 11. Preflight
 
 ```bash
 source local_env.sh
@@ -333,7 +573,7 @@ $RETARGETING_PYTHON -c "import mujoco, warp; print('dai-retarget ok')"
 $SPIDER_PYTHON -c "import spider, mujoco, mujoco_warp, warp; print('spider ok')"
 ```
 
-## 13. Smoke Demo
+## 12. Smoke Demo
 
 ```bash
 source local_env.sh
@@ -362,8 +602,8 @@ experiments/smoke_v4/videos/v4_do_as_i_do_full__triptych.mp4
 experiments/smoke_v4/reuse/reuse_manifest.json
 ```
 
-## 14. Git Hygiene
+## 13. Git Hygiene
 
-Do not commit `third_party/`, Open-AoE raw data, generated `experiments/`,
-conda or venv directories, Hugging Face caches, model weights, generated `npz`
-files, videos, robot meshes, or large simulator assets.
+Do not commit Open-AoE raw data, generated `experiments/`, conda or venv
+directories, Hugging Face caches, model weights, generated `npz` files, or
+videos.

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import io
 import json
 import pickle
@@ -47,6 +48,14 @@ PLY_DTYPES = {
 def load_result(path: Path) -> dict:
     with gzip.open(path, "rb") as handle:
         return pickle.load(handle)
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def decode_rgb(blob: bytes) -> np.ndarray:
@@ -310,6 +319,12 @@ def main() -> int:
     parser.add_argument("--target-prompt", default=None)
     parser.add_argument("--sample-count", type=int, default=7)
     parser.add_argument("--scale-threshold", type=float, default=1.8)
+    parser.add_argument(
+        "--trusted-pickle",
+        action="store_true",
+        required=True,
+        help="Acknowledge that the pipeline result pickle is trusted local input.",
+    )
     args = parser.parse_args()
 
     result = load_result(args.pipeline_result)
@@ -406,6 +421,7 @@ def main() -> int:
                 "prompt": object_prompt(result, obj_id),
                 "prompt_score": object_prompt_score(result, obj_id),
                 "ply_path": str(ply),
+                "ply_sha256": sha256(ply),
                 "n_vertices": int(len(vertices)),
                 "mesh_raw_bbox": raw_bbox.tolist(),
                 "mesh_raw_centroid": raw_centroid.tolist(),
@@ -451,7 +467,10 @@ def main() -> int:
         cv2.imwrite(str(key_dir / f"frame_{frame_idx:04d}_mesh_projection.png"), cv2.cvtColor(mesh_rgb, cv2.COLOR_RGB2BGR))
 
     report = {
+        "scope": "diagnostic_only_object_scale_evidence",
+        "automatic_scale_application_allowed": False,
         "pipeline_result": str(args.pipeline_result),
+        "pipeline_result_sha256": sha256(args.pipeline_result),
         "target_prompt": args.target_prompt,
         "camera": {"fx": fx, "fy": fx, "cx": cx, "cy": cy, "width": width, "height": height},
         "sample_frames": sample_frames,
