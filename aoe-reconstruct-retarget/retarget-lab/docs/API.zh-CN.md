@@ -75,7 +75,23 @@ python3 scripts/run_fresh_aoe_auto_window.py \
 direct 只跳过自动窗口搜索，不跳过 SAM3、SAM3D/6DoF、Ego 或
 DAI/SPIDER 原生执行。
 
-## 3. 推荐主入口：完整 12 demos
+## 3. 推荐主入口：12-cell 矩阵报告
+
+矩阵始终包含 12 个可单独选择的 cell，但上游后端并没有提供 12 个彼此独立的
+原生重定向接口：
+
+| Retargeter | 可选 cell | 原生可执行 cell |
+| --- | ---: | ---: |
+| Do-as-I-Do / Sharpa | 4 | 4 |
+| SPIDER / XHand | 4 | 4 |
+| EgoInfinity / G1 | 4 | 1 |
+
+EgoInfinity 只会产生一个绑定到
+`traj_egoinfinity__hand_estimated__retarget_egoinfinity` 的原生结果，并不提供
+注入任意矩阵 trajectory 和 hand source 的接口。因此另外三个
+EgoInfinity-retarget cell 会明确保持 unavailable，不能给同一视频换标签补齐。
+若某个场景对应的重建或 adapter 没有完成，DAI/SPIDER 的相应 cell 也会保持
+unavailable。
 
 ```bash
 scripts/run_full_12_demos.sh \
@@ -99,7 +115,7 @@ scripts/run_full_12_demos.sh \
 该脚本会：
 
 1. 先调用 `scripts/run_v4_two_full_pipelines.sh`，生成一个 source run。
-2. 再调用 `scripts/reuse_v4_for_12_demos.py`，把中间结果展开成 12 个 cell。
+2. 再调用 `scripts/reuse_v4_for_12_demos.py`，把中间结果展开成 12-cell 报告。
 3. 默认对 Do-as-I-Do trajectory 输入运行 SPIDER cell。
 4. 将 triptych review 视频和 manifest 都写入 `experiments/`。
 
@@ -109,7 +125,7 @@ scripts/run_full_12_demos.sh \
 experiments/<source_run_name>/videos/v4_egoinfinity_full__triptych.mp4
 experiments/<source_run_name>/videos/v4_do_as_i_do_full__triptych.mp4
 experiments/<source_run_name>/reuse/reuse_manifest.json
-experiments/<matrix_run_name>/videos/<cell>__triptych.mp4
+experiments/<matrix_run_name>/videos/<supported_cell>__triptych.mp4
 experiments/<matrix_run_name>/reuse_12_demo_manifest.json
 experiments/<matrix_run_name>/cells/<cell>/manifest.json
 ```
@@ -130,12 +146,11 @@ scripts/run_full_12_demos.sh \
 | 选项 | 含义 |
 | --- | --- |
 | `--source-run` | 跳过两条完整管线，复用 `experiments/<source_run>/` |
-| `--matrix-run-name` | 12 demos 的输出 run |
+| `--matrix-run-name` | 12 组合矩阵报告的输出 run |
 | `--run-spider none\|do_as_i_do\|all` | 控制 SPIDER cell |
 | `--duration <sec>` | 截断合成视频；`0` 表示使用原时长 |
 | `--mode symlink\|hardlink\|copy` | 复用资产落盘方式 |
 | `--force-spider` | 已有 SPIDER cell 也重新跑 |
-| `--no-spider-fallback` | EgoInfinity+SPIDER 展示 cell 不复用 Do-as-I-Do SPIDER robot 视频 |
 | `--allow-spider-mjwp-fallback-video` | 仅用于诊断；允许 SPIDER IK/object-reference fallback 视频进入 compose |
 
 ## 4. 运行指定组合
@@ -166,8 +181,14 @@ python3 scripts/reuse_v4_for_12_demos.py \
 
 `--cell` 不能与三个轴参数混用，三个轴必须同时提供。两种选择方式都不传
 时，入口保持原行为并展开全部 12 格。单格模式只写一个 cell manifest，
-只物化所选 trajectory 的审阅资产；EgoInfinity/DAI 复用 source run 中的
-原生结果，选择 SPIDER 时只执行该 SPIDER 路线或复用已有结果。
+只物化所选 trajectory 的审阅资产。只有 task、trajectory、hand source 和
+retargeter 绑定都与所选 cell 精确一致时才会复用结果；选择 SPIDER 时只执行
+该精确路线或复用该路线自己的结果。不支持的组合仍会出现在 12-cell 报告中，
+但 robot 资产保持缺失，不能把原生 EgoInfinity 视频换标签填入其他 cell。
+每个 cell manifest 的 `asset_provenance_contract` 会记录已检查的来源字段。
+生产入口会拒绝跨 cell fallback 和 override 参数。这里“支持全部 12 个 cell”
+表示每个 cell 都能被选择、写入报告并执行来源校验，不表示上游不支持的
+EgoInfinity 外部注入路线也会产生 robot 视频。
 
 如果需要重新执行原生后端而不是复用，继续使用下面的后端专用命令。
 
@@ -199,6 +220,8 @@ scripts/run_do_as_i_do_official_retarget.sh \
 pristine DAI wrapper 不接收矩阵轴参数。原生 DAI 成功后，再用
 `index_cell_assets.py` 的 `--trajectory-6dof`、`--hand-source` 和
 `--retargeting do_as_i_do` 记录所选矩阵标签与可解码审阅视频，最终由人工验收。
+indexer 会先校验该精确 cell 的 adapter manifest，包括请求的 hand source 和
+object track/mesh 来源；来源不一致的后端结果会被拒绝，不能只改标签写入。
 
 ```bash
 $RETARGETING_PYTHON scripts/index_cell_assets.py \

@@ -130,7 +130,11 @@ python scripts/run_fresh_aoe_auto_window.py \
 run 的 `videos/` 目录和对应 cell 目录。
 
 推荐运行 full-12 主入口。它先完整跑一次 EgoInfinity 和一次 Do-as-I-Do，
-再复用这两条大链路的中间结果，合成 12 个对比 cell。
+再复用这两条大链路的中间结果，生成包含 12 个可选择 cell 的比较报告。
+DAI 和 SPIDER 各有 4 条原生路线；EgoInfinity 只提供
+`traj_egoinfinity__hand_estimated__retarget_egoinfinity` 这一条原生路线，
+所以在不修改上游 API 的前提下最多有 9 条原生路线。其余 3 个 EgoInfinity
+cell 会明确标为 unavailable，不会把同一个视频换标签补齐。
 
 ```bash
 scripts/run_full_12_demos.sh \
@@ -157,7 +161,7 @@ scripts/run_full_12_demos.sh \
 experiments/<source_run_name>/videos/v4_egoinfinity_full__triptych.mp4
 experiments/<source_run_name>/videos/v4_do_as_i_do_full__triptych.mp4
 experiments/<source_run_name>/reuse/reuse_manifest.json
-experiments/<matrix_run_name>/videos/<cell>__triptych.mp4
+experiments/<matrix_run_name>/videos/<supported_cell>__triptych.mp4
 experiments/<matrix_run_name>/reuse_12_demo_manifest.json
 experiments/<matrix_run_name>/cells/
 experiments/<matrix_run_name>/assets/

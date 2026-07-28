@@ -206,6 +206,12 @@ generation cannot substitute for a DAI/SPIDER demo. Native optimization or a
 smoke proves execution, not final visual quality. Route hashes, numerical
 tracking thresholds, and post-backend QC are not production admission gates.
 
+The matrix is a comparison schema, not twelve independent upstream interfaces.
+DAI and SPIDER each support four native bindings. EgoInfinity/G1 exposes only
+the native `traj_egoinfinity__hand_estimated__retarget_egoinfinity` result, so
+the unmodified upstream backends provide at most nine native routes. The other
+three EgoInfinity-retarget cells must remain explicitly unavailable.
+
 ## 7. Multi-Scene Stop and Resource Policy
 
 - Run every formal scene fresh from original video. Do not reuse

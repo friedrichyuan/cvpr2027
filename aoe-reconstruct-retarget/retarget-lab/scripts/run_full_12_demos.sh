@@ -56,11 +56,11 @@ Usage:
 
 Default mode:
   Run the two heavy full pipelines once, then reuse their intermediate assets to
-  compose the 12-cell demo matrix.
+  write the 12-cell matrix report and compose videos for exact available cells.
 
 Reuse mode:
   Pass --source-run <run> to skip the heavy full pipelines and only build the
-  12 demos from an existing experiments/<run>/ source run.
+  matrix report from an existing experiments/<run>/ source run.
 
 Required for full mode, either as options or environment variables:
   --ego-video PATH          AoE undistorted RGB mp4 (V4_EGO_VIDEO)
@@ -75,7 +75,7 @@ Required for full mode, either as options or environment variables:
 Common options:
   --run-name NAME           source run name for full mode
   --source-run NAME         reuse an existing source run instead of running full mode
-  --matrix-run-name NAME    12-demo output run name
+  --matrix-run-name NAME    12-cell report output run name
   --task NAME               task name used in output paths
   --hand-type TYPE          right, left, or bimanual
   --ego-start SEC           EgoInfinity clip start time
@@ -378,7 +378,7 @@ else
   reuse_cmd+=(--no-keep-going)
 fi
 
-echo "[full12] expanding 12 demos: experiments/$matrix_run_name"
+echo "[full12] expanding the 12-cell matrix report: experiments/$matrix_run_name"
 (cd "$repo_root" && "${reuse_cmd[@]}")
 
 matrix_root="$repo_root/experiments/$matrix_run_name"

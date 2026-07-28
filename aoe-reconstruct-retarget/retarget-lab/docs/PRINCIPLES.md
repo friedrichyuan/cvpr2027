@@ -72,6 +72,13 @@ The full matrix has 12 cells:
 2 trajectory_6dof x 2 hand_source x 3 retargeting
 ```
 
+This is a comparison schema, not a claim that every backend accepts every axis
+combination. Do-as-I-Do and SPIDER each expose four native combinations.
+EgoInfinity exposes one native G1 result bound to its own estimated-hand
+trajectory; its other three matrix cells are reported as unsupported. Thus a
+fully prepared source run can provide at most nine native backend routes
+without changing an upstream backend API.
+
 Running every cell from raw RGB would repeat heavy EgoInfinity/Do-as-I-Do
 reconstruction and Do-as-I-Do physics optimization. A short clip can therefore
 take hours if every cell starts from scratch.
@@ -83,6 +90,24 @@ The recommended policy is:
 3. Save reusable assets under `experiments/<run>/intermediates` and
    `experiments/<run>/assets`.
 4. Reuse those assets for downstream hand-source and retargeter comparisons.
+
+The 12-cell interface is a selector, not permission to relabel one backend
+result as another cell. A cell is materialized only when its saved provenance
+matches all three requested axes. In particular:
+
+- the native EgoInfinity/G1 video belongs only to the exact cell recorded by
+  the source-run manifest;
+- an `egoinfinity -> do_as_i_do` or `egoinfinity -> spider` route must use an
+  adapter whose object track, object mesh, and retarget object source are all
+  `egoinfinity`; it may not fall back to `dai_native` reconstruction assets;
+- task names and hand sources are exact bindings, so a missing task/hand route
+  stays unavailable instead of globbing or borrowing another cell;
+- DAI-produced task-info/keypoint staging in an Ego route is a backend input
+  conversion. It does not change the recorded reconstruction source.
+
+Each `cells/<cell>/manifest.json` stores the resulting
+`asset_provenance_contract`. Cross-cell fallback and override flags are rejected
+by the production matrix entry point.
 
 ## 4. EgoInfinity Flow
 
@@ -162,6 +187,13 @@ optimizer tuning are forbidden. Hash the source and staged
 entire historical `mano/` directory from another workspace, because SPIDER
 metadata writes should not leak back into external outputs.
 
+For a single-object route sourced from bimanual DAI output, Retarget Lab chooses
+the interaction side from the adapter's recorded contact/anchor evidence before
+falling back to keypoint-distance heuristics. It writes an experiment-local
+task-info binding for that side while preserving keypoints and object assets
+byte-for-byte. XHand assets are copied from the pinned clean SPIDER checkout,
+not assumed to exist in the DAI/Sharpa output tree.
+
 Keep `ref_dt` on the exact DAI input frame grid. If the original MJWP `sim_dt`
 does not divide it, select the largest exact substep no coarser than the
 upstream `0.01 s` default and record the policy in the manifest. For example,
@@ -210,6 +242,13 @@ For an upright camera fallback this is `[0, -1, 0]`, not `[0, 0, 1]`. A
 legacy `[0, 0, 1]` shim makes camera-forward become world-up, which corrupts
 the DAI and SPIDER physical retargeting frames even if the final render camera
 is later adjusted.
+
+When GeoCalib classifies a clip as a dynamic camera, the selector binds gravity
+to the sample nearest the object-reconstruction reference frame. A large tilt
+in that explicitly selected sample is not an upright-camera failure and must
+not be replaced with `[0, -1, 0]`; doing so rotates the source reference but not
+MuJoCo's world. The upright fallback remains limited to unqualified/static
+estimates whose tilt exceeds the configured assumption.
 
 When overlay or robot scale is wrong, debug in this order:
 

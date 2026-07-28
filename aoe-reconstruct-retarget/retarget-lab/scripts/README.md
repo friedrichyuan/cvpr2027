@@ -33,10 +33,12 @@ Production entrypoints remain directly under `scripts/`, including
 `run_v4_two_full_pipelines.sh`, `run_do_as_i_do_official_retarget.sh`, and
 `run_spider_retarget.sh`.
 
-`reuse_v4_for_12_demos.py` expands all 12 matrix cells by default. Pass one
-of its 12 exact `--cell` keys, or provide `--trajectory-6dof`,
-`--hand-source`, and `--retargeting` together, to materialize one selected
-combination through the same reuse path.
+`reuse_v4_for_12_demos.py` reports all 12 matrix cells by default. Pass one of
+its 12 exact `--cell` keys, or provide `--trajectory-6dof`, `--hand-source`,
+and `--retargeting` together, to select one combination through the same reuse
+path. DAI and SPIDER expose four native bindings each; EgoInfinity/G1 exposes
+only its native estimated-hand/Ego-trajectory binding. Unsupported cells stay
+explicitly unavailable rather than borrowing another cell's video.
 
 ## AoE input modes
 

@@ -69,6 +69,12 @@ spider      -> XHand / MJWP
 2 trajectory_6dof x 2 hand_source x 3 retargeting
 ```
 
+这是一个对比 schema，不代表每个后端都接收所有轴组合。Do-as-I-Do 和
+SPIDER 各有四条原生组合；EgoInfinity 只提供绑定自身 estimated-hand
+trajectory 的一个原生 G1 结果，另外三个矩阵 cell 会标记为 unsupported。
+因此在不修改上游后端接口的前提下，准备完整的 source run 最多能提供九条
+原生后端路线。
+
 如果每个 cell 都从 raw RGB 开始，会重复运行很重的 EgoInfinity/Do-as-I-Do
 重建和 Do-as-I-Do physics optimization。一个短 clip 也可能因为重复全链路而跑数小时。
 
@@ -78,6 +84,21 @@ spider      -> XHand / MJWP
 2. Do-as-I-Do 完整跑一次。
 3. 将可复用资产保存到 `experiments/<run>/intermediates` 和 `experiments/<run>/assets`。
 4. 后续 hand-source 和 retargeter 对比复用这些资产。
+
+12-cell 接口是选择器，不代表可以把一个后端结果换标签后填进另一个 cell。只有
+保存的 provenance 与请求的三条轴都精确一致时，才会物化该 cell。具体来说：
+
+- 原生 EgoInfinity/G1 视频只属于 source-run manifest 记录的那个精确 cell；
+- `egoinfinity -> do_as_i_do` 或 `egoinfinity -> spider` 必须使用 object track、
+  object mesh、retarget object source 都为 `egoinfinity` 的 adapter，不能回退到
+  `dai_native` 重建资产；
+- task 名和 hand source 都是精确绑定，缺失路线保持 unavailable，不再 glob 或借用
+  其他 cell；
+- Ego 路线中由 DAI 生成的 task-info/keypoint staging 只是后端输入转换，不会改变
+  manifest 中记录的重建来源。
+
+每个 `cells/<cell>/manifest.json` 都会保存
+`asset_provenance_contract`。生产矩阵入口会拒绝跨 cell fallback 和 override 参数。
 
 ## 4. EgoInfinity 数据流
 
@@ -153,6 +174,11 @@ SPIDER wrapper 只做输入 staging，并在 pinned、tracked-clean checkout 上
 与 robot/object assets 在复制前后都要做哈希校验；不要整目录 symlink 其他 workspace
 的历史 `mano/` 目录，避免 metadata 写回外部输出。
 
+若单物体路线来自双手 DAI 输出，Retarget Lab 会优先使用适配器记录的接触/
+anchor 证据选择交互手，再回退到 keypoint 距离启发式。它只在实验目录中重写
+该手型的 task-info 绑定，keypoints 与物体资产保持逐字节一致。XHand 资产来自
+pinned 且 clean 的 SPIDER checkout，不再假设 DAI/Sharpa 输出目录包含它。
+
 `ref_dt` 必须保持 DAI 输入的原始帧网格。若原版 MJWP 的 `sim_dt` 不能整除
 `ref_dt`，选择不粗于上游默认 `0.01 s` 的最大精确子步，并把策略写入 manifest；
 例如 30 FPS 使用 `sim_dt=1/120 s`。不得通过重采样 keypoints 或修改后端优化参数
@@ -186,13 +212,21 @@ borrowed video from another scene or cell
 常见变换链路：
 
 ```text
-camera frame
+camera frame (x-right, y-down, z-fwd)
+gravity alignment (camera-frame world-up -> MuJoCo +Z)
 object canonical mesh frame
 local object frame
-scene/world frame
-robot/MuJoCo frame
+scene/world frame (Z-up)
+robot/MuJoCo frame (gravity 0 0 -9.81)
 render camera frame
 ```
+
+对 Do-as-I-Do，`gravity.json["vec3d"]` 表示相机坐标系中的世界向上方向。直立
+相机 fallback 是 `[0, -1, 0]`，不是 `[0, 0, 1]`。当 GeoCalib 将片段判定为
+动态相机时，选择器会绑定离物体重建参考帧最近的重力样本。这个明确选中的样本
+即使倾角较大，也不能再替换为直立相机 fallback；否则只会旋转源参考，而
+MuJoCo 世界坐标不变。fallback 只用于没有动态参考帧证据、且倾角超过配置假设
+的静态或未定性估计。
 
 overlay 或 robot 尺度不对时，按顺序排查：
 

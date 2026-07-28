@@ -110,7 +110,7 @@ done
 
 validation_json="$(
   "$manifest_python" - \
-    "$input_root" "$task" "$robot_type" "$embodiment_type" "$data_id" "$ref_dt" <<'PY'
+    "$input_root" "$spider_root" "$task" "$robot_type" "$embodiment_type" "$data_id" "$ref_dt" <<'PY'
 import hashlib
 import json
 import math
@@ -120,9 +120,10 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1]).resolve(strict=True)
-task, robot, hand = sys.argv[2:5]
-data_id = int(sys.argv[5])
-ref_dt = float(sys.argv[6])
+spider_root = Path(sys.argv[2]).resolve(strict=True)
+task, robot, hand = sys.argv[3:6]
+data_id = int(sys.argv[6])
+ref_dt = float(sys.argv[7])
 if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", task):
     raise SystemExit("task is not a safe path component")
 if hand not in {"left", "right", "bimanual"}:
@@ -172,9 +173,9 @@ if existing_ref_dt is not None and abs(float(existing_ref_dt) - ref_dt) > 1e-12:
 keypoints = task_info_path.parent / str(data_id) / "trajectory_keypoints.npz"
 if not keypoints.is_file():
     raise SystemExit(f"missing trajectory keypoints: {keypoints}")
-robot_assets = root / "assets" / "robots" / robot
+robot_assets = spider_root / "spider" / "assets" / "robots" / robot
 if not robot_assets.is_dir():
-    raise SystemExit(f"missing robot assets: {robot_assets}")
+    raise SystemExit(f"missing pinned SPIDER robot assets: {robot_assets}")
 
 object_dirs = []
 for side in ("left", "right"):
@@ -193,9 +194,9 @@ def digest(path):
             h.update(chunk)
     return h.hexdigest()
 
-def files(path):
+def files(path, base):
     return [
-        {"relative": str(p.relative_to(root)), "sha256": digest(p)}
+        {"relative": str(p.relative_to(base)), "sha256": digest(p)}
         for p in sorted(path.rglob("*"))
         if p.is_file()
     ]
@@ -206,9 +207,9 @@ print(json.dumps({
     "keypoints": str(keypoints),
     "keypoints_sha256": digest(keypoints),
     "robot_assets": str(robot_assets),
-    "robot_files": files(robot_assets),
+    "robot_files": files(robot_assets, robot_assets),
     "object_dirs": [str(path) for path in object_dirs],
-    "object_files": [item for path in object_dirs for item in files(path)],
+    "object_files": [item for path in object_dirs for item in files(path, root)],
     "ref_dt": ref_dt,
     "sim_dt": sim_dt,
     "sim_dt_policy": "largest_exact_substep_not_coarser_than_upstream_0.01s",
@@ -256,7 +257,16 @@ task, hand = sys.argv[4:6]
 data_id = int(sys.argv[6])
 ref_dt = float(sys.argv[7])
 
-shutil.copytree(source / "assets", target / "assets", symlinks=False)
+if (source / "assets").is_dir():
+    shutil.copytree(source / "assets", target / "assets", symlinks=False)
+backend_robot = Path(binding["robot_assets"])
+target_robot = target / "assets" / "robots" / backend_robot.name
+target_robot.parent.mkdir(parents=True, exist_ok=True)
+if target_robot.is_dir():
+    shutil.rmtree(target_robot)
+elif target_robot.exists():
+    target_robot.unlink()
+shutil.copytree(backend_robot, target_robot, symlinks=False)
 source_task = Path(binding["task_info"])
 target_task_dir = target / "mano" / hand / task
 target_task_dir.mkdir(parents=True)
@@ -404,9 +414,6 @@ staged_keypoints = (
 robot_files = [
     path for path in (processed / "assets" / "robots").rglob("*") if path.is_file()
 ]
-object_files = [
-    path for path in (processed / "assets" / "objects").rglob("*") if path.is_file()
-]
 manifest = {
     "schema_version": 1,
     "scope": "pristine_official_spider_input_staging_only",
@@ -444,18 +451,21 @@ manifest = {
         "modified": False,
     },
     "robot_assets": {
+        "source": binding["robot_assets"],
+        "source_kind": "pinned_spider_checkout",
         "byte_identical": all(
-            any(path.name == Path(item["relative"]).name and digest(path) == item["sha256"]
-                for path in robot_files)
+            (processed / "assets" / "robots" / robot_type / item["relative"]).is_file()
+            and digest(processed / "assets" / "robots" / robot_type / item["relative"])
+                == item["sha256"]
             for item in binding["robot_files"]
         ),
     },
     "object_assets": [
         {
             "source": item["relative"],
-            "byte_identical": any(
-                path.name == Path(item["relative"]).name and digest(path) == item["sha256"]
-                for path in object_files
+            "byte_identical": (
+                (processed / item["relative"]).is_file()
+                and digest(processed / item["relative"]) == item["sha256"]
             ),
         }
         for item in binding["object_files"]

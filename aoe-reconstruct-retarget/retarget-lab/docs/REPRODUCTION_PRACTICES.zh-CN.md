@@ -185,6 +185,12 @@ Ego-only、compatibility smoke、短 rollout 或仅生成视频均不能补作 D
 Demo。原生优化或 smoke 完成只说明部署链路可运行，不说明最终视觉质量已经达标。
 route hash、数值跟踪门槛和 post-backend QC 不再作为生产准入条件。
 
+这个矩阵是比较结构，不代表上游提供了 12 个互相独立的接口。DAI 和 SPIDER
+各支持 4 条原生绑定；EgoInfinity/G1 只提供
+`traj_egoinfinity__hand_estimated__retarget_egoinfinity` 这一条原生结果。
+因此不修改上游后端时最多有 9 条原生路线，其余 3 个 EgoInfinity-retarget
+cell 必须明确保持 unavailable。
+
 ## 7. 多场景复现的停止与资源策略
 
 - 正式场景必须从原始视频 fresh 运行，不复用 reconstruction、adapter 或 trajectory。

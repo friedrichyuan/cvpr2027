@@ -505,11 +505,39 @@ def write_gravity_metadata(path: Path, source_path: Path, max_tilt_deg: float | 
     payload = load_json(source_path)
     payload["source"] = "copied_from_do_as_i_do_reconstruction"
     payload["source_gravity_json"] = str(source_path)
+    payload.setdefault("vector_semantics", "camera_frame_world_up")
     tilt = max(
         abs(float(payload.get("roll_deg", 0.0) or 0.0)),
         abs(float(payload.get("pitch_deg", 0.0) or 0.0)),
     )
-    if max_tilt_deg is not None and max_tilt_deg > 0 and tilt > max_tilt_deg:
+    gravity_quality = payload.get("gravity_quality")
+    quality_status = (
+        gravity_quality.get("status")
+        if isinstance(gravity_quality, dict)
+        else None
+    )
+    preserve_dynamic_reference = quality_status == "dynamic_camera_reference_frame"
+    if preserve_dynamic_reference:
+        selected_frame = gravity_quality.get("selected_frame")
+        reference_frame = gravity_quality.get("reference_frame")
+        vector = np.asarray(payload.get("vec3d"), dtype=np.float64)
+        if (
+            selected_frame is None
+            or reference_frame is None
+            or vector.shape != (3,)
+            or not np.isfinite(vector).all()
+            or float(np.linalg.norm(vector)) <= 1e-8
+        ):
+            raise ValueError(
+                "dynamic_camera_reference_frame gravity is missing a valid "
+                "reference-frame selection or world-up vector"
+            )
+    if (
+        max_tilt_deg is not None
+        and max_tilt_deg > 0
+        and tilt > max_tilt_deg
+        and not preserve_dynamic_reference
+    ):
         original = json.loads(json.dumps(payload))
         payload.update(
             {
@@ -519,6 +547,27 @@ def write_gravity_metadata(path: Path, source_path: Path, max_tilt_deg: float | 
                 "gravity_clamped": True,
                 "gravity_clamp_reason": f"tilt {tilt:.2f} deg exceeds max {float(max_tilt_deg):.2f} deg",
                 "original_gravity": original,
+            }
+        )
+    elif (
+        max_tilt_deg is not None
+        and max_tilt_deg > 0
+        and tilt > max_tilt_deg
+        and preserve_dynamic_reference
+    ):
+        # select_geocalib_gravity.py intentionally replaces an unstable
+        # clip-wide aggregate with the sample nearest the object reconstruction
+        # reference frame. Replacing that selected camera-frame world-up vector
+        # with the upright-camera fallback rotates the reference trajectory away
+        # from MuJoCo's world frame. Preserve the explicit reference-frame
+        # selection; the downstream DAI transform will align it to world +Z.
+        payload.update(
+            {
+                "gravity_clamped": False,
+                "gravity_tilt_exceeds_upright_assumption": True,
+                "gravity_preserved_reason": "dynamic_camera_reference_frame_selection",
+                "gravity_tilt_deg": tilt,
+                "max_upright_assumption_tilt_deg": float(max_tilt_deg),
             }
         )
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

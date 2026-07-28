@@ -66,7 +66,24 @@ Replace `auto` with `direct`, remove `--candidate-durations-sec`, and add
 Direct mode bypasses only automatic window search, not reconstruction or native
 backend execution.
 
-## 2. Recommended Entrypoint: Full 12 Demos
+## 2. Recommended Entrypoint: 12-Cell Matrix Report
+
+The matrix always contains 12 selectable cells, but the upstream backends do
+not expose 12 independent native retargeting interfaces:
+
+| Retargeter | Selectable cells | Native execution support |
+| --- | ---: | ---: |
+| Do-as-I-Do / Sharpa | 4 | 4 |
+| SPIDER / XHand | 4 | 4 |
+| EgoInfinity / G1 | 4 | 1 |
+
+EgoInfinity produces one native result bound to
+`traj_egoinfinity__hand_estimated__retarget_egoinfinity`; it does not expose an
+API for injecting an arbitrary matrix trajectory and hand source. The other
+three EgoInfinity-retarget cells therefore remain explicitly unavailable
+instead of reusing that video under a different label. A source scene may make
+additional DAI/SPIDER cells unavailable when its corresponding reconstruction
+or adapter did not complete.
 
 ```bash
 scripts/run_full_12_demos.sh \
@@ -90,7 +107,7 @@ scripts/run_full_12_demos.sh \
 The script:
 
 1. Runs `scripts/run_v4_two_full_pipelines.sh` once to produce a source run.
-2. Runs `scripts/reuse_v4_for_12_demos.py` to materialize the 12-cell matrix.
+2. Runs `scripts/reuse_v4_for_12_demos.py` to materialize the 12-cell report.
 3. Runs SPIDER cells for Do-as-I-Do trajectory inputs by default.
 4. Writes triptych review videos and manifests under `experiments/`.
 
@@ -100,7 +117,7 @@ Expected outputs:
 experiments/<source_run_name>/videos/v4_egoinfinity_full__triptych.mp4
 experiments/<source_run_name>/videos/v4_do_as_i_do_full__triptych.mp4
 experiments/<source_run_name>/reuse/reuse_manifest.json
-experiments/<matrix_run_name>/videos/<cell>__triptych.mp4
+experiments/<matrix_run_name>/videos/<supported_cell>__triptych.mp4
 experiments/<matrix_run_name>/reuse_12_demo_manifest.json
 experiments/<matrix_run_name>/cells/<cell>/manifest.json
 ```
@@ -122,12 +139,11 @@ Useful options:
 | Option | Meaning |
 | --- | --- |
 | `--source-run` | skip the two full pipelines and reuse `experiments/<source_run>/` |
-| `--matrix-run-name` | output run for the 12 demos |
+| `--matrix-run-name` | output run for the 12-cell matrix report |
 | `--run-spider none\|do_as_i_do\|all` | control SPIDER cells |
 | `--duration <sec>` | trim composed videos; `0` keeps source duration |
 | `--mode symlink\|hardlink\|copy` | how reused assets are materialized |
 | `--force-spider` | rerun existing SPIDER cells |
-| `--no-spider-fallback` | do not reuse Do-as-I-Do SPIDER robot videos for EgoInfinity+SPIDER display cells |
 | `--allow-spider-mjwp-fallback-video` | diagnostic only; allow SPIDER IK/object-reference fallback videos into composed cells |
 
 ### 2.1 Run one selected combination
@@ -161,8 +177,16 @@ python3 scripts/reuse_v4_for_12_demos.py \
 options must be supplied together. Without either selection form, the command
 retains its existing behavior and expands all 12 cells. Single-cell mode writes
 one cell manifest and materializes only that trajectory's review assets. It
-reuses the source run's native EgoInfinity or DAI result; a selected SPIDER cell
-invokes only that exact SPIDER route unless an existing result is reused.
+reuses a result only when its task, trajectory, hand source, and retargeter
+binding exactly match the selected cell. A selected SPIDER cell invokes only
+that exact SPIDER route unless its own exact result is reused. Unsupported
+combinations remain present in the 12-cell report with a missing robot asset;
+the native EgoInfinity video is never relabelled to fill another cell. Each cell
+manifest includes `asset_provenance_contract` with the checked source fields.
+Cross-cell fallback and override options are rejected by this production entry
+point. Here, “all 12 cells are supported” means every cell is selectable,
+reported, and provenance-checked; it does not claim that unsupported upstream
+EgoInfinity injection routes produce robot videos.
 
 For a fresh native backend run rather than reuse, the backend-specific commands
 remain available below.
@@ -190,7 +214,10 @@ $RETARGETING_PYTHON scripts/index_cell_assets.py \
 
 The pristine native wrapper deliberately does not accept matrix axes. After
 native DAI succeeds, `index_cell_assets.py` records the selected matrix labels
-and the decodable review video; final acceptance is manual.
+and the decodable review video; final acceptance is manual. The indexer first
+checks the exact cell's adapter manifest, including the requested hand source
+and object track/mesh source, and refuses to index a differently sourced
+backend result.
 
 SPIDER/XHand, after the required keypoints, object mesh, and robot assets have
 been prepared under the same run:

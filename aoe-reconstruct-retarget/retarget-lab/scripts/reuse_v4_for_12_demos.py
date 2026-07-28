@@ -168,6 +168,63 @@ def egoinfinity_adapter_quality(manifest: dict, mesh_path: Path | None) -> tuple
     return (score, 1)
 
 
+def egoinfinity_object_binding_is_exact(manifest: dict) -> bool:
+    return (
+        manifest.get("object_geometry_source") == "ego"
+        and manifest.get("object_track_source") == "egoinfinity"
+        and manifest.get("object_mesh_source") == "egoinfinity"
+        and manifest.get("retarget_object_source") == "egoinfinity"
+    )
+
+
+def adapter_route_binding(
+    manifest_path: Path | None,
+    *,
+    trajectory: str,
+    hand_source: str,
+) -> dict[str, object]:
+    manifest = load_json_optional(manifest_path)
+    expected_object_source = "egoinfinity" if trajectory == "egoinfinity" else "dai_native"
+    expected_geometry_source = "ego" if trajectory == "egoinfinity" else None
+    errors: list[str] = []
+    if not isinstance(manifest, dict):
+        errors.append("missing_adapter_manifest")
+        manifest = {}
+    if manifest.get("hand_source") != hand_source:
+        errors.append(
+            f"hand_source={manifest.get('hand_source')!r}, expected {hand_source!r}"
+        )
+    for key in ("object_track_source", "object_mesh_source", "retarget_object_source"):
+        if manifest.get(key) != expected_object_source:
+            errors.append(
+                f"{key}={manifest.get(key)!r}, expected {expected_object_source!r}"
+            )
+    if expected_geometry_source is not None and manifest.get("object_geometry_source") != expected_geometry_source:
+        errors.append(
+            f"object_geometry_source={manifest.get('object_geometry_source')!r}, "
+            f"expected {expected_geometry_source!r}"
+        )
+    return {
+        "status": "ok" if not errors else "invalid",
+        "trajectory_6dof": trajectory,
+        "hand_source": hand_source,
+        "expected_object_source": expected_object_source,
+        "manifest": str(manifest_path) if manifest_path is not None else None,
+        "actual": {
+            key: manifest.get(key)
+            for key in (
+                "hand_source",
+                "hand_geometry_source",
+                "object_geometry_source",
+                "object_track_source",
+                "object_mesh_source",
+                "retarget_object_source",
+            )
+        },
+        "errors": errors,
+    }
+
+
 def load_latest_egoinfinity_adapter(source: Path, ego_clip: Path | None = None) -> dict | None:
     ego_clip = ego_clip or egoinfinity_clip_dir(source)
     manifests = sorted(
@@ -185,6 +242,8 @@ def load_latest_egoinfinity_adapter(source: Path, ego_clip: Path | None = None) 
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except Exception:
+            continue
+        if not egoinfinity_object_binding_is_exact(manifest):
             continue
         manifest["_manifest_path"] = str(manifest_path)
         mesh_path = egoinfinity_mesh_from_manifest(manifest, ego_clip)
@@ -222,6 +281,14 @@ def selected_egoinfinity_mesh_scale(source: Path, ego_clip: Path | None = None) 
 def write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def run_text(cmd: list[str]) -> str | None:
@@ -677,6 +744,7 @@ def spider_single_object_hand_selection(
     requested_hand_type: str,
     source_hand_type: str,
     quality: dict[str, object],
+    adapter_manifest: dict[str, object] | None = None,
 ) -> dict[str, object]:
     if requested_hand_type in {"left", "right", "bimanual"}:
         return {
@@ -692,6 +760,23 @@ def spider_single_object_hand_selection(
             "reason": "explicit_source_task_side",
             "quality": quality,
         }
+    adapter_candidates: list[tuple[str, object]] = []
+    if isinstance(adapter_manifest, dict):
+        for key in ("surface_contact_geometry", "geometry_interaction_hand"):
+            nested = adapter_manifest.get(key)
+            if isinstance(nested, dict):
+                adapter_candidates.append((f"{key}.selected_hand", nested.get("selected_hand")))
+        for key in ("anchor_hand", "selected_hand", "interaction_hand"):
+            adapter_candidates.append((key, adapter_manifest.get(key)))
+    for evidence, value in adapter_candidates:
+        if value in {"left", "right"}:
+            return {
+                "requested_hand_type": requested_hand_type,
+                "resolved_hand_type": value,
+                "reason": "adapter_manifest_interaction_hand",
+                "adapter_evidence": evidence,
+                "quality": quality,
+            }
     sides = quality.get("sides") if isinstance(quality, dict) else None
     if not isinstance(sides, dict) or not sides:
         return {
@@ -790,37 +875,6 @@ def find_dai_robot(
     return find_dai_review_video(root)
 
 
-def find_any_dai_robot(
-    source: Path,
-    trajectory: str,
-    hand_source: str,
-    hand_type: str,
-) -> tuple[Path | None, str | None]:
-    key = cell_key(trajectory, hand_source, "do_as_i_do")
-    root = (
-        source
-        / "intermediates"
-        / "retargeting"
-        / "do_as_i_do"
-        / key
-        / "retargeting_outputs"
-        / "sharpa"
-        / hand_type
-    )
-    for name in [
-        "visualization_mjwp_act_aligned.mp4",
-        "visualization_mjwp_aligned.mp4",
-        "visualization_mjwp_act.mp4",
-        "visualization_mjwp.mp4",
-    ]:
-        for path in sorted(root.glob(f"*/0/{name}")):
-            robot_root = path.parent
-            video = find_dai_review_video(robot_root)
-            if video is not None:
-                return video, path.parents[1].name
-    return None, None
-
-
 def find_dai_robot_candidates(
     source: Path,
     trajectory: str,
@@ -846,23 +900,18 @@ def find_dai_robot_candidates(
                 search_hand_source,
                 task,
                 search_hand_type,
-                allow_glob=True,
+                allow_glob=False,
             )
             if not bundles:
-                robot, matched_task = find_any_dai_robot(source, trajectory, search_hand_source, search_hand_type)
-                if robot is not None and matched_task is not None:
-                    candidates.append({
-                        "robot": robot,
-                        "task": matched_task,
-                        "trajectory": trajectory,
-                        "hand_source": search_hand_source,
-                        "hand_type": search_hand_type,
-                        "quality": {"available": False, "reason": "missing_keypoints"},
-                        "review_video_valid": True,
-                        "score": (0.0, 0.0, 0.0, 1.0 if trajectory == "do_as_i_do" else 0.0, 1.0),
-                    })
                 continue
             for bundle in bundles:
+                route_binding = adapter_route_binding(
+                    Path(str(bundle["adapter_manifest"])),
+                    trajectory=trajectory,
+                    hand_source=search_hand_source,
+                )
+                if route_binding["status"] != "ok":
+                    continue
                 robot = find_dai_robot(
                     source,
                     trajectory,
@@ -884,6 +933,7 @@ def find_dai_robot_candidates(
                     "quality": quality,
                     "review_video_valid": valid,
                     "retarget_quality": retarget_quality,
+                    "route_binding": route_binding,
                     "quality_diagnostics_are_advisory": True,
                     "score": dai_quality_score(
                         quality,
@@ -1025,11 +1075,19 @@ def find_exact_spider_input_bundle(
             hand_source,
             task,
             search_hand_type,
-            allow_glob=True,
+            allow_glob=False,
         ):
+            route_binding = adapter_route_binding(
+                Path(str(bundle["adapter_manifest"])),
+                trajectory=trajectory,
+                hand_source=hand_source,
+            )
+            if route_binding["status"] != "ok":
+                continue
             quality = summarize_keypoint_quality(Path(str(bundle["keypoints"])))
             candidates.append({
                 "bundle": bundle,
+                "route_binding": route_binding,
                 "score": dai_quality_score(
                     quality,
                     search_hand_type,
@@ -1041,6 +1099,111 @@ def find_exact_spider_input_bundle(
         return None
     candidates.sort(key=lambda item: item["score"], reverse=True)
     return candidates[0]["bundle"]  # type: ignore[return-value]
+
+
+def stage_exact_spider_input_bundle(
+    bundle: dict[str, Path | str],
+    *,
+    output_root: Path,
+    resolved_hand_type: str,
+    data_id: int,
+) -> dict[str, object]:
+    """Materialize one exact, self-contained SPIDER input without symlinks.
+
+    DAI may emit a bimanual task while the single-object SPIDER route selects
+    one interaction hand. The source keypoints and object geometry stay byte
+    identical; only the experiment-local task-info binding is rewritten.
+    """
+    if resolved_hand_type not in {"left", "right", "bimanual"}:
+        raise ValueError(f"invalid resolved SPIDER hand type: {resolved_hand_type}")
+
+    source_keypoints = Path(str(bundle["keypoints"])).resolve(strict=True)
+    source_task_info = Path(str(bundle["task_info"])).resolve(strict=True)
+    source_visual = Path(str(bundle["object_visual"])).resolve(strict=True)
+    source_convex = Path(str(bundle["object_convex"])).resolve(strict=True)
+    task = str(bundle["task"])
+    source_payload = json.loads(source_task_info.read_text(encoding="utf-8"))
+
+    remove_path(output_root)
+    object_target = output_root / "assets" / "objects" / task
+    shutil.copytree(source_visual.parent, object_target, symlinks=False)
+
+    target_task_dir = output_root / "mano" / resolved_hand_type / task
+    target_keypoints = target_task_dir / str(data_id) / "trajectory_keypoints.npz"
+    target_keypoints.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_keypoints, target_keypoints)
+
+    payload = dict(source_payload)
+    payload.update(
+        {
+            "task": task,
+            "dataset_name": "do_as_i_do",
+            "robot_type": "mano",
+            "embodiment_type": resolved_hand_type,
+            "data_id": int(data_id),
+        }
+    )
+    object_mesh_dir = f"assets/objects/{task}"
+    object_convex_dir = f"{object_mesh_dir}/convex"
+    if resolved_hand_type == "bimanual":
+        # Preserve the source-side assignments for a true bimanual task.
+        pass
+    else:
+        other = "right" if resolved_hand_type == "left" else "left"
+        payload[f"{resolved_hand_type}_object_mesh_dir"] = object_mesh_dir
+        payload[f"{resolved_hand_type}_object_convex_dir"] = object_convex_dir
+        payload[f"{other}_object_mesh_dir"] = None
+        payload[f"{other}_object_convex_dir"] = None
+    target_task_info = target_task_dir / "task_info.json"
+    target_task_info.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    if any(path.is_symlink() for path in output_root.rglob("*")):
+        raise RuntimeError("SPIDER staged input unexpectedly contains a symlink")
+    source_keypoints_sha = sha256_file(source_keypoints)
+    target_keypoints_sha = sha256_file(target_keypoints)
+    if source_keypoints_sha != target_keypoints_sha:
+        raise RuntimeError("SPIDER staged keypoints are not byte-identical")
+    if not (object_target / source_visual.name).is_file():
+        raise RuntimeError("SPIDER staged object visual is missing")
+    staged_convex = object_target / source_convex.name
+    if not staged_convex.exists():
+        raise RuntimeError("SPIDER staged object convex geometry is missing")
+
+    manifest = {
+        "schema_version": 1,
+        "scope": "retarget_lab_spider_input_binding",
+        "source_hand_type": str(bundle["hand_type"]),
+        "resolved_hand_type": resolved_hand_type,
+        "task": task,
+        "data_id": int(data_id),
+        "source_task_info": str(source_task_info),
+        "staged_task_info": str(target_task_info),
+        "task_info_rewritten": True,
+        "backend_parameters_modified": False,
+        "trajectory_keypoints": {
+            "source": str(source_keypoints),
+            "staged": str(target_keypoints),
+            "source_sha256": source_keypoints_sha,
+            "staged_sha256": target_keypoints_sha,
+            "byte_identical": True,
+        },
+        "object_assets": {
+            "source": str(source_visual.parent),
+            "staged": str(object_target),
+            "visual_sha256": sha256_file(object_target / source_visual.name),
+        },
+    }
+    write_json(output_root / "spider_input_staging_manifest.json", manifest)
+    return {
+        "input_root": output_root,
+        "task_info": target_task_info,
+        "keypoints": target_keypoints,
+        "manifest": manifest,
+        "manifest_path": output_root / "spider_input_staging_manifest.json",
+    }
 
 
 def find_dai_asset_bundles(
@@ -1489,6 +1652,11 @@ def run_spider_cells(args: argparse.Namespace, dst: Path) -> list[dict]:
             cell_env["SPIDER_SOURCE_KEYPOINTS"] = str(input_bundle["keypoints"])
             cell_env["SPIDER_OBJECT_VISUAL"] = str(input_bundle["object_visual"])
             cell_env["SPIDER_SOURCE_ADAPTER_MANIFEST"] = str(input_bundle["adapter_manifest"])
+        adapter_manifest = (
+            load_json_optional(Path(str(input_bundle["adapter_manifest"])))
+            if input_bundle is not None
+            else None
+        )
         keypoint_quality = summarize_keypoint_quality(
             Path(str(input_bundle["keypoints"])) if input_bundle is not None else None
         )
@@ -1496,6 +1664,7 @@ def run_spider_cells(args: argparse.Namespace, dst: Path) -> list[dict]:
             args.spider_hand_type,
             source_hand_type,
             keypoint_quality,
+            adapter_manifest,
         )
         resolved_spider_hand_type = str(hand_selection["resolved_hand_type"])
         selection_path = (
@@ -1520,8 +1689,14 @@ def run_spider_cells(args: argparse.Namespace, dst: Path) -> list[dict]:
             )
             results.append({"cell": key, "status": "invalid_input", "input_rc": 4})
             continue
-        input_root = Path(str(input_bundle["keypoints"])).parents[4]
         resolved_task = str(input_bundle["task"])
+        staged_input = stage_exact_spider_input_bundle(
+            input_bundle,
+            output_root=route_root / "spider_exact_input",
+            resolved_hand_type=resolved_spider_hand_type,
+            data_id=args.spider_data_id,
+        )
+        input_root = Path(str(staged_input["input_root"]))
         timebase = resolve_spider_input_timebase(
             input_root,
             task=resolved_task,
@@ -1539,6 +1714,13 @@ def run_spider_cells(args: argparse.Namespace, dst: Path) -> list[dict]:
             "timebase": timebase,
             "resolved_hand_type": resolved_spider_hand_type,
             "resolved_task": resolved_task,
+            "staging_manifest": rel(Path(str(staged_input["manifest_path"])), dst),
+            "source_adapter_manifest": str(input_bundle["adapter_manifest"]),
+            "adapter_route_binding": adapter_route_binding(
+                Path(str(input_bundle["adapter_manifest"])),
+                trajectory=trajectory,
+                hand_source=hand_source,
+            ),
         }
         write_json(input_record_path, input_record)
         attempt = 1
@@ -1747,6 +1929,106 @@ def dai_adapter_manifest_for_robot(robot_src: Path | None) -> Path | None:
     return candidate if candidate.exists() else None
 
 
+def egoinfinity_native_cell_binding(
+    *,
+    cell: str,
+    native_cell: str,
+    source_robot: Path | None,
+) -> dict[str, object]:
+    errors: list[str] = []
+    if cell != native_cell:
+        errors.append(f"cell={cell!r}, native result belongs to {native_cell!r}")
+    if source_robot is None or not source_robot.exists():
+        errors.append("missing_native_egoinfinity_robot")
+    return {
+        "status": "ok" if not errors else "invalid",
+        "backend": "egoinfinity",
+        "requested_cell": cell,
+        "native_cell": native_cell,
+        "source_robot": str(source_robot) if source_robot is not None else None,
+        "errors": errors,
+    }
+
+
+def spider_route_asset_binding(
+    *,
+    route_root: Path,
+    route: str,
+    trajectory: str,
+    hand_source: str,
+) -> dict[str, object]:
+    binding_path = route_root / "native_spider_run_binding.json"
+    input_record_path = route_root / "spider_input_record.json"
+    native = load_json_optional(binding_path)
+    input_record = load_json_optional(input_record_path)
+    errors: list[str] = []
+    if not isinstance(native, dict):
+        errors.append("missing_native_spider_run_binding")
+        native = {}
+    if not isinstance(input_record, dict):
+        errors.append("missing_spider_input_record")
+        input_record = {}
+    for label, payload in (("native", native), ("input", input_record)):
+        for key, expected in (
+            ("route", route),
+            ("trajectory_6dof", trajectory),
+            ("hand_source", hand_source),
+        ):
+            if payload.get(key) != expected:
+                errors.append(
+                    f"{label}.{key}={payload.get(key)!r}, expected {expected!r}"
+                )
+    if input_record.get("status") != "ready":
+        errors.append(f"input.status={input_record.get('status')!r}, expected 'ready'")
+    if native.get("native_returncode") != 0:
+        errors.append(
+            f"native.native_returncode={native.get('native_returncode')!r}, expected 0"
+        )
+    recorded_adapter_binding = input_record.get("adapter_route_binding")
+    adapter_binding_source = "spider_input_record"
+    if not isinstance(recorded_adapter_binding, dict):
+        staging = load_json_optional(
+            route_root / "spider_exact_input" / "spider_input_staging_manifest.json"
+        )
+        source_keypoints = (
+            ((staging or {}).get("trajectory_keypoints") or {}).get("source")
+            if isinstance(staging, dict)
+            else None
+        )
+        source_adapter = None
+        if isinstance(source_keypoints, str):
+            keypoints_path = Path(source_keypoints)
+            for parent in keypoints_path.parents:
+                if parent.name == "retargeting_outputs":
+                    candidate = parent.parent / "raw_dir" / "adapter_manifest.json"
+                    if candidate.exists():
+                        source_adapter = candidate
+                    break
+        if source_adapter is not None:
+            recorded_adapter_binding = adapter_route_binding(
+                source_adapter,
+                trajectory=trajectory,
+                hand_source=hand_source,
+            )
+            adapter_binding_source = "inferred_from_staged_source_keypoints"
+    if not isinstance(recorded_adapter_binding, dict):
+        errors.append("missing_input_adapter_route_binding")
+    elif recorded_adapter_binding.get("status") != "ok":
+        errors.append("input_adapter_route_binding_is_not_exact")
+    return {
+        "status": "ok" if not errors else "invalid",
+        "backend": "spider",
+        "requested_cell": route,
+        "trajectory_6dof": trajectory,
+        "hand_source": hand_source,
+        "native_binding": str(binding_path),
+        "input_record": str(input_record_path),
+        "adapter_route_binding": recorded_adapter_binding,
+        "adapter_route_binding_source": adapter_binding_source,
+        "errors": errors,
+    }
+
+
 def _recorded_manifest_path(value: object, *, relative_to: Path) -> Path | None:
     if not isinstance(value, str) or not value.strip():
         return None
@@ -1781,6 +2063,12 @@ def build_cells(dst: Path, source: Path, srcs: dict[str, Path | None], args: arg
                 or Path("__missing__"),
             ]
         )
+    source_reuse_manifest = load_json_optional(source / "reuse" / "reuse_manifest.json") or {}
+    native_ego_cell = (
+        ((source_reuse_manifest.get("egoinfinity_full") or {}).get("cell"))
+        if isinstance(source_reuse_manifest, dict)
+        else None
+    ) or cell_key("egoinfinity", "estimated", "egoinfinity")
 
     for selected_cell in args.matrix_cells:
         trajectory = selected_cell.trajectory_6dof
@@ -1792,8 +2080,19 @@ def build_cells(dst: Path, source: Path, srcs: dict[str, Path | None], args: arg
         cell_dir = ensure_dir(dst / "cells" / key)
         assets_dir = ensure_dir(dst / "assets" / "cells" / key)
         if retargeting == "egoinfinity":
-            robot_src = srcs["ego_robot"]
-            robot_note = "reused from source EgoInfinity/G1 full run"
+            asset_binding = egoinfinity_native_cell_binding(
+                cell=key,
+                native_cell=native_ego_cell,
+                source_robot=srcs["ego_robot"],
+            )
+            if asset_binding["status"] == "ok":
+                robot_src = srcs["ego_robot"]
+                robot_note = "exact source EgoInfinity/G1 native cell"
+            else:
+                robot_src = None
+                robot_note = (
+                    f"unsupported exact EgoInfinity binding: native result belongs to {native_ego_cell}"
+                )
         elif retargeting == "do_as_i_do":
             robot_task = args.dai_task if trajectory == "egoinfinity" else args.dai_source_task
             robot_hand_type = args.dai_hand_type if trajectory == "egoinfinity" else args.dai_source_hand_type
@@ -1813,20 +2112,6 @@ def build_cells(dst: Path, source: Path, srcs: dict[str, Path | None], args: arg
                     robot_task,
                     robot_hand_type,
                     args,
-                )
-            if robot_src is None and (robot_task != args.task or robot_hand_type != args.hand_type):
-                robot_src, robot_note = find_quality_dai_robot_in_source(
-                    source,
-                    trajectory,
-                    hand_source,
-                    args.task,
-                    args.hand_type,
-                    args,
-                )
-                robot_note = (
-                    robot_note or "fallback Do-as-I-Do/Sharpa robot from source trajectory task"
-                    if robot_src is not None
-                    else "missing source Do-as-I-Do/Sharpa cell"
                 )
             if robot_src is None and hand_source != "estimated" and args.allow_dai_hand_fallback:
                 robot_src, robot_note = find_quality_dai_robot_in_source(
@@ -1853,6 +2138,14 @@ def build_cells(dst: Path, source: Path, srcs: dict[str, Path | None], args: arg
                 )
             elif robot_src is None:
                 robot_note = "missing source Do-as-I-Do/Sharpa cell"
+            asset_binding = adapter_route_binding(
+                dai_adapter_manifest_for_robot(robot_src),
+                trajectory=trajectory,
+                hand_source=hand_source,
+            )
+            if robot_src is not None and asset_binding["status"] != "ok":
+                robot_src = None
+                robot_note = "rejected Do-as-I-Do robot with non-exact route provenance"
         else:
             exact = find_spider_robot(
                 dst,
@@ -1861,12 +2154,21 @@ def build_cells(dst: Path, source: Path, srcs: dict[str, Path | None], args: arg
                 allow_mjwp_fallback=args.allow_spider_mjwp_fallback_video,
             )
             robot_src = exact or fallback_spider
-            if exact:
+            asset_binding = spider_route_asset_binding(
+                route_root=dst / "intermediates" / "retargeting" / "spider" / key,
+                route=key,
+                trajectory=trajectory,
+                hand_source=hand_source,
+            )
+            if exact and asset_binding["status"] == "ok":
                 robot_note = "exact SPIDER aligned MJWP cell"
             elif fallback_spider is not None:
                 robot_note = "fallback SPIDER robot reused from Do-as-I-Do trajectory cell"
             else:
                 robot_note = "missing source SPIDER cell"
+            if robot_src is not None and asset_binding["status"] != "ok":
+                robot_src = None
+                robot_note = "rejected SPIDER robot with non-exact route provenance"
 
         overlay_dst = materialize(overlay, cell_dir / "overlay.mp4", args.mode)
         depth_dst = materialize(depth, cell_dir / "depth.mp4", args.mode)
@@ -1911,6 +2213,7 @@ def build_cells(dst: Path, source: Path, srcs: dict[str, Path | None], args: arg
                 "retargeting": retargeting,
                 "source_robot": rel(robot_src, dst) if robot_src else None,
             },
+            "asset_provenance_contract": asset_binding,
             "success_standard": "backend_success_and_manual_video_review",
             "manual_review_required": robot_probe is not None,
             "review_video": robot_probe,
@@ -1959,7 +2262,7 @@ def collect_route_availability(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Reuse one EgoInfinity full run and one Do-as-I-Do full run to expand a 12-cell AoE retargeting demo matrix."
+        description="Reuse one EgoInfinity full run and one Do-as-I-Do full run to write a provenance-checked 12-cell comparison report."
     )
     parser.add_argument("--source-run", required=True)
     parser.add_argument("--run-name")
@@ -2048,7 +2351,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dai-override-ego-spider-keypoints",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
             "Also let DAI override runs replace EgoInfinity->SPIDER keypoints. "
             "Only quality-valid EgoInfinity override bundles are used; object meshes still come from the "
@@ -2124,6 +2427,22 @@ def main() -> int:
             "--spider-fuse-ego-object-for-dai is disabled: production routes may not replace only the "
             "object trajectory while keeping a different hand source"
         )
+    forbidden_reuse = []
+    if args.allow_spider_fallback:
+        forbidden_reuse.append("--allow-spider-fallback")
+    if args.allow_dai_hand_fallback:
+        forbidden_reuse.append("--allow-dai-hand-fallback")
+    if args.allow_cross_trajectory_dai_robot_fallback:
+        forbidden_reuse.append("--allow-cross-trajectory-dai-robot-fallback")
+    if args.dai_override_ego_spider_keypoints:
+        forbidden_reuse.append("--dai-override-ego-spider-keypoints")
+    if args.dai_override_run:
+        forbidden_reuse.append("--dai-override-run")
+    if forbidden_reuse:
+        raise SystemExit(
+            "strict matrix provenance forbids cross-cell reuse options: "
+            + ", ".join(forbidden_reuse)
+        )
     source = REPO_ROOT / "experiments" / args.source_run
     if not source.exists():
         raise SystemExit(f"source run does not exist: {source}")
@@ -2175,7 +2494,7 @@ def main() -> int:
         "recommendation": {
             "object_reconstruction_and_6dof_tracking": "egoinfinity",
             "dai_native_reconstruction": "baseline_only",
-            "note": "Pure DAI cells do not use EgoInfinity object assets unless an explicit fused-Ego option is enabled.",
+            "note": "Pure DAI cells use DAI-native object assets; Ego trajectory cells require exact EgoInfinity object provenance.",
         },
         "success_policy": {
             "policy": "backend_success_and_manual_video_review",

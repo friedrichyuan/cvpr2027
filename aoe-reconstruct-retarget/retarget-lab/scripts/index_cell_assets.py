@@ -23,6 +23,135 @@ def cell_key(trajectory_6dof: str, hand_source: str, retargeting: str) -> str:
     return f"traj_{trajectory_6dof}__hand_{hand_source}__retarget_{retargeting}"
 
 
+def adapter_route_binding(
+    manifest_path: Path,
+    *,
+    trajectory_6dof: str,
+    hand_source: str,
+) -> dict[str, object]:
+    manifest = load_json_optional(manifest_path)
+    expected_object_source = (
+        "egoinfinity" if trajectory_6dof == "egoinfinity" else "dai_native"
+    )
+    errors: list[str] = []
+    if not isinstance(manifest, dict):
+        errors.append("missing_adapter_manifest")
+        manifest = {}
+    if manifest.get("hand_source") != hand_source:
+        errors.append(
+            f"hand_source={manifest.get('hand_source')!r}, expected {hand_source!r}"
+        )
+    for key in ("object_track_source", "object_mesh_source", "retarget_object_source"):
+        if manifest.get(key) != expected_object_source:
+            errors.append(
+                f"{key}={manifest.get(key)!r}, expected {expected_object_source!r}"
+            )
+    if (
+        trajectory_6dof == "egoinfinity"
+        and manifest.get("object_geometry_source") != "ego"
+    ):
+        errors.append(
+            f"object_geometry_source={manifest.get('object_geometry_source')!r}, expected 'ego'"
+        )
+    return {
+        "status": "ok" if not errors else "invalid",
+        "manifest": str(manifest_path),
+        "trajectory_6dof": trajectory_6dof,
+        "hand_source": hand_source,
+        "expected_object_source": expected_object_source,
+        "actual": {
+            key: manifest.get(key)
+            for key in (
+                "hand_source",
+                "object_geometry_source",
+                "object_track_source",
+                "object_mesh_source",
+                "retarget_object_source",
+            )
+        },
+        "errors": errors,
+    }
+
+
+def exact_cell_asset_binding(
+    exp: Path,
+    *,
+    trajectory_6dof: str,
+    hand_source: str,
+    retargeting: str,
+) -> dict[str, object]:
+    key = cell_key(trajectory_6dof, hand_source, retargeting)
+    if retargeting == "egoinfinity":
+        native_cell = "traj_egoinfinity__hand_estimated__retarget_egoinfinity"
+        errors = [] if key == native_cell else [
+            f"cell={key!r}, native EgoInfinity output belongs to {native_cell!r}"
+        ]
+        return {
+            "status": "ok" if not errors else "invalid",
+            "backend": "egoinfinity",
+            "requested_cell": key,
+            "native_cell": native_cell,
+            "errors": errors,
+        }
+    if retargeting == "do_as_i_do":
+        manifest_path = (
+            exp
+            / "intermediates"
+            / "retargeting"
+            / "do_as_i_do"
+            / key
+            / "raw_dir"
+            / "adapter_manifest.json"
+        )
+        result = adapter_route_binding(
+            manifest_path,
+            trajectory_6dof=trajectory_6dof,
+            hand_source=hand_source,
+        )
+        result["backend"] = "do_as_i_do"
+        result["requested_cell"] = key
+        return result
+
+    route_root = exp / "intermediates" / "retargeting" / "spider" / key
+    native = load_json_optional(route_root / "native_spider_run_binding.json")
+    input_record = load_json_optional(route_root / "spider_input_record.json")
+    errors: list[str] = []
+    if not isinstance(native, dict):
+        errors.append("missing_native_spider_run_binding")
+        native = {}
+    if not isinstance(input_record, dict):
+        errors.append("missing_spider_input_record")
+        input_record = {}
+    for label, payload in (("native", native), ("input", input_record)):
+        for field, expected in (
+            ("route", key),
+            ("trajectory_6dof", trajectory_6dof),
+            ("hand_source", hand_source),
+        ):
+            if payload.get(field) != expected:
+                errors.append(
+                    f"{label}.{field}={payload.get(field)!r}, expected {expected!r}"
+                )
+    if native.get("native_returncode") != 0:
+        errors.append(
+            f"native.native_returncode={native.get('native_returncode')!r}, expected 0"
+        )
+    if input_record.get("status") != "ready":
+        errors.append(f"input.status={input_record.get('status')!r}, expected 'ready'")
+    adapter_binding = input_record.get("adapter_route_binding")
+    if not isinstance(adapter_binding, dict) or adapter_binding.get("status") != "ok":
+        errors.append("missing_or_invalid_input_adapter_route_binding")
+    return {
+        "status": "ok" if not errors else "invalid",
+        "backend": "spider",
+        "requested_cell": key,
+        "native_binding": str(route_root / "native_spider_run_binding.json"),
+        "input_record": str(route_root / "spider_input_record.json"),
+        "adapter_route_binding": adapter_binding,
+        "errors": errors,
+    }
+
+
 def link_or_copy(src: Path | None, dst: Path, mode: str, root: Path) -> str | None:
     if src is None or not src.exists():
         return None
@@ -246,6 +375,17 @@ def main() -> int:
 
     exp = REPO_ROOT / "experiments" / args.run_name
     key = cell_key(args.trajectory_6dof, args.hand_source, args.retargeting)
+    asset_binding = exact_cell_asset_binding(
+        exp,
+        trajectory_6dof=args.trajectory_6dof,
+        hand_source=args.hand_source,
+        retargeting=args.retargeting,
+    )
+    if asset_binding["status"] != "ok":
+        parser.error(
+            "refusing to index non-exact cell assets: "
+            + "; ".join(str(item) for item in asset_binding["errors"])
+        )
     hand_selection = None
     if args.retargeting == "do_as_i_do":
         hand_selection = load_json_optional(
@@ -283,6 +423,7 @@ def main() -> int:
                 hand_selection.get("selection_reason") if hand_selection else None
             ),
         },
+        "asset_provenance_contract": asset_binding,
         "assets": {},
         "missing": [],
     }
