@@ -4,20 +4,16 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import numpy as np
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-def load_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def rel(path: Path, root: Path) -> str:
-    try:
-        return str(path.relative_to(root))
-    except ValueError:
-        return str(path)
+from aoe_retarget_lab.io_utils import read_json as load_json  # noqa: E402
+from aoe_retarget_lab.path_utils import relative_path as rel  # noqa: E402
 
 
 def link_or_copy(src: Path, dst: Path, mode: str) -> None:

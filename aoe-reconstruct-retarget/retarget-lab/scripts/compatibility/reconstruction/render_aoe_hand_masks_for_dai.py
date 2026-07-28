@@ -11,11 +11,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from aoe_retarget_lab.projection_utils import parse_resolution  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -67,16 +72,6 @@ def load_intrinsics(frames_dir: Path, frame_idx: int) -> tuple[np.ndarray, tuple
         raise RuntimeError(f"Could not read image: {img_path}")
     h, w = img.shape[:2]
     return intr, (h, w)
-
-
-def parse_resolution(value: str | None) -> tuple[float, float] | None:
-    if not value or "x" not in value:
-        return None
-    left, right = value.lower().split("x", 1)
-    try:
-        return float(left), float(right)
-    except ValueError:
-        return None
 
 
 def hawor_hand_intrinsics(hand_data: np.lib.npyio.NpzFile, fallback: np.ndarray, image_shape: tuple[int, int]) -> np.ndarray:

@@ -16,7 +16,10 @@ from pathlib import Path
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
+REPO_ROOT = SCRIPTS_DIR.parent
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from aoe_retarget_lab.io_utils import read_json as load_json  # noqa: E402
 from validate_sam3_prompt_gate import validate_prompt_qc
 
 
@@ -228,11 +231,6 @@ class BboxSpace:
     width: int
     height: int
     source: str
-
-
-def load_json(path: Path) -> object:
-    return json.loads(path.read_text(encoding="utf-8"))
-
 
 def object_id(name: str) -> str:
     value = re.sub(r"[^0-9A-Za-z]+", "_", name.strip().lower()).strip("_")

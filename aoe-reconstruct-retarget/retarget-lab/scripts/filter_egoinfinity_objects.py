@@ -6,60 +6,27 @@ import gzip
 import json
 import pickle
 import shutil
+import sys
 import time
 from pathlib import Path
 
 import numpy as np
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-def load_result(path: Path) -> dict:
-    with gzip.open(path, "rb") as handle:
-        return pickle.load(handle)
+from aoe_retarget_lab.egoinfinity_utils import (  # noqa: E402
+    load_result,
+    mask_centroid,
+    object_prompt as prompt_for,
+    object_prompt_score as prompt_score_for,
+)
 
 
 def save_result(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(path, "wb") as handle:
         pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def mask_centroid(obj: dict) -> np.ndarray | None:
-    packed = obj.get("mask_packed")
-    shape = obj.get("mask_shape")
-    if packed is None or shape is None:
-        return None
-    h, w = [int(x) for x in shape]
-    bits = np.unpackbits(np.asarray(packed, dtype=np.uint8))[: h * w]
-    mask = bits.reshape(h, w).astype(bool)
-    if not mask.any():
-        return None
-    ys, xs = np.where(mask)
-    return np.array([(xs.min() + xs.max()) * 0.5, (ys.min() + ys.max()) * 0.5], dtype=np.float32)
-
-
-def prompt_for(data: dict, oid) -> str:
-    mapping = data.get("sam3_prompt_mapping") or []
-    try:
-        idx = int(oid)
-    except Exception:
-        return ""
-    if 0 <= idx < len(mapping) and isinstance(mapping[idx], dict):
-        return str(mapping[idx].get("prompt", ""))
-    return ""
-
-
-def prompt_score_for(data: dict, oid) -> float:
-    mapping = data.get("sam3_prompt_mapping") or []
-    try:
-        idx = int(oid)
-    except Exception:
-        return 0.0
-    if 0 <= idx < len(mapping) and isinstance(mapping[idx], dict):
-        try:
-            return float(mapping[idx].get("score", 0.0) or 0.0)
-        except Exception:
-            return 0.0
-    return 0.0
 
 
 def centroid_track(data: dict, oid) -> list[np.ndarray | None]:

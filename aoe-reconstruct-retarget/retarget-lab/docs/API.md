@@ -62,9 +62,9 @@ python3 scripts/run_fresh_aoe_auto_window.py \
 ```
 
 Replace `auto` with `direct`, remove `--candidate-durations-sec`, and add
-`--direct-duration-sec <seconds>` to use a user-audited clip window. Direct
-mode bypasses only automatic window search, not reconstruction or route/input
-validation.
+`--direct-duration-sec <seconds>` to use a manually reviewed clip window.
+Direct mode bypasses only automatic window search, not reconstruction or native
+backend execution.
 
 ## 2. Recommended Entrypoint: Full 12 Demos
 
@@ -132,6 +132,41 @@ Useful options:
 
 ### 2.1 Run one selected combination
 
+Use the same reuse engine with `--cell` to materialize exactly one of the 12
+matrix combinations from an existing source run:
+
+```bash
+python3 scripts/reuse_v4_for_12_demos.py \
+  --source-run <source_run> \
+  --run-name <single_cell_run> \
+  --cell traj_egoinfinity__hand_aoe__retarget_do_as_i_do \
+  --task <task> --hand-type <left|right|bimanual> \
+  --compose
+```
+
+The equivalent axis form is:
+
+```bash
+python3 scripts/reuse_v4_for_12_demos.py \
+  --source-run <source_run> \
+  --run-name <single_cell_run> \
+  --trajectory-6dof egoinfinity \
+  --hand-source aoe \
+  --retargeting do_as_i_do \
+  --task <task> --hand-type <left|right|bimanual> \
+  --compose
+```
+
+`--cell` and the three axis options are mutually exclusive. All three axis
+options must be supplied together. Without either selection form, the command
+retains its existing behavior and expands all 12 cells. Single-cell mode writes
+one cell manifest and materializes only that trajectory's review assets. It
+reuses the source run's native EgoInfinity or DAI result; a selected SPIDER cell
+invokes only that exact SPIDER route unless an existing result is reused.
+
+For a fresh native backend run rather than reuse, the backend-specific commands
+remain available below.
+
 DAI/Sharpa, using the route-specific prepared raw directory:
 
 ```bash
@@ -153,12 +188,12 @@ $RETARGETING_PYTHON scripts/index_cell_assets.py \
   --task <task> --hand-type <left|right|bimanual> --robot sharpa
 ```
 
-The pristine native wrapper deliberately does not accept matrix axes. The
-prepared input binds the route; `index_cell_assets.py` records that binding
-only after native DAI succeeds.
+The pristine native wrapper deliberately does not accept matrix axes. After
+native DAI succeeds, `index_cell_assets.py` records the selected matrix labels
+and the decodable review video; final acceptance is manual.
 
-SPIDER/XHand, after keypoints, object mesh, adapter provenance, and robot assets
-have been indexed under the same run:
+SPIDER/XHand, after the required keypoints, object mesh, and robot assets have
+been prepared under the same run:
 
 ```bash
 scripts/run_spider_retarget.sh \
@@ -170,8 +205,8 @@ scripts/run_spider_retarget.sh \
 ```
 
 The EgoInfinity/G1 native combination uses `run_egoinfinity_retarget.sh`, as
-documented below. Do not label an externally assembled hand route as a native
-EgoInfinity route without an explicit matrix-adapter asset binding.
+documented below. Matrix labels describe the selected inputs; they are not a
+numerical or provenance admission layer.
 
 ## 3. Two Full Pipelines Only
 

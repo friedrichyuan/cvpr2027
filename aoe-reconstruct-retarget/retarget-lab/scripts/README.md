@@ -1,10 +1,9 @@
 # Script layout
 
 The `scripts/` root is reserved for production orchestration, input adapters,
-route selection, provenance, and backend entrypoints.
+route selection, and backend entrypoints.
 
-- `diagnostics/`: dataset screening, read-only audits, trajectory inspection,
-  and numerical validators.
+- `diagnostics/`: optional dataset screening and trajectory inspection.
 - `review/`: RGB overlays, mesh visualizations, contact sheets, triptychs, and
   review-pool summaries.
 - `maintenance/`: pinned third-party source setup. It changes the local
@@ -13,7 +12,6 @@ route selection, provenance, and backend entrypoints.
 Run tools from the repository root, for example:
 
 ```bash
-python scripts/diagnostics/validate_dai_raw_to_processed_hoi.py --help
 python scripts/diagnostics/screen_aoe_retarget_candidates.py --help
 python scripts/review/compose_triptych.py --help
 ```
@@ -35,6 +33,11 @@ Production entrypoints remain directly under `scripts/`, including
 `run_v4_two_full_pipelines.sh`, `run_do_as_i_do_official_retarget.sh`, and
 `run_spider_retarget.sh`.
 
+`reuse_v4_for_12_demos.py` expands all 12 matrix cells by default. Pass one
+of its 12 exact `--cell` keys, or provide `--trajectory-6dof`,
+`--hand-source`, and `--retargeting` together, to materialize one selected
+combination through the same reuse path.
+
 ## AoE input modes
 
 Both modes enter the same reconstruction and DAI/SPIDER retarget pipeline.
@@ -43,9 +46,9 @@ Both modes enter the same reconstruction and DAI/SPIDER retarget pipeline.
   configured durations longest-first with the unchanged SAM3 prompt/mask
   gates, then launches one formal full run with the first passing window.
 - Explicit input window: use `--window-selection-mode direct` together with
-  `--direct-duration-sec` and pass an audited `--ref-source-frame` after `--`.
-  This bypasses automatic window selection. It does not bypass reconstruction
-  or silently weaken SAM3/DAI/SPIDER validation.
+  `--direct-duration-sec` and pass a manually reviewed `--ref-source-frame`
+  after `--`. This bypasses automatic window selection. It does not bypass
+  reconstruction or the native SAM3/SAM3D/DAI/SPIDER execution.
 
 Example automatic invocation:
 

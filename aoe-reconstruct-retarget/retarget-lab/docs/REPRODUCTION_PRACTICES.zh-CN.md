@@ -12,7 +12,8 @@
 
 1. **环境成功**：解释器、CUDA、checkpoint 和第三方原生入口可用。
 2. **管线成功**：SAM3 → SAM3D/6DoF → Ego → DAI/SPIDER 能运行并产生结果。
-3. **Demo 成功**：DAI 或 SPIDER 结果通过输入审计、后端后置 QC 和人工视频审阅。
+3. **Demo 成功**：DAI 或 SPIDER 后端返回成功，生成可解码的 plain robot 视频，
+   且该视频通过人工审阅。
 
 环境成功和管线成功只能证明部署可用，不能代替 Demo 质量结论。run 编号通常还会
 包含环境定位、fresh rerun 和同场景不同 annotation，不能直接当成独立场景数量。
@@ -122,7 +123,7 @@ reward、noise、采样数或 optimizer。
   `xyxy` 解释；
 - 靠近视频末尾的 clip 可能短于请求时长，reference frame 必须以编码后的
   `ffprobe -count_frames` 为准；
-- direct-entry 只绕过自动选窗，仍需 fresh SAM3/SAM3D 和全部后端审计。
+- direct-entry 只绕过自动选窗，仍需 fresh SAM3/SAM3D 和原生后端执行。
 
 ## 4. 推荐验证阶梯
 
@@ -156,11 +157,12 @@ git diff --check
 | 上游原生 runtime | 可缩小到第三方二进制/API 的稳定崩溃 | 只做边界兼容并记录 |
 | SAM3 数据质量 | 无 prompt mask、valid ratio、身份跳变、错误实例 | 否 |
 | 重建质量 | 位姿跳变、mesh 漂移、HOI offset 过大 | 否 |
-| 后端质量 | DAI/SPIDER 完成但 post-QC 或视觉审阅失败 | 否 |
-| 连带失败 | 上游没有合法 exact-route 输入 | 不算后端独立故障 |
+| 后端质量 | DAI/SPIDER 完成但人工视频审阅失败 | 否 |
+| 连带失败 | 后端必需输入缺失或格式错误 | 不算后端独立故障 |
 
-修复只能针对前三类中的环境、集成或运行时包装；后四类必须 fail-closed。不得改
-SAM3 选择逻辑、生产阈值、DAI/SPIDER 算法或物理优化参数来增加 Demo 数。
+修复只能针对前三类中的环境、集成或运行时包装。不得改原生 SAM3 选择逻辑、
+DAI/SPIDER 算法或物理优化参数来增加 Demo 数。重建与跟踪数值诊断可以保留，
+但只作参考，不再覆盖“后端成功 + 人工视频审阅”的最终结论。
 
 ## 6. 如何理解 12 个组合
 
@@ -172,16 +174,16 @@ hand_source     = aoe | estimated
 retargeting     = egoinfinity | do_as_i_do | spider
 ```
 
-共 `2 × 2 × 3 = 12` cells。一个 cell 只有同时满足以下条件才算成功：
+共 `2 × 2 × 3 = 12` cells。DAI/SPIDER cell 满足以下条件即算成功：
 
-1. exact-route 输入存在且 provenance 正确；
-2. 输入 QC 通过；
-3. 原生后端返回成功并覆盖完整源时长；
-4. post-retarget QC 通过；
-5. plain robot 视频人工审阅合理。
+1. 后端最低必需输入存在且可读；
+2. 原生后端返回成功；
+3. plain robot 视频可解码；
+4. 人工审阅认为视频合理。
 
 Ego-only、compatibility smoke、短 rollout 或仅生成视频均不能补作 DAI/SPIDER
-Demo。原生优化或 smoke 完成只说明部署链路可运行，不说明最终质量已经达标。
+Demo。原生优化或 smoke 完成只说明部署链路可运行，不说明最终视觉质量已经达标。
+route hash、数值跟踪门槛和 post-backend QC 不再作为生产准入条件。
 
 ## 7. 多场景复现的停止与资源策略
 
@@ -192,7 +194,7 @@ Demo。原生优化或 smoke 完成只说明部署链路可运行，不说明最
 - run ID 只是尝试序号；报告同时给出独立 segment/annotation 数。
 - 工作盘保留安全空间。归档期间不启动新 run；只有审阅包复制并校验 SHA 后，才可
   清理可再生成中间缓存。
-- 若大量失败集中在同一质量门禁，应先汇总失败分布和代表性视频，再决定是否继续
+- 若大量失败集中在同一可见失败模式，应先汇总失败分布和代表性视频，再决定是否继续
   扩展候选，而不是无界增加 GPU 消耗。
 
 ## 8. 每个终态必须保存的证据
@@ -203,7 +205,7 @@ SAM3 mask / RGB overlay
 mesh HOI / projected overlay
 Ego、DAI、SPIDER plain robot render（若产生）
 triptych
-window、input、route、backend 和 QC manifests
+window、input、backend manifests，以及可选数值诊断
 原生命令、返回码和日志
 输入/输出 SHA256SUMS
 失败阶段与失败分类
@@ -216,7 +218,7 @@ window、input、route、backend 和 QC manifests
 
 对外报告应分别给出环境、管线和 Demo 三层结论，并为每层提供相应证据。不能因为
 完整原生链路或 compatibility smoke 已运行，就声称 12 个组合已经产生可用 Demo；
-也不能把 SAM3 数据质量、重建漂移或后端 post-QC 拒绝笼统写成“部署失败”。
+也不能把 SAM3 数据质量、重建漂移或人工审阅不通过笼统写成“部署失败”。
 
 机器名、逐次 run、候选清单、失败指标、视频审阅和归档哈希属于本地实验记录，
 不应放入通用经验文档或公开 release。

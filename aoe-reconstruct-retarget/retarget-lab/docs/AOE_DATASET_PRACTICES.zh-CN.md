@@ -3,7 +3,7 @@
 语言： [English](AOE_DATASET_PRACTICES.md) | **中文**
 
 本文集中讨论选场、实例绑定和数据质量。新机器环境搭建、第三方兼容、12-cell
-验收和失败分类见
+审阅和失败分类见
 [Retarget Lab 干净机器部署与复现经验](REPRODUCTION_PRACTICES.zh-CN.md)。
 
 本文总结从真实 AoE 视频接入 EgoInfinity、DAI 和 SPIDER 时反复出现的问题，
@@ -42,7 +42,7 @@ AoE action annotation 的框坐标使用归一化到 1000 的
 - 当前策略仅向左保留 anchor 并裁短右端，避免悄悄换动作阶段。
 - 自动入口适合存在遮挡、实例离开画面、后半段 ID switch 的片段。
 - 直接入口用于人工已经确认 clip/ref frame/bbox 的输入，并作为可复现基线。
-- 两者均不能绕过重建、route binding 或后端输入审计。
+- 两者均不会绕过重建或原生后端执行。
 
 若长窗口中发生实例切换，而同一 anchor 的较短连续窗口通过，这属于前端
 数据窗口问题，不应归因于 DAI/SPIDER 优化。
@@ -89,12 +89,12 @@ AoE/HaWoR 手和 Ego object 可能来自不同裁剪或内参。直接把两套 
 2. 纯 mesh HOI：检查手物相对位置、拇指、尺度和物体朝向。
 3. 后端初始/kinematic IK：若 reference 正确但机器人掌面偏移，是形态/IK 映射。
 4. MJWP 优化前后：若 IK 尚可而 warmup 后失联，是后端原生优化行为。
-5. DAI/SPIDER plain video：最终只据真实后端输出判断可用性。
+5. DAI/SPIDER plain video：只有真实后端返回成功且人工审阅通过才计 Demo。
 
 不要用 overlay/triptych 隐藏失败，也不要用 post-hoc object scale/translation
 把诊断结果伪装成后端成功。
 
-## 6. 常见 fail-closed 及处理
+## 6. 常见数据与审阅结果
 
 | 失败 | 含义 | 正确处理 |
 | --- | --- | --- |
@@ -104,12 +104,12 @@ AoE/HaWoR 手和 Ego object 可能来自不同裁剪或内参。直接把两套 
 | interaction containment low | mask 与手物交互区域不一致 | 调整真实 bbox/ref frame，不降阈值 |
 | action bbox 偏大或偏移 | 将 AoE 的 xyxy 误作 xywh | 按 normalized-1000 xyxy 转为像素并用 RGB 抽帧核对 |
 | camera intrinsics mismatch | 手、物、RGB 投影相机不同 | 做可审计的 K-to-K 射线换算 |
-| bimanual overlap 只有单手通过 | 另一只标注手没有与物体形成足够视觉交互 | 按每手门槛 fail-closed；不能用通过的一只手替代双手任务 |
-| HOI coordinate offset exceeds maximum | 手、物输入各自看似有效，但保持源 HOI 需要过大刚体补偿 | 归为输入/重建质量失败；不通过平移物体或放宽补偿上限修正 |
-| missing layout/timestamp binding | route 时间轴不完整 | fresh 重建或精确 timebase 转换，不伪造帧 |
+| bimanual 只有单手有明显交互 | 另一只标注手缺少可见交互 | 记录限制并以真实后端视频判断；不要改任务标签 |
+| HOI coordinate offset 较大 | 手物重建在视觉上可能不一致 | 保留诊断并审阅后端视频；不要事后平移物体 |
+| 缺少 layout/timestamp 输入 | 后端无法建立真实时间轴 | fresh 重建或转换真实 timebase，不伪造帧 |
 | DAI/SPIDER hand-object separation | 后端输出失去 HOI | 保留原生结果；先证实输入边界，再归因后端 |
-| native backend rc=0 but post-retarget QC fails | 优化完成不等于可展示；物体跟踪或腕—物相对关系超过门槛 | 保存原生轨迹和视频用于诊断，但不得晋升 Demo |
-| native rollout shorter than source endpoint | warmup 后有效轨迹未覆盖完整源动作 | 不外推或重复末帧；materializer 应拒绝生成伪完整视频 |
+| backend rc=0 但数值诊断较差 | 数值诊断与视觉质量可能不一致 | 数值仅作参考，最终按 plain backend 视频人工审阅 |
+| native rollout 短于源动作 | 后端只产生部分结果 | 不外推或重复末帧；按原生视频审阅并标为 partial |
 
 ## 7. 每个场景应交付的证据
 
@@ -121,7 +121,7 @@ dai_*.mp4 and/or spider_*.mp4
 triptych.mp4 (optional review packaging)
 fresh_input_manifest.json
 prompt_gate.json / mask_qc_summary.json
-adapter + route + backend manifests
+adapter + backend manifests，以及可选数值诊断
 native logs and return codes
 SHA256SUMS.txt
 ```

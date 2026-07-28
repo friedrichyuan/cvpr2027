@@ -10,12 +10,19 @@ runs the unchanged full wrapper once with the first passing window.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from aoe_retarget_lab.io_utils import (  # noqa: E402
+    optional_file_sha256 as sha256_file,
+    read_json_object as load_json,
+)
 
 
 CONTROLLED_OPTIONS = {
@@ -32,17 +39,6 @@ RETRYABLE_TEMPORAL_PHRASES = (
     "empty mask",
     "target disappear",
 )
-
-
-def sha256_file(path: Path) -> str | None:
-    if not path.is_file():
-        return None
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
 
 def quantize_candidates(values: str, ego_fps: float) -> list[float]:
     if ego_fps <= 0:
@@ -82,15 +78,6 @@ def classify_preflight_failure(prompt_gate: dict | None, mask_qc: dict | None) -
     if all(any(phrase in message for phrase in RETRYABLE_TEMPORAL_PHRASES) for message in lowered):
         return "retryable_temporal_window_failure"
     return "non_retryable_prompt_or_identity_failure"
-
-
-def load_json(path: Path) -> dict | None:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    return value if isinstance(value, dict) else None
-
 
 def write_manifest(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

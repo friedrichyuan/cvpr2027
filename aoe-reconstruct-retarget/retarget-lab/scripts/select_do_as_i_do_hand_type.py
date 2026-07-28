@@ -3,11 +3,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
 from hand_selection_utils import geometry_choice
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from aoe_retarget_lab.projection_utils import (  # noqa: E402
+    bbox_area,
+    bbox_center,
+    bbox_overlap,
+    parse_resolution,
+    project_camera_points,
+    scale_intrinsics_to_shape,
+)
+from aoe_retarget_lab.task_utils import find_hand_mesh_npz  # noqa: E402
 
 
 def object_id_from_config(raw_dir: Path, task: str) -> str:
@@ -48,21 +62,6 @@ def anchor_hand_from_config(raw_dir: Path) -> str:
     return "bimanual"
 
 
-def find_hand_mesh_npz(raw_dir: Path, task: str) -> Path:
-    candidates = [
-        raw_dir / task / "all_hand_meshes.npz",
-        raw_dir / "raw" / "all_hand_meshes.npz",
-        raw_dir / "all_hand_meshes.npz",
-    ]
-    for path in candidates:
-        if path.exists():
-            return path
-    raise FileNotFoundError(
-        "missing hand mesh file; checked: "
-        + ", ".join(str(path) for path in candidates)
-    )
-
-
 def build_hand_index_map(
     source_frame_ids: np.ndarray,
     rgb_frame_ids: np.ndarray,
@@ -77,34 +76,6 @@ def build_hand_index_map(
             break
         mapping[int(frame_id)] = idx
     return mapping
-
-
-def parse_resolution(value: str | None) -> tuple[float, float] | None:
-    if not value or "x" not in value:
-        return None
-    left, right = value.lower().split("x", 1)
-    try:
-        return float(left), float(right)
-    except ValueError:
-        return None
-
-
-def scale_intrinsics_to_shape(
-    fx: float,
-    fy: float,
-    cx: float,
-    cy: float,
-    source_width: float,
-    source_height: float,
-    shape: tuple[int, int, int],
-) -> np.ndarray:
-    h, w = shape[:2]
-    sx = float(w) / max(float(source_width), 1e-6)
-    sy = float(h) / max(float(source_height), 1e-6)
-    return np.array(
-        [[fx * sx, 0.0, cx * sx], [0.0, fy * sy, cy * sy], [0.0, 0.0, 1.0]],
-        dtype=np.float32,
-    )
 
 
 def read_hand_intrinsics(hands: np.lib.npyio.NpzFile, shape: tuple[int, int, int]) -> np.ndarray | None:
@@ -170,21 +141,6 @@ def read_intrinsics(
     return np.array([[focal, 0.0, w * 0.5], [0.0, focal, h * 0.5], [0.0, 0.0, 1.0]], dtype=np.float32)
 
 
-def project_camera_points(points: np.ndarray, K: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    points = np.asarray(points, dtype=np.float32)
-    z = points[:, 2]
-    valid = np.isfinite(points).all(axis=1) & (z > 1e-4)
-    uv = np.full((len(points), 2), -100000, dtype=np.int32)
-    if valid.any():
-        pts = points[valid]
-        uv_float = np.stack(
-            [K[0, 0] * pts[:, 0] / pts[:, 2] + K[0, 2], K[1, 1] * pts[:, 1] / pts[:, 2] + K[1, 2]],
-            axis=1,
-        )
-        uv[valid] = np.round(uv_float).astype(np.int32)
-    return uv, valid
-
-
 def bbox_from_points(
     uv: np.ndarray,
     valid: np.ndarray,
@@ -196,23 +152,6 @@ def bbox_from_points(
         return None
     pts = uv[inside].astype(np.float32)
     return (float(pts[:, 0].min()), float(pts[:, 1].min()), float(pts[:, 0].max()), float(pts[:, 1].max()))
-
-
-def bbox_overlap(
-    a: tuple[float, float, float, float] | None,
-    b: tuple[float, float, float, float] | None,
-) -> float:
-    if a is None or b is None:
-        return 0.0
-    x0 = max(a[0], b[0])
-    y0 = max(a[1], b[1])
-    x1 = min(a[2], b[2])
-    y1 = min(a[3], b[3])
-    return max(0.0, x1 - x0) * max(0.0, y1 - y0)
-
-
-def bbox_center(box: tuple[float, float, float, float]) -> np.ndarray:
-    return np.array([(box[0] + box[2]) * 0.5, (box[1] + box[3]) * 0.5], dtype=np.float32)
 
 
 def object_mask_bbox(raw_dir: Path, object_id: str, frame_id: int) -> tuple[float, float, float, float] | None:
@@ -251,12 +190,6 @@ def hand_mask_bbox(raw_dir: Path, side: str, frame_id: int) -> tuple[float, floa
         return None
     ys, xs = np.where(mask > 0)
     return (float(xs.min()), float(ys.min()), float(xs.max() + 1), float(ys.max() + 1))
-
-
-def bbox_area(box: tuple[float, float, float, float] | None) -> float:
-    if box is None:
-        return 0.0
-    return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
 
 
 def bbox_gap(a: tuple[float, float, float, float] | None, b: tuple[float, float, float, float] | None) -> float:

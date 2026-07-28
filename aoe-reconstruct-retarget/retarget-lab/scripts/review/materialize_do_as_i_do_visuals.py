@@ -14,14 +14,10 @@ import numpy as np
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-
-def object_id_from_task(task: str) -> str:
-    for marker in ["_bimanual", "_right", "_left"]:
-        if marker in task:
-            return task.split(marker, 1)[0]
-    return task
-
+from aoe_retarget_lab.task_utils import object_id_from_task  # noqa: E402
+from aoe_retarget_lab.video_utils import ffmpeg_writer  # noqa: E402
 
 def anchor_hand_from_config(clip_dir: Path) -> str:
     config_path = clip_dir / "config.json"
@@ -466,34 +462,6 @@ def link_or_copy(src: Path, dst: Path, copy: bool) -> None:
         shutil.copy2(src, dst)
     else:
         dst.symlink_to(src)
-
-
-def ffmpeg_writer(path: Path, width: int, height: int, fps: float) -> subprocess.Popen:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        "rgb24",
-        "-s",
-        f"{width}x{height}",
-        "-r",
-        str(fps),
-        "-i",
-        "-",
-        "-an",
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        str(path),
-    ]
-    return subprocess.Popen(cmd, stdin=subprocess.PIPE)
 
 
 def render_depth(pointmaps: list[Path], output: Path, fps: float) -> None:

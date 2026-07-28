@@ -4,12 +4,17 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from aoe_retarget_lab.io_utils import file_sha256 as sha256_file  # noqa: E402
 
 
 REQUIRED_EXECUTABLES = (
@@ -115,15 +120,6 @@ def git_head(path: Path) -> str | None:
         check=False,
     )
     return result.stdout.strip() if result.returncode == 0 else None
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
 
 def load_sha256_manifest(path: Path) -> dict[str, str]:
     hashes: dict[str, str] = {}

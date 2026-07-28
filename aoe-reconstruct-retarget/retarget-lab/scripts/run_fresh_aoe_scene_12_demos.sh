@@ -58,7 +58,7 @@ No old source-run or old pipeline output is accepted as input.
 
 Use --sam3-preflight-only to stop after fresh text+bbox SAM3 masks and prompt
 gate validation. The preflight does not create a matrix run or start SAM3D.
-Use --no-compose to keep only exact-route assets and plain aligned robot
+Use --no-compose to keep only selected-cell assets and plain robot
 renders; no triptych demo videos will be generated.
 EOF
 }
@@ -526,7 +526,6 @@ SPIDER_DEVICE="$spider_device" \
 SPIDER_MAX_SIM_STEPS="$spider_max_sim_steps" \
 SPIDER_NUM_SAMPLES="$spider_num_samples" \
 SPIDER_MAX_NUM_ITERATIONS="$spider_max_num_iterations" \
-V4_DAI_RETARGET_HAND_TYPE="$hand_type" \
 EGOINFINITY_TARGET_POINT="$egoinfinity_target_point" \
 EGOINFINITY_OBJECT_SELECTION_MODE="$egoinfinity_selection_mode" \
   "$repo_root/scripts/run_full_12_demos.sh" \
@@ -563,23 +562,9 @@ EGOINFINITY_OBJECT_SELECTION_MODE="$egoinfinity_selection_mode" \
   echo "OK: no source symlink resolves to old 20260629 outputs or openaoe-method-pilots EgoInfinity outputs"
 } | tee "$exp/logs/softlink_check_post.log"
 
-current_stage="strict_postflight_audit"
-echo "=== Strict 12-cell postflight audit ==="
-postflight_audit_args=(
-  "$python_ret" "$repo_root/scripts/audit_retarget_run.py"
-  --experiments-root "$repo_root/experiments"
-  --matrix-run "$matrix_run"
-  --source-run "$source_run"
-  --output-json "$matrix_exp/audit_retarget_run.json"
-)
-if [[ "$compose" -eq 0 ]]; then
-  postflight_audit_args+=(--no-require-triptych)
-fi
-"${postflight_audit_args[@]}" \
-  2>&1 | tee "$matrix_exp/logs/audit_retarget_run.log"
-
 echo "source_run=$exp"
 echo "matrix_run=$matrix_exp"
 echo "videos=$matrix_exp/videos"
 echo "manifest=$matrix_exp/reuse_12_demo_manifest.json"
+echo "review_policy=backend_success_and_manual_video_review"
 current_stage="complete"

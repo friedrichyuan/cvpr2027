@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -13,33 +12,10 @@ os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 import mujoco
 import numpy as np
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-def ffmpeg_writer(path: Path, width: int, height: int, fps: float) -> subprocess.Popen:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        "rgb24",
-        "-s",
-        f"{width}x{height}",
-        "-r",
-        str(fps),
-        "-i",
-        "-",
-        "-an",
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        str(path),
-    ]
-    return subprocess.Popen(cmd, stdin=subprocess.PIPE)
+from aoe_retarget_lab.video_utils import ffmpeg_writer  # noqa: E402
 
 
 def load_qpos(

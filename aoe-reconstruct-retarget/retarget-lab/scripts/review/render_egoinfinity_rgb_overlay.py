@@ -2,18 +2,22 @@
 from __future__ import annotations
 
 import argparse
-import gzip
-import io
-import pickle
+import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-def decode_rgb(blob: bytes) -> np.ndarray:
-    return np.asarray(Image.open(io.BytesIO(blob)).convert("RGB"))
+from aoe_retarget_lab.egoinfinity_utils import (  # noqa: E402
+    load_result,
+    mask_centroid as mask_centroid_from_obj_data,
+    object_prompt,
+    object_prompt_score,
+)
+from aoe_retarget_lab.image_utils import decode_rgb  # noqa: E402
 
 
 def load_ply_vertices(path: Path, max_points: int = 12000) -> np.ndarray:
@@ -213,20 +217,6 @@ def draw_triangle_mesh(
                 cv2.line(rgb, pa, pb, edge_color, 1, cv2.LINE_AA)
 
 
-def mask_centroid_from_obj_data(obj: dict) -> np.ndarray | None:
-    packed = obj.get("mask_packed")
-    shape = obj.get("mask_shape")
-    if packed is None or shape is None:
-        return None
-    h, w = [int(x) for x in shape]
-    bits = np.unpackbits(np.asarray(packed, dtype=np.uint8))[: h * w]
-    mask = bits.reshape(h, w).astype(bool)
-    if not mask.any():
-        return None
-    ys, xs = np.where(mask)
-    return np.array([(xs.min() + xs.max()) * 0.5, (ys.min() + ys.max()) * 0.5], dtype=np.float32)
-
-
 def stable_prefix_len(result: dict, obj_id, max_jump_px: float) -> tuple[int, float]:
     frames = result.get("frame_data") or []
     centroids = []
@@ -246,28 +236,6 @@ def stable_prefix_len(result: dict, obj_id, max_jump_px: float) -> tuple[int, fl
                 return i, max_jump
         last = centroid
     return len(frames), max_jump
-
-
-def object_prompt(result: dict, obj_id) -> str:
-    mapping = result.get("sam3_prompt_mapping") or []
-    try:
-        idx = int(obj_id)
-    except Exception:
-        return ""
-    if 0 <= idx < len(mapping) and isinstance(mapping[idx], dict):
-        return str(mapping[idx].get("prompt", ""))
-    return ""
-
-
-def object_prompt_score(result: dict, obj_id) -> float:
-    mapping = result.get("sam3_prompt_mapping") or []
-    try:
-        idx = int(obj_id)
-    except Exception:
-        return 0.0
-    if 0 <= idx < len(mapping) and isinstance(mapping[idx], dict):
-        return float(mapping[idx].get("score", 0.0) or 0.0)
-    return 0.0
 
 
 def select_object_ids(
@@ -414,8 +382,7 @@ def main() -> int:
     parser.set_defaults(align_hands_to_joints=True)
     args = parser.parse_args()
 
-    with gzip.open(args.pipeline_result, "rb") as handle:
-        result = pickle.load(handle)
+    result = load_result(args.pipeline_result)
     frames = result["frame_data"]
     object_items = build_object_items(
         result,

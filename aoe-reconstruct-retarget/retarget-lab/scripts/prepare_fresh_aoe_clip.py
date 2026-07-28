@@ -7,16 +7,18 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from aoe_retarget_lab.io_utils import read_json as load_json  # noqa: E402
+
+
 DEFAULT_DATASET_ROOT = Path(os.environ["AOE_DATA_ROOT"]) if os.environ.get("AOE_DATA_ROOT") else None
 DEFAULT_BBOX_FORMAT = "xyxy"
-
-
-def load_json(path: Path) -> object:
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def object_id(name: str) -> str:

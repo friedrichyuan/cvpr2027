@@ -72,8 +72,8 @@ python3 scripts/run_fresh_aoe_auto_window.py \
   --run-spider all --compose
 ```
 
-direct 只跳过自动窗口搜索，不跳过 SAM3、SAM3D/6DoF、Ego、
-DAI/SPIDER 或 route/input audit。
+direct 只跳过自动窗口搜索，不跳过 SAM3、SAM3D/6DoF、Ego 或
+DAI/SPIDER 原生执行。
 
 ## 3. 推荐主入口：完整 12 demos
 
@@ -140,13 +140,36 @@ scripts/run_full_12_demos.sh \
 
 ## 4. 运行指定组合
 
-指定 cell 时使用三个轴参数：
+已有 source run 时，可以通过同一个复用入口只物化 12 个组合中的一格：
 
-```text
---trajectory-6dof <egoinfinity|do_as_i_do>
---hand-source <aoe|estimated>
---retargeting <egoinfinity|do_as_i_do|spider>
+```bash
+python3 scripts/reuse_v4_for_12_demos.py \
+  --source-run <source_run> \
+  --run-name <single_cell_run> \
+  --cell traj_egoinfinity__hand_aoe__retarget_do_as_i_do \
+  --task <task> --hand-type <left|right|bimanual> \
+  --compose
 ```
+
+也可以使用等价的三个轴参数：
+
+```bash
+python3 scripts/reuse_v4_for_12_demos.py \
+  --source-run <source_run> \
+  --run-name <single_cell_run> \
+  --trajectory-6dof egoinfinity \
+  --hand-source aoe \
+  --retargeting do_as_i_do \
+  --task <task> --hand-type <left|right|bimanual> \
+  --compose
+```
+
+`--cell` 不能与三个轴参数混用，三个轴必须同时提供。两种选择方式都不传
+时，入口保持原行为并展开全部 12 格。单格模式只写一个 cell manifest，
+只物化所选 trajectory 的审阅资产；EgoInfinity/DAI 复用 source run 中的
+原生结果，选择 SPIDER 时只执行该 SPIDER 路线或复用已有结果。
+
+如果需要重新执行原生后端而不是复用，继续使用下面的后端专用命令。
 
 ### 4.1 Ego reconstruction + DAI
 
@@ -173,9 +196,9 @@ scripts/run_do_as_i_do_official_retarget.sh \
   --egl-device-id 0 --headless --no-wait
 ```
 
-pristine DAI wrapper 不接收矩阵轴参数。prepared raw dir 已绑定输入 route；原生
-DAI 成功后，再用 `index_cell_assets.py` 的 `--trajectory-6dof`、
-`--hand-source` 和 `--retargeting do_as_i_do` 把产物登记到指定 cell。
+pristine DAI wrapper 不接收矩阵轴参数。原生 DAI 成功后，再用
+`index_cell_assets.py` 的 `--trajectory-6dof`、`--hand-source` 和
+`--retargeting do_as_i_do` 记录所选矩阵标签与可解码审阅视频，最终由人工验收。
 
 ```bash
 $RETARGETING_PYTHON scripts/index_cell_assets.py \
@@ -188,7 +211,7 @@ $RETARGETING_PYTHON scripts/index_cell_assets.py \
 
 ### 4.3 Ego reconstruction + SPIDER
 
-先把 Ego route 的 keypoints、object mesh 和 adapter provenance 索引到同一
+先把 Ego 输入所需的 keypoints、object mesh 和 robot assets 准备到同一
 `run-name` 下，再运行：
 
 ```bash

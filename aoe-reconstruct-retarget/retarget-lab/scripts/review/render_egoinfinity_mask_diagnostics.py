@@ -2,18 +2,17 @@
 from __future__ import annotations
 
 import argparse
-import gzip
-import io
-import pickle
+import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-def decode_rgb(blob: bytes) -> np.ndarray:
-    return np.asarray(Image.open(io.BytesIO(blob)).convert("RGB"))
+from aoe_retarget_lab.egoinfinity_utils import load_result, object_prompt  # noqa: E402
+from aoe_retarget_lab.image_utils import decode_rgb  # noqa: E402
 
 
 def unpack_mask(obj: dict) -> np.ndarray | None:
@@ -24,17 +23,6 @@ def unpack_mask(obj: dict) -> np.ndarray | None:
     h, w = [int(x) for x in shape]
     bits = np.unpackbits(np.asarray(packed, dtype=np.uint8))[: h * w]
     return bits.reshape(h, w).astype(bool)
-
-
-def object_prompt(result: dict, obj_id) -> str:
-    mapping = result.get("sam3_prompt_mapping") or []
-    try:
-        idx = int(obj_id)
-    except Exception:
-        return ""
-    if 0 <= idx < len(mapping) and isinstance(mapping[idx], dict):
-        return str(mapping[idx].get("prompt", ""))
-    return ""
 
 
 def mask_centroid(mask: np.ndarray) -> np.ndarray | None:
@@ -120,8 +108,7 @@ def main() -> int:
     parser.add_argument("--max-centroid-jump-px", type=float, default=320.0)
     args = parser.parse_args()
 
-    with gzip.open(args.pipeline_result, "rb") as handle:
-        result = pickle.load(handle)
+    result = load_result(args.pipeline_result)
     frames = result.get("frame_data") or []
     if not frames:
         raise RuntimeError("pipeline result has no frame_data")

@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import hashlib
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import uuid
 from fractions import Fraction
@@ -22,15 +22,16 @@ from pathlib import Path
 from typing import Any
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from aoe_retarget_lab.io_utils import (  # noqa: E402
+    file_sha256 as sha256_file,
+    ordered_files_sha256 as aggregate_frame_sha256,
+)
+
+
 SCHEMA_VERSION = 1
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def exact_frame_grid(frames_dir: Path) -> list[Path]:
@@ -50,18 +51,6 @@ def exact_frame_grid(frames_dir: Path) -> list[Path]:
             f"actual={actual[:3]}...{actual[-3:]}"
         )
     return frames
-
-
-def aggregate_frame_sha256(frames: list[Path]) -> str:
-    """Hash ordered names and per-file SHA256 values without loading all frames."""
-
-    digest = hashlib.sha256()
-    for frame in frames:
-        digest.update(frame.name.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(bytes.fromhex(sha256_file(frame)))
-    return digest.hexdigest()
-
 
 def parse_fps(value: str) -> float:
     return float(Fraction(value)) if value and value != "0/0" else 0.0

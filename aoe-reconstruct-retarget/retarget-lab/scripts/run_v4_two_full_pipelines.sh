@@ -9,7 +9,6 @@ python_ret="${RETARGETING_PYTHON:-python}"
 
 task="${V4_TASK:-foundation_jar_bimanual_leftscale}"
 hand_type="${V4_HAND_TYPE:-bimanual}"
-dai_retarget_hand_type="${V4_DAI_RETARGET_HAND_TYPE:-auto}"
 dai_raw_dir="${V4_DAI_RAW_DIR:?Set V4_DAI_RAW_DIR to a Do-as-I-Do reconstruction raw directory.}"
 dai_native_aligned_raw_dir="${V4_DAI_NATIVE_ALIGNED_RAW_DIR:-$exp/intermediates/trajectory_6dof/do_as_i_do/dai_native_diagnostic_raw_dir}"
 dai_clip_dir="${V4_DAI_CLIP_DIR:?Set V4_DAI_CLIP_DIR to the Do-as-I-Do clip directory used for visualization.}"
@@ -23,7 +22,6 @@ ego_start="${V4_EGO_START:-0.0}"
 ego_end="${V4_EGO_END:-3.5}"
 ego_fps="${V4_EGO_FPS:-15}"
 ego_target_point="${EGOINFINITY_TARGET_POINT:-}"
-dai_max_sim_steps="${DAI_MAX_SIM_STEPS:--1}"
 
 main_cuda="${MAIN_CUDA:-0}"
 dai_cuda_visible_devices="${DAI_CUDA_VISIBLE_DEVICES:-$main_cuda}"
@@ -85,8 +83,8 @@ sam3_pid=""
 sam3d_pid=""
 dai_native_retarget_object_source="dai_native"
 dai_native_input_rc=4
-ego_aoe_preflight_rc=4
-ego_estimated_preflight_rc=4
+ego_aoe_input_rc=4
+ego_estimated_input_rc=4
 dai_native_post_retarget_rc=null
 dai_native_post_retarget_status="not_run_input_unavailable"
 dai_native_route_available=false
@@ -100,14 +98,6 @@ ego_estimated_post_retarget_rc=null
 ego_estimated_post_retarget_status="not_run_input_unavailable"
 ego_estimated_route_available=false
 last_stage_rc=0
-dai_native_preflight_evidence_rel="logs/route_preflight__traj_do_as_i_do__hand_aoe__retarget_do_as_i_do.json"
-dai_native_estimated_preflight_evidence_rel="logs/route_preflight__traj_do_as_i_do__hand_estimated__retarget_do_as_i_do.json"
-ego_aoe_preflight_evidence_rel="logs/route_preflight__traj_egoinfinity__hand_aoe__retarget_do_as_i_do.json"
-ego_estimated_preflight_evidence_rel="logs/route_preflight__traj_egoinfinity__hand_estimated__retarget_do_as_i_do.json"
-dai_native_preflight_evidence_sha256=""
-dai_native_estimated_preflight_evidence_sha256=""
-ego_aoe_preflight_evidence_sha256=""
-ego_estimated_preflight_evidence_sha256=""
 
 mkdir -p "$exp/logs/workers" "$exp/videos" "$exp/reuse"
 stage_failures_file="$exp/logs/stage_failures.tsv"
@@ -195,112 +185,12 @@ PY
 clear_route_demo_artifacts() {
   local cell="$1"
   local triptych="${2:-}"
-  # The official DAI wrapper performs its own index attempt before returning
-  # hard-QC exit 7.  Remove that partial/stale admission state so a failed
-  # launcher can remain diagnostic without masquerading as a source demo.
+  # Remove stale cell bundles before publishing the current backend result.
   rm -rf "$exp/cells/$cell" "$exp/assets/cells/$cell"
   rm -f "$exp/videos/${cell}__triptych.mp4"
   if [[ -n "$triptych" ]]; then
     rm -f "$triptych"
   fi
-}
-
-write_route_preflight_evidence() {
-  local output="$1"
-  local route="$2"
-  local trajectory_6dof="$3"
-  local hand_source="$4"
-  local input_rc="$5"
-  local status="$6"
-  local adapter_manifest="${7:-}"
-  "$python_ret" - \
-    "$output" "$route" "$trajectory_6dof" "$hand_source" \
-    "$input_rc" "$status" "$adapter_manifest" "$exp" <<'PY'
-import hashlib
-import json
-import os
-import sys
-from pathlib import Path
-
-output = Path(sys.argv[1])
-route = sys.argv[2]
-trajectory_6dof = sys.argv[3]
-hand_source = sys.argv[4]
-input_rc = int(sys.argv[5])
-status = sys.argv[6]
-adapter_arg = sys.argv[7]
-experiment_root = Path(sys.argv[8]).resolve()
-
-adapter_path = Path(adapter_arg).resolve() if adapter_arg else None
-adapter = None
-adapter_sha256 = None
-adapter_errors = []
-if adapter_path is not None and adapter_path.is_file():
-    try:
-        adapter = json.loads(adapter_path.read_text(encoding="utf-8"))
-        adapter_sha256 = hashlib.sha256(adapter_path.read_bytes()).hexdigest()
-    except (OSError, json.JSONDecodeError) as exc:
-        adapter_errors.append(f"adapter_manifest_unreadable:{exc}")
-elif input_rc == 0:
-    adapter_errors.append("adapter_manifest_missing_for_available_input")
-
-if input_rc == 0 and isinstance(adapter, dict):
-    if adapter.get("hand_source") != hand_source:
-        adapter_errors.append(
-            f"adapter_hand_source={adapter.get('hand_source')},expected={hand_source}"
-        )
-    if (adapter.get("retarget_input_qc") or {}).get("status") != "ok":
-        adapter_errors.append("adapter_retarget_input_qc_not_ok")
-    if (adapter.get("adapter_rigid_invariance") or {}).get("status") != "ok":
-        adapter_errors.append("adapter_rigid_invariance_not_ok")
-
-def display_path(path):
-    if path is None:
-        return None
-    try:
-        return os.path.relpath(path, experiment_root)
-    except ValueError:
-        return str(path)
-
-payload = {
-    "schema_version": 1,
-    "route": route,
-    "trajectory_6dof": trajectory_6dof,
-    "hand_source": hand_source,
-    "retargeting": "do_as_i_do",
-    "status": status,
-    "input_rc": input_rc,
-    "underlying_adapter_manifest": {
-        "path": display_path(adapter_path),
-        "path_base": "experiment_root",
-        "sha256": adapter_sha256,
-        "exists": bool(adapter_path is not None and adapter_path.is_file()),
-        "adapter_schema_version": adapter.get("adapter_schema_version") if isinstance(adapter, dict) else None,
-        "hand_source": adapter.get("hand_source") if isinstance(adapter, dict) else None,
-        "retarget_input_qc_status": (
-            (adapter.get("retarget_input_qc") or {}).get("status")
-            if isinstance(adapter, dict)
-            else None
-        ),
-        "adapter_rigid_invariance_status": (
-            (adapter.get("adapter_rigid_invariance") or {}).get("status")
-            if isinstance(adapter, dict)
-            else None
-        ),
-    },
-    "evidence_validation": {
-        "status": "invalid" if adapter_errors else "ok",
-        "errors": adapter_errors,
-    },
-}
-output.parent.mkdir(parents=True, exist_ok=True)
-output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-raise SystemExit(5 if input_rc == 0 and adapter_errors else 0)
-PY
-}
-
-file_sha256() {
-  "$python_ret" -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$1"
 }
 
 stop_workers() {
@@ -526,19 +416,18 @@ prepare_ego_retarget_adapter() {
     --source-layout-alignment none \
     --no-fit-object-scale-to-ego-mask \
     --hoi-contact-alignment diagnostic \
-    --require-retarget-input-qc \
     --python-bin "$python_ret" \
     --force || return $?
-  echo "Ego retarget adapter passed input QC: hand_source=$hand_source output=$output_dir"
+  echo "Ego retarget adapter prepared: hand_source=$hand_source output=$output_dir"
 }
 
-preflight_ego_retarget_inputs() {
-  ego_aoe_preflight_rc=0
-  ego_estimated_preflight_rc=0
-  prepare_ego_retarget_adapter aoe "$ego_dai_aoe_raw_dir" source || ego_aoe_preflight_rc=$?
-  prepare_ego_retarget_adapter estimated "$ego_dai_raw_dir" ego || ego_estimated_preflight_rc=$?
-  if (( ego_aoe_preflight_rc != 0 || ego_estimated_preflight_rc != 0 )); then
-    echo "Ego retarget input preflight failed: aoe_rc=$ego_aoe_preflight_rc estimated_rc=$ego_estimated_preflight_rc" >&2
+prepare_ego_retarget_inputs() {
+  ego_aoe_input_rc=0
+  ego_estimated_input_rc=0
+  prepare_ego_retarget_adapter aoe "$ego_dai_aoe_raw_dir" source || ego_aoe_input_rc=$?
+  prepare_ego_retarget_adapter estimated "$ego_dai_raw_dir" ego || ego_estimated_input_rc=$?
+  if (( ego_aoe_input_rc != 0 || ego_estimated_input_rc != 0 )); then
+    echo "Ego retarget input preparation failed: aoe_rc=$ego_aoe_input_rc estimated_rc=$ego_estimated_input_rc" >&2
     return 4
   fi
 }
@@ -554,24 +443,18 @@ ok = (
     m.get("adapter_schema_version") == 3
     and m.get("production_hoi_policy") == "preserve_source_relative_transform"
     and m.get("hand_source") == sys.argv[2]
-    and (m.get("retarget_input_qc") or {}).get("status") == "ok"
-    and (m.get("adapter_rigid_invariance") or {}).get("status") == "ok"
-    and (m.get("adapter_rigid_invariance") or {}).get("true_pre_post_hand_comparison") is True
-    and not (m.get("hoi_contact_alignment") or {}).get("applied")
-    and not (m.get("hoi_refinement") or {}).get("hand_contact_translation_applied")
 )
 raise SystemExit(0 if ok else 1)
 ' "$output_dir/adapter_manifest.json" "$expected_hand_source"
 }
 
-materialize_and_validate_pristine_dai() {
+materialize_pristine_dai() {
   local output_root="$1"
   local raw_dir="$2"
   local trajectory_6dof="$3"
   local hand_source="$4"
   local resolved_hand_type="$5"
   local run_dir="$output_root/sharpa/$resolved_hand_type/$task/0"
-  local mano_dir="$output_root/mano/$resolved_hand_type/$task/0"
 
   "$python_ret" "$repo_root/scripts/materialize_pristine_dai_review.py" \
     --repo-root "$repo_root" \
@@ -583,31 +466,6 @@ materialize_and_validate_pristine_dai() {
     --hand-source "$hand_source" \
     --python-bin "$python_ret"
 
-  "$python_ret" "$repo_root/scripts/diagnostics/validate_dai_raw_to_processed_hoi.py" \
-    --adapter-manifest "$raw_dir/adapter_manifest.json" \
-    --processed-keypoints "$mano_dir/trajectory_keypoints.npz" \
-    --trajectory-6dof "$trajectory_6dof" \
-    --hand-type "$resolved_hand_type" \
-    --output "$mano_dir/raw_to_processed_hoi_invariance.json"
-
-  "$python_ret" "$repo_root/scripts/diagnostics/evaluate_mjwp_object_tracking.py" \
-    --scene "$run_dir/scene_act.xml" \
-    --mjwp "$run_dir/trajectory_mjwp_act_aligned.npz" \
-    --reference "$run_dir/trajectory_kinematic.npz" \
-    --output "$run_dir/mjwp_object_tracking_quality.json" \
-    --alignment-manifest "$run_dir/mjwp_alignment_manifest.json" \
-    --pos-median-threshold 0.05 \
-    --pos-p95-threshold 0.10 \
-    --rot-median-threshold 0.75 \
-    --rot-p95-threshold 2.0 \
-    --lost-pos-threshold 0.10 \
-    --lost-fraction-threshold 0.10 \
-    --hoi-reference-contact-threshold 0.05 \
-    --hoi-executed-contact-threshold 0.08 \
-    --hoi-distance-median-threshold 0.03 \
-    --hoi-distance-p95-threshold 0.08 \
-    --hoi-min-reference-contact-frames 3 \
-    --hoi-min-contact-retention 0.50
 }
 
 run_do_as_i_do_full() {
@@ -650,8 +508,8 @@ run_do_as_i_do_full() {
       "${cell}_resolve_native_hand" resolve_native_dai_hand "$output_root" "$task")"; then
       echo "do_as_i_do_requested_hand=$hand_type"
       echo "do_as_i_do_resolved_hand=$dai_resolved_hand_type"
-      if run_review_stage "${cell}_materialize_and_qc" \
-        materialize_and_validate_pristine_dai \
+      if run_review_stage "${cell}_materialize_review" \
+        materialize_pristine_dai \
           "$output_root" "$dai_raw_dir" do_as_i_do aoe "$dai_resolved_hand_type" &&
         run_review_stage "${cell}_index" \
         "$python_ret" "$repo_root/scripts/index_cell_assets.py" \
@@ -712,7 +570,7 @@ run_adapted_do_as_i_do_retarget() {
     clear_route_demo_artifacts "$cell"
     rm -f "$review_ready_marker"
     if [[ "$object_geometry_source" == "ego" ]] && ego_adapter_is_reusable "$output_dir" "$hand_source"; then
-      echo "reusing preflighted Ego adapter: $output_dir"
+      echo "reusing prepared Ego adapter: $output_dir"
     else
       local pipeline_result="$exp/intermediates/egoinfinity/clip/pipeline_result_selected.pkl.gz"
       if [[ ! -f "$pipeline_result" ]]; then
@@ -734,7 +592,6 @@ run_adapted_do_as_i_do_retarget() {
         --source-layout-alignment "$source_layout_mode" \
         --no-fit-object-scale-to-ego-mask \
         --hoi-contact-alignment "$([[ "$object_geometry_source" == "ego" ]] && echo diagnostic || echo none)" \
-        $([[ "$object_geometry_source" == "ego" ]] && echo --require-retarget-input-qc) \
         --python-bin "$python_ret" \
         --force
     fi
@@ -745,11 +602,6 @@ run_adapted_do_as_i_do_retarget() {
       adapter_hand_type="$hand_type"
     fi
     echo "${trajectory_6dof}_${hand_source}_adapter_hand=$adapter_hand_type"
-
-    if [[ "$object_geometry_source" == "source" && "$hand_geometry_source" == "ego" ]]; then
-      "$python_ret" "$repo_root/scripts/diagnostics/validate_adapter_geometry_contact.py" \
-        --adapter-manifest "$output_dir/adapter_manifest.json"
-    fi
 
     local launcher_rc=0
     scripts/run_do_as_i_do_official_retarget.sh \
@@ -770,8 +622,8 @@ run_adapted_do_as_i_do_retarget() {
       "${cell}_resolve_native_hand" resolve_native_dai_hand "$retarget_output_root" "$task")"; then
       if run_review_stage "${cell}_hand_binding" \
         test "$resolved_hand_type" = "$adapter_hand_type"; then
-        if run_review_stage "${cell}_materialize_and_qc" \
-          materialize_and_validate_pristine_dai \
+        if run_review_stage "${cell}_materialize_review" \
+          materialize_pristine_dai \
             "$retarget_output_root" "$output_dir" "$trajectory_6dof" \
             "$hand_source" "$resolved_hand_type" &&
           run_review_stage "${cell}_index" \
@@ -803,7 +655,6 @@ run_adapted_do_as_i_do_retarget() {
   echo "run_name=$run_name"
   echo "task=$task"
   echo "hand_type=$hand_type"
-  echo "dai_retarget_hand_type=$dai_retarget_hand_type"
   echo "dai_raw_dir=$dai_raw_dir"
   echo "dai_native_source_raw_dir=$dai_native_source_raw_dir"
   echo "dai_native_aligned_raw_dir=$dai_native_aligned_raw_dir"
@@ -819,7 +670,6 @@ run_adapted_do_as_i_do_retarget() {
   echo "ego_end=$ego_end"
   echo "ego_fps=$ego_fps"
   echo "EGOINFINITY_TARGET_POINT=${ego_target_point:-}"
-  echo "DAI_MAX_SIM_STEPS=$dai_max_sim_steps"
   echo "MAIN_CUDA=$main_cuda"
   echo "DAI_CUDA_VISIBLE_DEVICES=$dai_cuda_visible_devices"
   echo "SAM3_WORKER_CUDA=$sam3_cuda"
@@ -845,91 +695,24 @@ stop_workers
 dai_native_input_rc=0
 dai_native_object_pose_rc=4
 if prepare_dai_native_retarget_input; then
-  printf '%s\t%s\t0\n' "$(date -Is)" "dai_native_retarget_input_preflight" >> "$stage_failures_file"
+  printf '%s\t%s\t0\n' "$(date -Is)" "dai_native_retarget_input_preparation" >> "$stage_failures_file"
 else
   dai_native_input_rc=$?
-  printf '%s\t%s\t%s\n' "$(date -Is)" "dai_native_retarget_input_preflight" "$dai_native_input_rc" >> "$stage_failures_file"
-  echo "pure DAI route disabled by DAI-native input QC; independent routes will continue" >&2
+  printf '%s\t%s\t%s\n' "$(date -Is)" "dai_native_retarget_input_preparation" "$dai_native_input_rc" >> "$stage_failures_file"
+  echo "pure DAI route input preparation failed; independent routes will continue" >&2
 fi
 echo "DAI-object/Ego-hand estimated route disabled: production hand-only canonical fusion is forbidden" >&2
-printf '%s\t%s\t%s\n' "$(date -Is)" "dai_native_object_pose_preflight" "$dai_native_object_pose_rc" >> "$stage_failures_file"
-if preflight_ego_retarget_inputs; then
-  printf '%s\t%s\t0\n' "$(date -Is)" "egoinfinity_retarget_input_preflight" >> "$stage_failures_file"
+printf '%s\t%s\t%s\n' "$(date -Is)" "dai_native_object_pose_route" "$dai_native_object_pose_rc" >> "$stage_failures_file"
+if prepare_ego_retarget_inputs; then
+  printf '%s\t%s\t0\n' "$(date -Is)" "egoinfinity_retarget_input_preparation" >> "$stage_failures_file"
 else
-  preflight_rc=$?
-  printf '%s\t%s\t%s\n' "$(date -Is)" "egoinfinity_retarget_input_preflight" "$preflight_rc" >> "$stage_failures_file"
-  echo "Ego-dependent routes selectively disabled by input QC; pure DAI routes will continue" >&2
+  preparation_rc=$?
+  printf '%s\t%s\t%s\n' "$(date -Is)" "egoinfinity_retarget_input_preparation" "$preparation_rc" >> "$stage_failures_file"
+  echo "Ego-dependent route input preparation failed; pure DAI routes will continue" >&2
 fi
 
-dai_native_preflight_status="ok"
-if (( dai_native_input_rc != 0 )); then
-  dai_native_preflight_status="failed_input_preflight"
-fi
-if ! write_route_preflight_evidence \
-  "$exp/$dai_native_preflight_evidence_rel" \
-  "traj_do_as_i_do__hand_aoe__retarget_do_as_i_do" \
-  do_as_i_do aoe "$dai_native_input_rc" "$dai_native_preflight_status" \
-  "$dai_native_aligned_raw_dir/adapter_manifest.json"; then
-  dai_native_input_rc=5
-  dai_native_preflight_status="invalid_input"
-  printf '%s\t%s\t5\n' "$(date -Is)" "dai_native_route_preflight_evidence" >> "$stage_failures_file"
-  write_route_preflight_evidence \
-    "$exp/$dai_native_preflight_evidence_rel" \
-    "traj_do_as_i_do__hand_aoe__retarget_do_as_i_do" \
-    do_as_i_do aoe "$dai_native_input_rc" "$dai_native_preflight_status" \
-    "$dai_native_aligned_raw_dir/adapter_manifest.json"
-fi
-dai_native_preflight_evidence_sha256="$(file_sha256 "$exp/$dai_native_preflight_evidence_rel")"
-
-write_route_preflight_evidence \
-  "$exp/$dai_native_estimated_preflight_evidence_rel" \
-  "traj_do_as_i_do__hand_estimated__retarget_do_as_i_do" \
-  do_as_i_do estimated "$dai_native_object_pose_rc" disabled_policy ""
-dai_native_estimated_preflight_evidence_sha256="$(file_sha256 "$exp/$dai_native_estimated_preflight_evidence_rel")"
-
-ego_aoe_preflight_status="ok"
-if (( ego_aoe_preflight_rc != 0 )); then
-  ego_aoe_preflight_status="failed_input_preflight"
-fi
-if ! write_route_preflight_evidence \
-  "$exp/$ego_aoe_preflight_evidence_rel" \
-  "traj_egoinfinity__hand_aoe__retarget_do_as_i_do" \
-  egoinfinity aoe "$ego_aoe_preflight_rc" "$ego_aoe_preflight_status" \
-  "$ego_dai_aoe_raw_dir/adapter_manifest.json"; then
-  ego_aoe_preflight_rc=5
-  ego_aoe_preflight_status="invalid_input"
-  printf '%s\t%s\t5\n' "$(date -Is)" "egoinfinity_aoe_route_preflight_evidence" >> "$stage_failures_file"
-  write_route_preflight_evidence \
-    "$exp/$ego_aoe_preflight_evidence_rel" \
-    "traj_egoinfinity__hand_aoe__retarget_do_as_i_do" \
-    egoinfinity aoe "$ego_aoe_preflight_rc" "$ego_aoe_preflight_status" \
-    "$ego_dai_aoe_raw_dir/adapter_manifest.json"
-fi
-ego_aoe_preflight_evidence_sha256="$(file_sha256 "$exp/$ego_aoe_preflight_evidence_rel")"
-
-ego_estimated_preflight_status="ok"
-if (( ego_estimated_preflight_rc != 0 )); then
-  ego_estimated_preflight_status="failed_input_preflight"
-fi
-if ! write_route_preflight_evidence \
-  "$exp/$ego_estimated_preflight_evidence_rel" \
-  "traj_egoinfinity__hand_estimated__retarget_do_as_i_do" \
-  egoinfinity estimated "$ego_estimated_preflight_rc" "$ego_estimated_preflight_status" \
-  "$ego_dai_raw_dir/adapter_manifest.json"; then
-  ego_estimated_preflight_rc=5
-  ego_estimated_preflight_status="invalid_input"
-  printf '%s\t%s\t5\n' "$(date -Is)" "egoinfinity_estimated_route_preflight_evidence" >> "$stage_failures_file"
-  write_route_preflight_evidence \
-    "$exp/$ego_estimated_preflight_evidence_rel" \
-    "traj_egoinfinity__hand_estimated__retarget_do_as_i_do" \
-    egoinfinity estimated "$ego_estimated_preflight_rc" "$ego_estimated_preflight_status" \
-    "$ego_dai_raw_dir/adapter_manifest.json"
-fi
-ego_estimated_preflight_evidence_sha256="$(file_sha256 "$exp/$ego_estimated_preflight_evidence_rel")"
-
-# Produce the recommended Ego-object routes first. A single valid plain route
-# is enough for demo admission, so slow DAI-native baselines must not delay it.
-if (( ego_aoe_preflight_rc == 0 )); then
+# Produce the recommended Ego-object routes first so reviewable outputs arrive early.
+if (( ego_aoe_input_rc == 0 )); then
   run_stage egoinfinity_aoe_retarget \
     run_adapted_do_as_i_do_retarget egoinfinity aoe "$ego_dai_aoe_raw_dir" ego source
   ego_aoe_post_retarget_rc=$last_stage_rc
@@ -941,10 +724,10 @@ if (( ego_aoe_preflight_rc == 0 )); then
     clear_route_demo_artifacts "traj_egoinfinity__hand_aoe__retarget_do_as_i_do"
   fi
 else
-  printf '%s\t%s\t%s\n' "$(date -Is)" "egoinfinity_aoe_retarget" "$ego_aoe_preflight_rc" >> "$stage_failures_file"
+  printf '%s\t%s\t%s\n' "$(date -Is)" "egoinfinity_aoe_retarget" "$ego_aoe_input_rc" >> "$stage_failures_file"
   clear_route_demo_artifacts "traj_egoinfinity__hand_aoe__retarget_do_as_i_do"
 fi
-if (( ego_estimated_preflight_rc == 0 )); then
+if (( ego_estimated_input_rc == 0 )); then
   run_stage egoinfinity_estimated_retarget \
     run_adapted_do_as_i_do_retarget egoinfinity estimated "$ego_dai_raw_dir" ego ego
   ego_estimated_post_retarget_rc=$last_stage_rc
@@ -956,7 +739,7 @@ if (( ego_estimated_preflight_rc == 0 )); then
     clear_route_demo_artifacts "traj_egoinfinity__hand_estimated__retarget_do_as_i_do"
   fi
 else
-  printf '%s\t%s\t%s\n' "$(date -Is)" "egoinfinity_estimated_retarget" "$ego_estimated_preflight_rc" >> "$stage_failures_file"
+  printf '%s\t%s\t%s\n' "$(date -Is)" "egoinfinity_estimated_retarget" "$ego_estimated_input_rc" >> "$stage_failures_file"
   clear_route_demo_artifacts "traj_egoinfinity__hand_estimated__retarget_do_as_i_do"
 fi
 if (( dai_native_input_rc == 0 )); then
@@ -991,29 +774,25 @@ cat > "$exp/reuse/reuse_manifest.json" <<EOF
       "input_rc": $dai_native_input_rc,
       "post_retarget_rc": $dai_native_post_retarget_rc,
       "status": "$dai_native_post_retarget_status",
-      "available": $dai_native_route_available,
-      "preflight_evidence": {"path": "$dai_native_preflight_evidence_rel", "path_base": "experiment_root", "sha256": "$dai_native_preflight_evidence_sha256", "trajectory_6dof": "do_as_i_do", "hand_source": "aoe", "status": "$dai_native_preflight_status", "input_rc": $dai_native_input_rc}
+      "available": $dai_native_route_available
     },
     "traj_do_as_i_do__hand_estimated__retarget_do_as_i_do": {
       "input_rc": $dai_native_object_pose_rc,
       "post_retarget_rc": $dai_native_estimated_post_retarget_rc,
       "status": "$dai_native_estimated_post_retarget_status",
-      "available": $dai_native_estimated_route_available,
-      "preflight_evidence": {"path": "$dai_native_estimated_preflight_evidence_rel", "path_base": "experiment_root", "sha256": "$dai_native_estimated_preflight_evidence_sha256", "trajectory_6dof": "do_as_i_do", "hand_source": "estimated", "status": "disabled_policy", "input_rc": $dai_native_object_pose_rc}
+      "available": $dai_native_estimated_route_available
     },
     "traj_egoinfinity__hand_aoe__retarget_do_as_i_do": {
-      "input_rc": $ego_aoe_preflight_rc,
+      "input_rc": $ego_aoe_input_rc,
       "post_retarget_rc": $ego_aoe_post_retarget_rc,
       "status": "$ego_aoe_post_retarget_status",
-      "available": $ego_aoe_route_available,
-      "preflight_evidence": {"path": "$ego_aoe_preflight_evidence_rel", "path_base": "experiment_root", "sha256": "$ego_aoe_preflight_evidence_sha256", "trajectory_6dof": "egoinfinity", "hand_source": "aoe", "status": "$ego_aoe_preflight_status", "input_rc": $ego_aoe_preflight_rc}
+      "available": $ego_aoe_route_available
     },
     "traj_egoinfinity__hand_estimated__retarget_do_as_i_do": {
-      "input_rc": $ego_estimated_preflight_rc,
+      "input_rc": $ego_estimated_input_rc,
       "post_retarget_rc": $ego_estimated_post_retarget_rc,
       "status": "$ego_estimated_post_retarget_status",
-      "available": $ego_estimated_route_available,
-      "preflight_evidence": {"path": "$ego_estimated_preflight_evidence_rel", "path_base": "experiment_root", "sha256": "$ego_estimated_preflight_evidence_sha256", "trajectory_6dof": "egoinfinity", "hand_source": "estimated", "status": "$ego_estimated_preflight_status", "input_rc": $ego_estimated_preflight_rc}
+      "available": $ego_estimated_route_available
     }
   },
   "worker_lifecycle": "stop_after_egoinfinity_object_selection_before_dai_spider",

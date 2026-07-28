@@ -110,8 +110,8 @@ python scripts/run_fresh_aoe_auto_window.py \
   --hand-type left --anchor-hand left --ref-source-frame <absolute_frame>
 ```
 
-显式模式跳过自动选窗，直接使用人工审计过的时长和绝对参考帧。它仍会重新
-执行重建和后端校验，不会静默复用旧 adapter，也不会放宽质量门禁：
+显式模式跳过自动选窗，直接使用人工审阅过的时长和绝对参考帧。它仍会重新
+执行重建和原生后端，不会静默复用旧 adapter：
 
 ```bash
 python scripts/run_fresh_aoe_auto_window.py \
@@ -127,7 +127,7 @@ python scripts/run_fresh_aoe_auto_window.py \
 
 输入证据包括 `fresh_input_manifest.json`、`raw_video_materialization.json`、
 `prompt_gate.json` 和 `mask_qc_summary.json`。重定向视频位于 source/matrix
-run 的 `videos/` 目录和 exact-route cell 目录。
+run 的 `videos/` 目录和对应 cell 目录。
 
 推荐运行 full-12 主入口。它先完整跑一次 EgoInfinity 和一次 Do-as-I-Do，
 再复用这两条大链路的中间结果，合成 12 个对比 cell。

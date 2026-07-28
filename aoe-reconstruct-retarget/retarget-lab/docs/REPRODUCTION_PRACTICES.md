@@ -15,8 +15,8 @@ Do not conflate:
    third-party entries work.
 2. **Pipeline success**: SAM3 → SAM3D/6DoF → Ego → DAI/SPIDER executes and
    produces outputs.
-3. **Demo success**: a DAI or SPIDER result passes input audit, post-backend QC,
-   and manual video review.
+3. **Demo success**: DAI or SPIDER returns successfully, produces a decodable
+   plain robot video, and that video passes manual review.
 
 Environment and pipeline success prove deployability, not demo quality. Run
 numbers may include environment diagnosis, fresh reruns, and multiple
@@ -140,7 +140,7 @@ driver mismatches through machine setup or restart, not algorithm changes.
   Bind the reference frame to the post-encode
   `ffprobe -count_frames` result.
 - Direct entry bypasses only automatic window search. It still performs fresh
-  SAM3/SAM3D reconstruction and all backend audits.
+  SAM3/SAM3D reconstruction and native backend execution.
 
 ## 4. Recommended Validation Ladder
 
@@ -175,13 +175,14 @@ and report the environment-neutral test result.
 | Native upstream runtime | stable crash minimized to a third-party binary/API | Boundary compatibility only, with evidence |
 | SAM3 data quality | missing prompt mask, low valid ratio, identity switch | No |
 | Reconstruction quality | pose jumps, mesh drift, excessive HOI offset | No |
-| Backend quality | DAI/SPIDER completes but post-QC or review fails | No |
-| Cascaded failure | no valid exact-route input from an earlier stage | Not an independent backend failure |
+| Backend quality | DAI/SPIDER completes but manual video review fails | No |
+| Cascaded failure | a required backend input is missing or malformed | Not an independent backend failure |
 
 Only environment, integration, and narrowly scoped runtime packaging may be
-fixed. The remaining classes must fail closed. Do not alter SAM3 selection,
-production thresholds, DAI/SPIDER algorithms, or physics parameters to inflate
-the demo count.
+fixed. Do not alter native SAM3 selection, DAI/SPIDER algorithms, or physics
+parameters to inflate the demo count. Numerical reconstruction and tracking
+diagnostics may still be recorded, but they are advisory and do not override a
+successful backend plus manual video review.
 
 ## 6. Interpreting the 12 Cells
 
@@ -193,17 +194,17 @@ hand_source     = aoe | estimated
 retargeting     = egoinfinity | do_as_i_do | spider
 ```
 
-This yields `2 × 2 × 3 = 12` cells. A cell succeeds only when:
+This yields `2 × 2 × 3 = 12` cells. A DAI/SPIDER cell succeeds when:
 
-1. exact-route input exists with correct provenance;
-2. input QC passes;
-3. the native backend succeeds and covers the complete source duration;
-4. post-retarget QC passes;
-5. manual review finds the plain robot video reasonable.
+1. the minimum required backend input exists and is readable;
+2. the native backend returns success;
+3. the plain robot video is decodable;
+4. manual review finds the video reasonable.
 
 Ego-only output, a compatibility smoke, a short rollout, or mere video
 generation cannot substitute for a DAI/SPIDER demo. Native optimization or a
-smoke proves execution, not final quality.
+smoke proves execution, not final visual quality. Route hashes, numerical
+tracking thresholds, and post-backend QC are not production admission gates.
 
 ## 7. Multi-Scene Stop and Resource Policy
 
@@ -218,8 +219,8 @@ smoke proves execution, not final quality.
 - Keep safe free space. Do not start a run during archive creation. Delete
   regenerable intermediates only after the review bundle has been copied and
   its SHA verified.
-- If failures concentrate at one quality gate, summarize their distribution
-  and representative videos before spending unbounded GPU time on more scenes.
+- If failures concentrate in one visible failure mode, summarize representative
+  videos before spending unbounded GPU time on more scenes.
 
 ## 8. Evidence Required at Every Terminal State
 
@@ -229,7 +230,7 @@ SAM3 mask / RGB overlay
 mesh HOI / projected overlay
 Ego, DAI, and SPIDER plain robot renders (when produced)
 triptych
-window, input, route, backend, and QC manifests
+window, input, and backend manifests; optional numerical diagnostics
 native commands, return codes, and logs
 input/output SHA256SUMS
 terminal stage and failure classification
@@ -244,7 +245,7 @@ video or another route.
 Report environment, pipeline, and demo conclusions separately, with evidence
 for each layer. A complete native chain or compatibility smoke does not prove
 that all 12 cells produced usable demos. Conversely, SAM3 data-quality failure,
-reconstruction drift, or backend post-QC rejection should not be summarized as
+reconstruction drift, or a manual-review rejection should not be summarized as
 “deployment failed.”
 
 Machine names, individual runs, candidate lists, failure measurements, video

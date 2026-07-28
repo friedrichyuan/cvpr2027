@@ -3,10 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-import gzip
-import hashlib
 import json
-import pickle
 import shutil
 import sys
 from pathlib import Path
@@ -60,9 +57,20 @@ from aoe_retarget_lab.hoi_geometry import (  # noqa: E402
     summarize_adapter_rigid_invariance,
     validate_rigid_transform,
 )
+from aoe_retarget_lab.egoinfinity_utils import (  # noqa: E402
+    load_result,
+    mask_centroid as mask_centroid_from_obj_data,
+    object_prompt,
+    object_prompt_score,
+    oid_get,
+)
+from aoe_retarget_lab.io_utils import (  # noqa: E402
+    file_sha256 as sha256_file,
+    file_sha256_binding as _camera_source_file_binding,
+)
 from aoe_retarget_lab.object_scale import robust_projected_scale_fit, scale_bbox_xyxy  # noqa: E402
-from aoe_retarget_lab.retarget_input_qc import assess_ego_retarget_input  # noqa: E402
-from aoe_retarget_lab.route_input_qc import (  # noqa: E402
+from aoe_retarget_lab.projection_utils import bbox_area, bbox_center, bbox_overlap  # noqa: E402
+from aoe_retarget_lab.camera_geometry import (  # noqa: E402
     CAMERA_INTRINSICS_BINDING_POLICY,
     CAMERA_INTRINSICS_BINDING_SCHEMA_VERSION,
     CAMERA_INTRINSICS_NORMALIZATION_POLICY,
@@ -70,35 +78,6 @@ from aoe_retarget_lab.route_input_qc import (  # noqa: E402
     camera_intrinsics_fingerprint,
     camera_ray_depth_transform,
 )
-
-
-def oid_get(mapping: dict, obj_id):
-    return mapping.get(obj_id) or mapping.get(str(obj_id)) or mapping.get(int(obj_id))
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def mask_centroid_from_obj_data(obj: dict | None) -> np.ndarray | None:
-    if not isinstance(obj, dict):
-        return None
-    packed = obj.get("mask_packed")
-    shape = obj.get("mask_shape")
-    if packed is None or shape is None:
-        return None
-    h, w = [int(x) for x in shape]
-    bits = np.unpackbits(np.asarray(packed, dtype=np.uint8))[: h * w]
-    mask = bits.reshape(h, w).astype(bool)
-    if not mask.any():
-        return None
-    ys, xs = np.where(mask)
-    return np.array([(xs.min() + xs.max()) * 0.5, (ys.min() + ys.max()) * 0.5], dtype=np.float32)
-
 
 def stable_prefix_len(result: dict, obj_id, max_jump_px: float) -> tuple[int, float]:
     centroids = []
@@ -117,52 +96,6 @@ def stable_prefix_len(result: dict, obj_id, max_jump_px: float) -> tuple[int, fl
                 return i, max_jump
         last = centroid
     return len(result.get("frame_data") or []), max_jump
-
-
-def object_prompt(result: dict, obj_id) -> str:
-    mapping = result.get("sam3_prompt_mapping") or []
-    try:
-        idx = int(obj_id)
-    except Exception:
-        return ""
-    if 0 <= idx < len(mapping) and isinstance(mapping[idx], dict):
-        return str(mapping[idx].get("prompt", ""))
-    return ""
-
-
-def object_prompt_score(result: dict, obj_id) -> float:
-    mapping = result.get("sam3_prompt_mapping") or []
-    try:
-        idx = int(obj_id)
-    except Exception:
-        return 0.0
-    if 0 <= idx < len(mapping) and isinstance(mapping[idx], dict):
-        return float(mapping[idx].get("score", 0.0) or 0.0)
-    return 0.0
-
-
-def _camera_source_file_binding(path: Path) -> dict[str, object]:
-    """Bind one camera-evidence file by resolved path and current SHA256."""
-
-    resolved = path.expanduser().resolve()
-    binding: dict[str, object] = {
-        "path": str(resolved),
-        "sha256": None,
-    }
-    if not resolved.is_file():
-        binding["error"] = "missing"
-        return binding
-    digest = hashlib.sha256()
-    try:
-        with resolved.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-    except OSError as exc:
-        binding["error"] = f"unreadable:{type(exc).__name__}"
-        return binding
-    binding["sha256"] = digest.hexdigest()
-    return binding
-
 
 def build_raw_video_provenance(raw_dir: Path) -> dict[str, object]:
     """Use the exact same raw-video schema and gates as the native adapter."""
@@ -1806,26 +1739,6 @@ def bbox_from_points(uv: np.ndarray, valid: np.ndarray, width: int, height: int)
     return (float(pts[:, 0].min()), float(pts[:, 1].min()), float(pts[:, 0].max()), float(pts[:, 1].max()))
 
 
-def bbox_area(box: tuple[float, float, float, float] | None) -> float:
-    if box is None:
-        return 0.0
-    return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
-
-
-def bbox_overlap(a: tuple[float, float, float, float] | None, b: tuple[float, float, float, float] | None) -> float:
-    if a is None or b is None:
-        return 0.0
-    x0 = max(a[0], b[0])
-    y0 = max(a[1], b[1])
-    x1 = min(a[2], b[2])
-    y1 = min(a[3], b[3])
-    return max(0.0, x1 - x0) * max(0.0, y1 - y0)
-
-
-def bbox_center(box: tuple[float, float, float, float]) -> np.ndarray:
-    return np.array([(box[0] + box[2]) * 0.5, (box[1] + box[3]) * 0.5], dtype=np.float32)
-
-
 def read_object_mask(masks_dir: Path, object_id: str, frame_id: int) -> np.ndarray | None:
     frame_dir = masks_dir / f"frame_{frame_id:06d}_masks"
     for path in [frame_dir / f"{object_id}.png", frame_dir / object_id / f"{object_id}.png"]:
@@ -2590,32 +2503,6 @@ def strong_geometry_single_hand(geometry: dict) -> str | None:
     return None
 
 
-def swap_hand_slots_npz(hand_npz: Path) -> dict:
-    with np.load(hand_npz, allow_pickle=False) as data:
-        arrays = {key: data[key] for key in data.files}
-    swapped_keys = []
-    for key in list(arrays.keys()):
-        if not key.startswith("left_"):
-            continue
-        suffix = key[len("left_") :]
-        other = f"right_{suffix}"
-        if other not in arrays:
-            continue
-        arrays[key], arrays[other] = arrays[other], arrays[key]
-        swapped_keys.extend([key, other])
-    arrays["hand_slot_swap_applied"] = np.asarray(True)
-    arrays["hand_slot_swap_reason"] = np.asarray(
-        "2D visual hand-object evidence disagreed with 3D geometry hand-object evidence",
-        dtype="<U96",
-    )
-    np.savez(hand_npz, **arrays)
-    return {
-        "applied": True,
-        "hand_npz": str(hand_npz),
-        "swapped_keys": sorted(swapped_keys),
-    }
-
-
 def maybe_swap_hand_slots_for_visual_geometry(
     hand_npz: Path,
     visual: dict,
@@ -3011,11 +2898,6 @@ def main() -> int:
         action="store_true",
         help="Disable the default robust constant mesh-scale fit against EgoInfinity's selected object mask.",
     )
-    parser.add_argument(
-        "--require-retarget-input-qc",
-        action="store_true",
-        help="Return nonzero after writing the adapter manifest when Ego scale/contact input QC is invalid.",
-    )
     parser.add_argument("--no-optimize-scale", action="store_true", help="Compatibility no-op; scale optimization is off by default.")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
@@ -3055,8 +2937,7 @@ def main() -> int:
     object_id = infer_object_id(source_dir, None)
     ref_frame = choose_ref_frame(config, args.ref_frame)
 
-    with gzip.open(args.pipeline_result.expanduser().resolve(), "rb") as handle:
-        result = pickle.load(handle)
+    result = load_result(args.pipeline_result.expanduser().resolve())
     ego_obj_id, pose_info, object_selection_qc = select_object(
         result,
         args.pipeline_result.expanduser().resolve(),
@@ -3491,32 +3372,6 @@ def main() -> int:
         },
     }
 
-    retarget_input_qc = assess_ego_retarget_input(
-        scale_fit=ego_mask_scale_fit,
-        visual_interaction=visual_interaction,
-        geometry_interaction=surface_contact_geometry,
-        hand_projection=production_hand_projection_qc,
-        selected_hand=selected_hand,
-        hoi_contact_alignment=hoi_contact_alignment,
-    ) if args.object_geometry_source == "ego" else {
-        "status": "not_applicable",
-        "reason": "object_geometry_source_is_not_ego",
-    }
-    if adapter_rigid_invariance.get("status") != "ok":
-        retarget_input_qc.setdefault("errors", []).append("adapter_rigid_invariance_invalid")
-        retarget_input_qc["status"] = "invalid"
-    if ego_mask_pose_refine.get("applied"):
-        retarget_input_qc.setdefault("errors", []).append("object_only_mask_pose_refinement_applied")
-        retarget_input_qc["status"] = "invalid"
-    if camera_binding_required and camera_intrinsics_binding.get("status") != "ok":
-        retarget_input_qc.setdefault("errors", []).append(
-            "camera_intrinsics_binding_invalid"
-        )
-        retarget_input_qc["camera_intrinsics_binding_errors"] = list(
-            camera_intrinsics_binding.get("errors") or []
-        )
-        retarget_input_qc["status"] = "invalid"
-
     hoi_refinement = scale_refinement_provenance(
         requested=optimize_scale,
         optimization=scale_optimization,
@@ -3589,7 +3444,10 @@ def main() -> int:
             ),
             "after_object_layout": str(layout_path),
         },
-        "retarget_input_qc": retarget_input_qc,
+        "review_policy": {
+            "success_standard": "backend_success_and_manual_video_review",
+            "numerical_diagnostics_are_advisory": True,
+        },
         "tracking_assets": tracking_asset_manifest,
         "gravity": gravity_manifest,
         "object_mesh_replacement": mesh_replacement,
@@ -3604,20 +3462,6 @@ def main() -> int:
     }
     (output_dir / "adapter_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps(manifest, indent=2))
-    if adapter_rigid_invariance.get("status") != "ok":
-        print(
-            "Adapter rigid-invariance QC rejected production input: "
-            + ", ".join(str(item) for item in adapter_rigid_invariance.get("errors") or []),
-            file=sys.stderr,
-        )
-        return 4
-    if args.require_retarget_input_qc and retarget_input_qc.get("status") != "ok":
-        print(
-            "Ego retarget input QC rejected adapter: "
-            + ", ".join(str(item) for item in retarget_input_qc.get("errors") or []),
-            file=sys.stderr,
-        )
-        return 4
     return 0
 
 

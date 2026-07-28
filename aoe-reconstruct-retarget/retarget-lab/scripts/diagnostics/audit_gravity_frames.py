@@ -5,16 +5,19 @@ import argparse
 import json
 import math
 import re
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from aoe_retarget_lab.io_utils import read_json as load_json  # noqa: E402
+
+
 EXPECTED_CAMERA_UP = np.array([0.0, -1.0, 0.0], dtype=np.float64)
-
-
-def load_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def unit(v: np.ndarray) -> np.ndarray:

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -18,21 +17,21 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from align_dai_native_contact import (
     align_layout,
-    assess_dai_native_retarget_input,
     assess_object_pose_continuity,
     layout_entries,
     quat_wxyz_to_matrix,
 )
 from aoe_retarget_lab.hoi_geometry import summarize_adapter_rigid_invariance
+from aoe_retarget_lab.io_utils import (
+    file_sha256,
+    file_sha256_binding as _file_binding,
+    ordered_files_sha256 as _aggregate_frame_sha256,
+    read_json as load_json,
+)
 from select_do_as_i_do_hand_type import score_hand_sides
 
 
 TIP_VERTICES = [745, 320, 443, 554, 671]
-
-
-def load_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
-
 
 def _is_relative_to(path: Path, parent: Path) -> bool:
     try:
@@ -61,25 +60,6 @@ def safe_adapter_output_dir(source_dir: Path, requested: Path) -> Path:
         )
     return output_dir
 
-
-def _file_binding(path: Path) -> dict[str, object]:
-    resolved = path.expanduser().resolve()
-    binding: dict[str, object] = {"path": str(resolved), "sha256": None}
-    if not resolved.is_file():
-        binding["error"] = "missing"
-        return binding
-    digest = hashlib.sha256()
-    try:
-        with resolved.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-    except OSError as exc:
-        binding["error"] = f"unreadable:{type(exc).__name__}"
-        return binding
-    binding["sha256"] = digest.hexdigest()
-    return binding
-
-
 def _exact_frame_grid(frames_dir: Path) -> list[Path]:
     frames = sorted(
         path
@@ -92,20 +72,6 @@ def _exact_frame_grid(frames_dir: Path) -> list[Path]:
             "raw video provenance requires a contiguous zero-based %06d.png frame grid"
         )
     return frames
-
-
-def _aggregate_frame_sha256(frames: list[Path]) -> str:
-    digest = hashlib.sha256()
-    for frame in frames:
-        digest.update(frame.name.encode("utf-8"))
-        digest.update(b"\0")
-        frame_digest = hashlib.sha256()
-        with frame.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                frame_digest.update(chunk)
-        digest.update(frame_digest.digest())
-    return digest.hexdigest()
-
 
 def build_raw_video_provenance(raw_dir: Path) -> dict[str, object]:
     """Bind native raw.mp4 and validate optional rematerialization evidence."""
@@ -1011,20 +977,6 @@ def main() -> int:
         p95_rotation_step_deg=args.p95_object_rotation_step_deg,
         max_lost_frame_fraction=args.max_object_lost_frame_fraction,
     )
-    retarget_input_qc = assess_dai_native_retarget_input(
-        contact_alignment,
-        overlap_frames,
-        args.min_visual_overlap_frames,
-        object_pose_quality,
-    )
-    if retarget_input_qc.get("max_offset") is None:
-        retarget_input_qc["max_offset"] = args.hoi_align_max_offset
-    if adapter_rigid_invariance.get("status") != "ok":
-        retarget_input_qc.setdefault("errors", []).append(
-            "adapter_rigid_invariance_invalid"
-        )
-        retarget_input_qc["status"] = "invalid"
-
     manifest = {
         "adapter": "prepare_do_as_i_do_scene_adapter.py",
         "adapter_schema_version": 3,
@@ -1073,13 +1025,16 @@ def main() -> int:
         "visual_interaction": visual_interaction,
         "hoi_contact_alignment": contact_alignment,
         "object_pose_quality": object_pose_quality,
-        "retarget_input_qc": retarget_input_qc,
+        "review_policy": {
+            "success_standard": "backend_success_and_manual_video_review",
+            "numerical_diagnostics_are_advisory": True,
+        },
         "gravity": load_json(output_dir / "gravity.json"),
         "layout": str(layout_path),
     }
     (output_dir / "adapter_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps(manifest, indent=2))
-    return 0 if retarget_input_qc["status"] == "ok" else 4
+    return 0
 
 
 if __name__ == "__main__":

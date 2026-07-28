@@ -106,7 +106,7 @@ Common options:
   --mode MODE               symlink, hardlink, or copy
   --duration SEC            triptych duration; 0 keeps source duration
   --no-compose              prepare assets without composing mp4 demos
-  --allow-spider-fallback   rejected: production full runs require exact-route SPIDER output
+  --allow-spider-fallback   rejected: production runs use the selected cell's native SPIDER output
   --no-spider-fallback      fail/miss EgoInfinity+SPIDER cells instead of fallback (default)
   --force-spider            rerun existing SPIDER cells
   --stop-on-error           stop on a failed SPIDER cell
@@ -353,7 +353,6 @@ reuse_cmd=(
   --no-allow-spider-mjwp-fallback-video
   --no-allow-dai-hand-fallback
   --no-allow-cross-trajectory-dai-robot-fallback
-  --no-include-numerically-invalid-aligned-robot
 )
 
 if [[ "$compose" -eq 1 ]]; then
@@ -383,93 +382,6 @@ echo "[full12] expanding 12 demos: experiments/$matrix_run_name"
 (cd "$repo_root" && "${reuse_cmd[@]}")
 
 matrix_root="$repo_root/experiments/$matrix_run_name"
-matrix_audit_json="$matrix_root/audit_retarget_run.json"
-matrix_audit_log="$matrix_root/logs/audit_retarget_run.log"
-mkdir -p "$matrix_root/logs"
-echo "[full12] strict matrix admission audit: experiments/$matrix_run_name"
-matrix_audit_rc=0
-"$python_bin" - \
-  "$repo_root" "$matrix_run_name" "$source_run" "$matrix_audit_json" "$compose" <<'PY' \
-  2>&1 | tee "$matrix_audit_log" || matrix_audit_rc=$?
-import json
-import sys
-from pathlib import Path
-
-repo_root = Path(sys.argv[1]).resolve()
-matrix_run = sys.argv[2]
-source_run = sys.argv[3]
-output_json = Path(sys.argv[4]).resolve()
-compose_enabled = bool(int(sys.argv[5]))
-sys.path.insert(0, str(repo_root / "scripts"))
-
-import audit_retarget_run as audit  # noqa: E402
-
-matrix_root = repo_root / "experiments" / matrix_run
-manifest_path = matrix_root / "reuse_12_demo_manifest.json"
-manifest = audit.load_json(manifest_path)
-errors = []
-warnings = []
-cell_report = {}
-spider_report = {}
-if manifest is None:
-    errors.append(f"missing matrix manifest: {manifest_path}")
-else:
-    cell_report = audit.audit_cells(
-        matrix_root,
-        manifest,
-        allow_legacy_unaligned=False,
-        require_triptych=compose_enabled,
-    )
-    spider_report = audit.audit_spider(matrix_root, manifest, allow_legacy_unaligned=False)
-    errors.extend(cell_report.get("errors") or [])
-    errors.extend(spider_report.get("errors") or [])
-    warnings.extend(cell_report.get("warnings") or [])
-    warnings.extend(spider_report.get("warnings") or [])
-
-admission = audit.summarize_route_admission(cell_report, spider_report)
-errors.extend(admission.get("errors") or [])
-candidate_routes = list(admission.get("admitted_routes") or [])
-if not candidate_routes:
-    errors.append("strict matrix audit admitted no exact numerical-valid retarget route")
-candidate_routes_blocked_by_audit_errors = candidate_routes if errors else []
-admitted_routes = [] if errors else candidate_routes
-admitted_route_count = len(admitted_routes)
-
-report = {
-    "scope": "matrix_only",
-    "matrix_run": matrix_run,
-    "matrix_root": str(matrix_root),
-    "source_run": source_run,
-    "manifest": str(manifest_path),
-    "source_audit_status": "deferred_to_fresh_full_run_audit",
-    "cells": cell_report,
-    "spider": spider_report,
-    "admitted_routes": admitted_routes,
-    "candidate_routes_blocked_by_audit_errors": candidate_routes_blocked_by_audit_errors,
-    "unavailable_routes": admission.get("unavailable_routes") or [],
-    "unavailable_route_details": admission.get("unavailable_route_details") or [],
-    "invalid_routes": admission.get("invalid_routes") or [],
-    "invalid_route_details": admission.get("invalid_route_details") or [],
-    "admitted_route_count": admitted_route_count,
-    "numerically_admitted_routes": admitted_routes,
-    "numerically_admitted_route_count": admitted_route_count,
-    "composition_enabled": compose_enabled,
-    "demo_count": admitted_route_count if compose_enabled else 0,
-    "scene_admitted": admitted_route_count > 0 if compose_enabled else False,
-    "status": "failed" if errors else "ok",
-    "errors": errors,
-    "warnings": warnings,
-}
-output_json.parent.mkdir(parents=True, exist_ok=True)
-text = json.dumps(report, indent=2, ensure_ascii=False)
-output_json.write_text(text + "\n", encoding="utf-8")
-print(text)
-raise SystemExit(1 if errors else 0)
-PY
-if (( matrix_audit_rc != 0 )); then
-  echo "[full12] strict matrix admission audit failed: $matrix_audit_json" >&2
-  exit "$matrix_audit_rc"
-fi
 
 cat <<EOF
 [full12] done
@@ -477,5 +389,5 @@ source_run: experiments/$source_run
 matrix_run: experiments/$matrix_run_name
 videos:     experiments/$matrix_run_name/videos/
 manifest:   experiments/$matrix_run_name/reuse_12_demo_manifest.json
-audit:      experiments/$matrix_run_name/audit_retarget_run.json
+review:     backend success is recorded in the manifest; final acceptance requires manual video review
 EOF

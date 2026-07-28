@@ -21,33 +21,33 @@ except Exception:  # pragma: no cover - optional dependency in some envs
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from aoe_retarget_lab.matrix import MatrixCell
-from aoe_retarget_lab.admission_evidence import (  # noqa: E402
-    authoritative_spider_aligned_tracking,
-    raw_to_processed_invariance_errors,
-    spider_rest_support_errors,
+from aoe_retarget_lab.matrix import (
+    HAND_SOURCE_OPTIONS,
+    RETARGETING_OPTIONS,
+    TRAJECTORY_6DOF_OPTIONS,
+    MatrixCell,
+    all_matrix_cells,
+    select_matrix_cells,
 )
-from aoe_retarget_lab.alignment import (  # noqa: E402
-    spider_alignment_manifest,
-    valid_dai_alignment as _valid_dai_alignment,
-    valid_spider_alignment as _valid_spider_alignment,
-    valid_spider_tracking,
+from aoe_retarget_lab.io_utils import (  # noqa: E402
+    read_json_object_lenient as load_json_optional,
 )
+from aoe_retarget_lab.path_utils import (  # noqa: E402
+    ensure_dir,
+    optional_relative_path as rel,
+    path_contains,
+)
+from aoe_retarget_lab.video_utils import probe_video  # noqa: E402
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-TRAJECTORIES = ("egoinfinity", "do_as_i_do")
-HAND_SOURCES = ("aoe", "estimated")
-RETARGETERS = ("egoinfinity", "do_as_i_do", "spider")
+TRAJECTORIES = TRAJECTORY_6DOF_OPTIONS
+HAND_SOURCES = HAND_SOURCE_OPTIONS
+RETARGETERS = RETARGETING_OPTIONS
 
 
 def cell_key(trajectory: str, hand_source: str, retargeting: str) -> str:
     return MatrixCell(trajectory, hand_source, retargeting).key
-
-
-def ensure_dir(path: Path) -> Path:
-    path.mkdir(parents=True, exist_ok=True)
-    return path
 
 
 def first_existing(paths: list[Path | None]) -> Path | None:
@@ -55,65 +55,6 @@ def first_existing(paths: list[Path | None]) -> Path | None:
         if path is not None and path.exists():
             return path
     return None
-
-
-def rel(path: Path | None, root: Path) -> str | None:
-    if path is None:
-        return None
-    try:
-        return str(path.relative_to(root))
-    except ValueError:
-        return str(path)
-
-
-def path_contains(path: Path | None, needle: str) -> bool:
-    if path is None:
-        return False
-    text = str(path)
-    try:
-        text = f"{text} {path.resolve()}"
-    except OSError:
-        pass
-    return needle in text
-
-
-def load_json_optional(path: Path | None) -> dict[str, object] | None:
-    if path is None or not path.exists():
-        return None
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
-
-
-def obj_extent_summary(path: Path | None) -> dict[str, object]:
-    if path is None or not path.exists():
-        return {"available": False, "reason": "missing"}
-    vertices: list[list[float]] = []
-    try:
-        with path.open("r", encoding="utf-8", errors="ignore") as handle:
-            for line in handle:
-                if not line.startswith("v "):
-                    continue
-                parts = line.split()
-                if len(parts) >= 4:
-                    vertices.append([float(parts[1]), float(parts[2]), float(parts[3])])
-    except Exception as exc:
-        return {"available": False, "reason": f"read_error:{exc}"}
-    if not vertices:
-        return {"available": False, "reason": "no_vertices"}
-    arr = np.asarray(vertices, dtype=np.float64)
-    extent = np.ptp(arr, axis=0)
-    return {
-        "available": True,
-        "path": str(path),
-        "vertices": int(arr.shape[0]),
-        "extent": [float(x) for x in extent],
-        "diag": float(np.linalg.norm(extent)),
-        "center": [float(x) for x in arr.mean(axis=0)],
-    }
 
 
 def remove_path(path: Path) -> None:
@@ -321,17 +262,6 @@ def gpu_mapping_from_env() -> dict[str, str | None]:
         "SPIDER_DEVICE",
     ]
     return {key: os.environ.get(key) for key in keys}
-
-
-def file_sha256(path: Path | None) -> str | None:
-    if path is None or not path.exists() or path.is_dir():
-        return None
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
 
 def source_paths(
     source: Path,
@@ -810,15 +740,13 @@ def dai_quality_score(
     hand_type: str,
     requested_hand_type: str,
     *,
-    valid: bool,
     trajectory: str,
-) -> tuple[float, float, float, float, float, float]:
+) -> tuple[float, float, float, float, float]:
     hand_quality = quality_for_hand(quality, hand_type)
     median = float(hand_quality.get("finger_object_distance_median", float("inf")))
     min_dist = float(hand_quality.get("finger_object_distance_min", float("inf")))
     contact_active = int(hand_quality.get("contact_active", 0))
     return (
-        1.0 if valid else 0.0,
         1.0 if contact_active > 0 else 0.0,
         float(contact_active),
         -median - 0.1 * min_dist,
@@ -827,51 +755,16 @@ def dai_quality_score(
     )
 
 
-def is_keypoint_quality_valid(
-    summary: dict[str, object],
-    hand_type: str,
-    *,
-    min_distance_threshold: float,
-    median_distance_threshold: float,
-    no_contact_min_distance_threshold: float,
-    no_contact_median_distance_threshold: float,
-    require_contact: bool,
-) -> bool:
-    if not summary.get("available"):
-        return False
-    quality = quality_for_hand(summary, hand_type)
-    if not quality:
-        return False
-    min_dist = float(quality.get("finger_object_distance_min", float("inf")))
-    med_dist = float(quality.get("finger_object_distance_median", float("inf")))
-    contact_active = int(quality.get("contact_active", 0))
-    if min_dist > min_distance_threshold and med_dist > median_distance_threshold:
-        return False
-    if require_contact and contact_active <= 0:
-        if min_dist > no_contact_min_distance_threshold:
-            return False
-        if med_dist > no_contact_median_distance_threshold:
-            return False
-    return True
-
-
-def valid_dai_alignment(robot_root: Path) -> bool:
-    return _valid_dai_alignment(robot_root, REPO_ROOT)
-
-
-def dai_raw_to_processed_hoi_for_robot(robot: Path | None) -> Path | None:
-    output_root = dai_retarget_output_root(robot)
-    if output_root is None or robot is None:
-        return None
-    robot_dir = robot.parent
-    return (
-        output_root
-        / "mano"
-        / robot_dir.parent.parent.name
-        / robot_dir.parent.name
-        / "0"
-        / "raw_to_processed_hoi_invariance.json"
-    )
+def find_dai_review_video(robot_root: Path) -> Path | None:
+    for video in [
+        robot_root / "visualization_mjwp_act_aligned.mp4",
+        robot_root / "visualization_mjwp_aligned.mp4",
+        robot_root / "visualization_mjwp_act.mp4",
+        robot_root / "visualization_mjwp.mp4",
+    ]:
+        if probe_video(video) is not None:
+            return video
+    return None
 
 
 def find_dai_robot(
@@ -894,11 +787,7 @@ def find_dai_robot(
         / task
         / "0"
     )
-    if not valid_dai_alignment(root):
-        return None
-    return first_existing([
-        root / "visualization_mjwp_act_aligned.mp4",
-    ])
+    return find_dai_review_video(root)
 
 
 def find_any_dai_robot(
@@ -918,11 +807,17 @@ def find_any_dai_robot(
         / "sharpa"
         / hand_type
     )
-    for name in ["visualization_mjwp_act_aligned.mp4"]:
+    for name in [
+        "visualization_mjwp_act_aligned.mp4",
+        "visualization_mjwp_aligned.mp4",
+        "visualization_mjwp_act.mp4",
+        "visualization_mjwp.mp4",
+    ]:
         for path in sorted(root.glob(f"*/0/{name}")):
             robot_root = path.parent
-            if valid_dai_alignment(robot_root):
-                return path, path.parents[1].name
+            video = find_dai_review_video(robot_root)
+            if video is not None:
+                return video, path.parents[1].name
     return None, None
 
 
@@ -963,8 +858,8 @@ def find_dai_robot_candidates(
                         "hand_source": search_hand_source,
                         "hand_type": search_hand_type,
                         "quality": {"available": False, "reason": "missing_keypoints"},
-                        "quality_valid": False,
-                        "score": (-1.0, 0.0, 0.0, 0.0, 0.0, float("-inf")),
+                        "review_video_valid": True,
+                        "score": (0.0, 0.0, 0.0, 1.0 if trajectory == "do_as_i_do" else 0.0, 1.0),
                     })
                 continue
             for bundle in bundles:
@@ -978,30 +873,8 @@ def find_dai_robot_candidates(
                 if robot is None:
                     continue
                 quality = summarize_keypoint_quality(Path(str(bundle["keypoints"])))
-                keypoint_valid = is_keypoint_quality_valid(
-                    quality,
-                    search_hand_type,
-                    min_distance_threshold=args.dai_asset_min_distance_threshold,
-                    median_distance_threshold=args.dai_asset_median_distance_threshold,
-                    no_contact_min_distance_threshold=args.dai_asset_no_contact_min_distance_threshold,
-                    no_contact_median_distance_threshold=args.dai_asset_no_contact_median_distance_threshold,
-                    require_contact=args.dai_asset_require_contact,
-                )
                 retarget_quality = load_json_optional(Path(str(bundle["retarget_quality"])))
-                retarget_valid = bool(retarget_quality and retarget_quality.get("status") == "ok")
-                raw_to_processed_path = dai_raw_to_processed_hoi_for_robot(robot)
-                raw_to_processed = load_json_optional(raw_to_processed_path)
-                raw_to_processed_errors = raw_to_processed_invariance_errors(
-                    raw_to_processed,
-                    label="exact-route raw_to_processed_hoi_invariance",
-                    trajectory_6dof=trajectory,
-                    hand_source=search_hand_source,
-                    hand_type=search_hand_type,
-                    adapter_manifest=Path(str(bundle["adapter_manifest"])),
-                    processed_keypoints=Path(str(bundle["keypoints"])),
-                )
-                raw_to_processed_valid = not raw_to_processed_errors
-                valid = keypoint_valid and retarget_valid and raw_to_processed_valid
+                valid = probe_video(robot) is not None
                 candidates.append({
                     "robot": robot,
                     "task": str(bundle["task"]),
@@ -1009,21 +882,13 @@ def find_dai_robot_candidates(
                     "hand_source": search_hand_source,
                     "hand_type": search_hand_type,
                     "quality": quality,
-                    "quality_valid": valid,
-                    "keypoint_quality_valid": keypoint_valid,
+                    "review_video_valid": valid,
                     "retarget_quality": retarget_quality,
-                    "retarget_quality_valid": retarget_valid,
-                    "raw_to_processed_hoi_invariance": raw_to_processed,
-                    "raw_to_processed_hoi_invariance_path": (
-                        str(raw_to_processed_path) if raw_to_processed_path else None
-                    ),
-                    "raw_to_processed_hoi_invariance_valid": raw_to_processed_valid,
-                    "raw_to_processed_hoi_invariance_errors": raw_to_processed_errors,
+                    "quality_diagnostics_are_advisory": True,
                     "score": dai_quality_score(
                         quality,
                         search_hand_type,
                         hand_type,
-                        valid=valid,
                         trajectory=trajectory,
                     ),
                 })
@@ -1072,12 +937,9 @@ def find_dai_robot_in_overrides(
         ]
         fallback_candidates = [item for item in all_candidates if item not in requested_exact]
         candidate_pool = requested_exact or fallback_candidates
-        valid_candidates = [item for item in candidate_pool if item.get("quality_valid")]
-        if not valid_candidates and not getattr(
-            args, "include_numerically_invalid_aligned_robot", False
-        ):
+        ranked_candidates = [item for item in candidate_pool if item.get("review_video_valid")]
+        if not ranked_candidates:
             return None, None
-        ranked_candidates = valid_candidates or candidate_pool
         ranked_candidates.sort(key=lambda item: item["score"], reverse=True)
         item = ranked_candidates[0]
         detail = "exact" if item["hand_source"] == hand_source else "estimated-hand fallback"
@@ -1091,7 +953,7 @@ def find_dai_robot_in_overrides(
             if item["hand_type"] != hand_type
             else f"{hand_type} hand"
         )
-        valid_detail = "quality-valid" if item["quality_valid"] else "quality-unverified"
+        valid_detail = "decodable review video"
         return (
             Path(str(item["robot"])),
             (
@@ -1123,12 +985,9 @@ def find_quality_dai_robot_in_source(
     exact_candidates = [item for item in candidates if item.get("hand_source") == hand_source]
     fallback_candidates = [item for item in candidates if item.get("hand_source") != hand_source]
     candidate_pool = exact_candidates or fallback_candidates
-    valid_candidates = [item for item in candidate_pool if item.get("quality_valid")]
-    if not valid_candidates and not getattr(
-        args, "include_numerically_invalid_aligned_robot", False
-    ):
+    ranked_candidates = [item for item in candidate_pool if item.get("review_video_valid")]
+    if not ranked_candidates:
         return None, None
-    ranked_candidates = valid_candidates or candidate_pool
     ranked_candidates.sort(key=lambda item: item["score"], reverse=True)
     item = ranked_candidates[0]
     hand_detail = (
@@ -1137,7 +996,7 @@ def find_quality_dai_robot_in_source(
         else f"{hand_type} hand"
     )
     source_detail = "exact" if item["hand_source"] == hand_source else f"{item['hand_source']} hand-source fallback"
-    valid_detail = "quality-valid" if item["quality_valid"] else "quality-unverified"
+    valid_detail = "decodable review video"
     return (
         Path(str(item["robot"])),
         (
@@ -1168,28 +1027,13 @@ def find_exact_spider_input_bundle(
             search_hand_type,
             allow_glob=True,
         ):
-            if trajectory == "egoinfinity":
-                adapter = load_json_optional(Path(str(bundle["adapter_manifest"])))
-                input_qc = (adapter or {}).get("retarget_input_qc") or {}
-                if input_qc.get("status") != "ok":
-                    continue
             quality = summarize_keypoint_quality(Path(str(bundle["keypoints"])))
-            valid = is_keypoint_quality_valid(
-                quality,
-                search_hand_type,
-                min_distance_threshold=args.dai_asset_min_distance_threshold,
-                median_distance_threshold=args.dai_asset_median_distance_threshold,
-                no_contact_min_distance_threshold=args.dai_asset_no_contact_min_distance_threshold,
-                no_contact_median_distance_threshold=args.dai_asset_no_contact_median_distance_threshold,
-                require_contact=args.dai_asset_require_contact,
-            )
             candidates.append({
                 "bundle": bundle,
                 "score": dai_quality_score(
                     quality,
                     search_hand_type,
                     hand_type,
-                    valid=valid,
                     trajectory=trajectory,
                 ),
             })
@@ -1246,42 +1090,6 @@ def find_dai_asset_bundles(
     return bundles
 
 
-def find_dai_asset_bundle(
-    source: Path,
-    trajectory: str,
-    hand_source: str,
-    task: str | None,
-    hand_type: str,
-    allow_glob: bool = False,
-) -> dict[str, Path | str] | None:
-    bundles = find_dai_asset_bundles(source, trajectory, hand_source, task, hand_type, allow_glob)
-    return bundles[0] if bundles else None
-
-
-def find_dai_keypoints(
-    source: Path,
-    trajectory: str,
-    hand_source: str,
-    task: str,
-    hand_type: str,
-) -> Path | None:
-    key = cell_key(trajectory, hand_source, "do_as_i_do")
-    return first_existing([
-        source
-        / "intermediates"
-        / "retargeting"
-        / "do_as_i_do"
-        / key
-        / "retargeting_outputs"
-        / "mano"
-        / hand_type
-        / task
-        / "0"
-        / "trajectory_keypoints.npz",
-        source / "assets" / "cells" / key / "retargeting" / "do_as_i_do" / "trajectories" / "trajectory_keypoints.npz",
-    ])
-
-
 def apply_dai_override_trajectory_assets(
     srcs: dict[str, Path | None],
     overrides: list[Path],
@@ -1307,31 +1115,16 @@ def apply_dai_override_trajectory_assets(
                     allow_glob=True,
                 ):
                     quality = summarize_keypoint_quality(Path(str(bundle["keypoints"])))
-                    keypoint_valid = is_keypoint_quality_valid(
-                        quality,
-                        hand_type,
-                        min_distance_threshold=args.dai_asset_min_distance_threshold,
-                        median_distance_threshold=args.dai_asset_median_distance_threshold,
-                        no_contact_min_distance_threshold=args.dai_asset_no_contact_min_distance_threshold,
-                        no_contact_median_distance_threshold=args.dai_asset_no_contact_median_distance_threshold,
-                        require_contact=args.dai_asset_require_contact,
-                    )
                     retarget_quality = load_json_optional(Path(str(bundle["retarget_quality"])))
-                    retarget_valid = bool(retarget_quality and retarget_quality.get("status") == "ok")
-                    valid = keypoint_valid and retarget_valid
                     candidates.append({
                         "override": override,
                         "bundle": bundle,
                         "quality": quality,
-                        "quality_valid": valid,
-                        "keypoint_quality_valid": keypoint_valid,
                         "retarget_quality": retarget_quality,
-                        "retarget_quality_valid": retarget_valid,
                         "score": dai_quality_score(
                             quality,
                             hand_type,
                             requested_hand_type,
-                            valid=valid,
                             trajectory=trajectory,
                         ),
                     })
@@ -1345,11 +1138,9 @@ def apply_dai_override_trajectory_assets(
                 "hand_type": str(item["bundle"]["hand_type"]),
                 "task": str(item["bundle"]["task"]),
                 "keypoints": str(item["bundle"]["keypoints"]),
-                "quality_valid": bool(item["quality_valid"]),
-                "keypoint_quality_valid": bool(item.get("keypoint_quality_valid")),
-                "retarget_quality_valid": bool(item.get("retarget_quality_valid")),
                 "retarget_quality": item.get("retarget_quality"),
                 "quality": item["quality"],
+                "numerical_diagnostics_are_advisory": True,
             }
             for item in candidates
         ]
@@ -1357,7 +1148,7 @@ def apply_dai_override_trajectory_assets(
         ego_candidates = [
             item
             for item in candidates
-            if str(item["bundle"]["trajectory"]) == "egoinfinity" and bool(item["quality_valid"])
+            if str(item["bundle"]["trajectory"]) == "egoinfinity"
         ]
         if ego_candidates:
             item = ego_candidates[0]
@@ -1370,7 +1161,7 @@ def apply_dai_override_trajectory_assets(
             report["ego_spider_keypoints_quality"] = item["quality"]
         else:
             report["ego_spider_keypoints"] = None
-            report["ego_spider_keypoints_reason"] = "no_quality_valid_egoinfinity_override_bundle"
+            report["ego_spider_keypoints_reason"] = "no_egoinfinity_override_bundle"
     for item in candidates:
         bundle = item["bundle"]
         if str(bundle["trajectory"]) != "do_as_i_do":
@@ -1385,195 +1176,12 @@ def apply_dai_override_trajectory_assets(
         report["dai_native_hand_type"] = str(bundle["hand_type"])
         report["dai_native_task"] = str(bundle["task"])
         report["dai_native_keypoints"] = str(bundle["keypoints"])
-        report["dai_native_quality_valid"] = bool(item["quality_valid"])
         report["dai_native_quality"] = item["quality"]
-        report["dai_native_retarget_quality_valid"] = bool(item.get("retarget_quality_valid"))
         report["dai_native_retarget_quality"] = item.get("retarget_quality")
-        if not item["quality_valid"]:
-            print(
-                f"[warn] selected DAI asset has weak hand-object quality: {bundle['keypoints']}",
-                file=sys.stderr,
-            )
         break
     else:
         if candidates:
             report["dai_native_override_reason"] = "no_do_as_i_do_override_bundle"
-    return report
-
-
-def validate_trajectory_assets(
-    dst: Path,
-    task: str,
-    *,
-    dai_task: str,
-    dai_hand_type: str,
-    dai_source_task: str,
-    dai_source_hand_type: str,
-    spider_fuse_ego_object_for_dai: bool,
-    dai_override_asset_report: dict[str, object],
-    dai_asset_min_distance_threshold: float,
-    dai_asset_median_distance_threshold: float,
-    dai_asset_no_contact_min_distance_threshold: float,
-    dai_asset_no_contact_median_distance_threshold: float,
-    dai_asset_require_contact: bool,
-) -> dict[str, object]:
-    source_link = dst / "reuse" / "source_run"
-    routes: dict[str, object] = {}
-    for trajectory, route_task, route_hand_type in (
-        ("egoinfinity", dai_task, dai_hand_type),
-        ("do_as_i_do", dai_source_task, dai_source_hand_type),
-    ):
-        for hand_source in ("aoe", "estimated"):
-            route_key = f"{trajectory}__{hand_source}"
-            bundle = find_dai_asset_bundle(
-                source_link,
-                trajectory,
-                hand_source,
-                route_task,
-                route_hand_type,
-                allow_glob=True,
-            )
-            if bundle is None:
-                routes[route_key] = {
-                    "status": "missing",
-                    "trajectory_6dof": trajectory,
-                    "hand_source": hand_source,
-                    "expected_cell_key": cell_key(trajectory, hand_source, "do_as_i_do"),
-                    "errors": [f"missing exact-cell keypoints: {route_key}"],
-                }
-                continue
-            keypoints = Path(str(bundle["keypoints"]))
-            quality = summarize_keypoint_quality(keypoints)
-            keypoint_valid = is_keypoint_quality_valid(
-                quality,
-                str(bundle["hand_type"]),
-                min_distance_threshold=dai_asset_min_distance_threshold,
-                median_distance_threshold=dai_asset_median_distance_threshold,
-                no_contact_min_distance_threshold=dai_asset_no_contact_min_distance_threshold,
-                no_contact_median_distance_threshold=dai_asset_no_contact_median_distance_threshold,
-                require_contact=dai_asset_require_contact,
-            )
-            retarget_quality_path = Path(str(bundle["retarget_quality"]))
-            retarget_quality = load_json_optional(retarget_quality_path)
-            retarget_valid = bool(
-                isinstance(retarget_quality, dict) and retarget_quality.get("status") == "ok"
-            )
-            valid = bool(keypoint_valid and retarget_valid)
-            route_errors: list[str] = []
-            if not keypoint_valid:
-                route_errors.append("source keypoint quality failed numerical QC")
-            if not retarget_valid:
-                route_errors.append("retarget quality is missing or invalid")
-            routes[route_key] = {
-                "status": "ok" if valid else "invalid",
-                "trajectory_6dof": trajectory,
-                "hand_source": hand_source,
-                "hand_type": str(bundle["hand_type"]),
-                "task": str(bundle["task"]),
-                "expected_cell_key": cell_key(trajectory, hand_source, "do_as_i_do"),
-                "source_keypoints": str(keypoints),
-                "source_keypoints_sha256": file_sha256(keypoints),
-                "adapter_manifest": str(bundle["adapter_manifest"]),
-                "keypoint_quality": quality,
-                "keypoint_quality_valid": keypoint_valid,
-                "retarget_quality": retarget_quality,
-                "retarget_quality_path": str(retarget_quality_path),
-                "retarget_quality_valid": retarget_valid,
-                "errors": route_errors,
-            }
-
-    def rows_for(trajectory: str) -> dict[str, dict[str, object]]:
-        prefix = f"{trajectory}__"
-        return {
-            name: row
-            for name, row in routes.items()
-            if name.startswith(prefix) and isinstance(row, dict)
-        }
-
-    def trajectory_summary(trajectory: str) -> dict[str, object]:
-        trajectory_rows = rows_for(trajectory)
-        ok_routes = sorted(
-            name for name, row in trajectory_rows.items() if row.get("status") == "ok"
-        )
-        invalid_routes = sorted(
-            name for name, row in trajectory_rows.items() if row.get("status") != "ok"
-        )
-        return {
-            # A trajectory remains usable when at least one exact hand-source route
-            # passes. Failed siblings remain explicit below and must not be used as
-            # fallback inputs for the successful route.
-            "quality_valid": bool(ok_routes),
-            "all_routes_quality_valid": bool(trajectory_rows) and not invalid_routes,
-            "quality_valid_by_hand_source": {
-                str(row.get("hand_source")): row.get("status") == "ok"
-                for row in trajectory_rows.values()
-            },
-            "route_statuses": {
-                name: str(row.get("status")) for name, row in trajectory_rows.items()
-            },
-            "ok_routes": ok_routes,
-            "invalid_routes": invalid_routes,
-        }
-
-    ego_summary = trajectory_summary("egoinfinity")
-    dai_summary = trajectory_summary("do_as_i_do")
-    report: dict[str, object] = {
-        "comparison_scope": "exact_route_and_hand_source_only",
-        "cross_route_comparison_performed": False,
-        "unified_trajectory_keypoints_authoritative": False,
-        "routes": routes,
-        "spider_fuse_ego_object_for_dai": spider_fuse_ego_object_for_dai,
-        "egoinfinity_quality_valid": ego_summary["quality_valid"],
-        "egoinfinity_all_routes_quality_valid": ego_summary["all_routes_quality_valid"],
-        "egoinfinity_quality_valid_by_hand_source": ego_summary["quality_valid_by_hand_source"],
-        "do_as_i_do_quality_valid": dai_summary["quality_valid"],
-        "do_as_i_do_all_routes_quality_valid": dai_summary["all_routes_quality_valid"],
-        "do_as_i_do_quality_valid_by_hand_source": dai_summary["quality_valid_by_hand_source"],
-        "invalid_routes": sorted(
-            list(ego_summary["invalid_routes"]) + list(dai_summary["invalid_routes"])
-        ),
-        "object_provenance": {
-            "egoinfinity": {
-                "object_track_source": "egoinfinity",
-                "object_mesh_source": "egoinfinity",
-                "retarget_object_source": "egoinfinity",
-                "status": "ok" if ego_summary["quality_valid"] else "invalid",
-                "recommended_route": True,
-                "route_statuses": ego_summary["route_statuses"],
-            },
-            "do_as_i_do": {
-                "object_track_source": "fused_ego_for_spider" if spider_fuse_ego_object_for_dai else "dai_native",
-                "object_mesh_source": "egoinfinity" if spider_fuse_ego_object_for_dai else "dai_native",
-                "retarget_object_source": "fused_ego_for_spider" if spider_fuse_ego_object_for_dai else "dai_native",
-                "status": "ok" if dai_summary["quality_valid"] else "invalid",
-                "recommended_route": False,
-                "baseline_only": not spider_fuse_ego_object_for_dai,
-                "route_statuses": dai_summary["route_statuses"],
-            },
-        },
-        "quality_thresholds": {
-            "min_distance": dai_asset_min_distance_threshold,
-            "median_distance": dai_asset_median_distance_threshold,
-            "no_contact_min_distance": dai_asset_no_contact_min_distance_threshold,
-            "no_contact_median_distance": dai_asset_no_contact_median_distance_threshold,
-            "require_contact": dai_asset_require_contact,
-        },
-    }
-    if spider_fuse_ego_object_for_dai:
-        errors = ["object-only DAI-hand/Ego-object fusion is forbidden in production"]
-        report["errors"] = errors
-        report["object_provenance"]["do_as_i_do"]["status"] = "invalid"
-        report["object_provenance"]["do_as_i_do"]["invalid_reasons"] = errors
-
-    for trajectory, summary in (
-        ("egoinfinity", ego_summary),
-        ("do_as_i_do", dai_summary),
-    ):
-        if not summary["quality_valid"]:
-            report["object_provenance"][trajectory]["invalid_reasons"] = [
-                "no exact trajectory/hand-source route passed numerical QC"
-            ]
-
     return report
 
 
@@ -1583,10 +1191,11 @@ def prepare_trajectory_assets(
     task: str,
     mode: str,
     *,
+    trajectories: tuple[str, ...] = TRAJECTORIES,
     spider_fuse_ego_object_for_dai: bool = False,
 ) -> dict:
     report: dict[str, dict[str, str | None]] = {}
-    for trajectory in TRAJECTORIES:
+    for trajectory in trajectories:
         root = ensure_dir(dst / "assets" / "trajectory_6dof" / trajectory / task)
         if trajectory == "egoinfinity":
             provenance = {
@@ -1594,7 +1203,6 @@ def prepare_trajectory_assets(
                 "object_mesh_source": "egoinfinity",
                 "retarget_object_source": "egoinfinity",
                 "display_keypoints_hand_source": "estimated",
-                "keypoints_authoritative_for_qc": False,
                 "object_selection_source": "bbox_target_point_best",
                 "recommended_route": True,
             }
@@ -1638,7 +1246,6 @@ def prepare_trajectory_assets(
                 "object_mesh_source": "dai_native",
                 "retarget_object_source": "dai_native",
                 "display_keypoints_hand_source": "estimated",
-                "keypoints_authoritative_for_qc": False,
                 "recommended_route": False,
                 "baseline_only": True,
             }
@@ -1700,123 +1307,16 @@ def prepare_trajectory_assets(
     return report
 
 
-def assess_dai_native_spider_input(adapter_manifest: dict | None, hand_source: str) -> dict:
-    if not isinstance(adapter_manifest, dict):
-        return {"status": "legacy_unknown", "errors": []}
-    errors: list[str] = []
-    object_pose_quality = adapter_manifest.get("object_pose_quality")
-    retarget_input_qc = adapter_manifest.get("retarget_input_qc")
-    if isinstance(object_pose_quality, dict) and object_pose_quality.get("status") != "ok":
-        errors.extend(
-            f"source_{error}"
-            for error in (object_pose_quality.get("errors") or ["object_pose_invalid"])
-        )
-    if (
-        hand_source == "aoe"
-        and isinstance(retarget_input_qc, dict)
-        and retarget_input_qc.get("status") != "ok"
-    ):
-        errors.extend(
-            f"aoe_hand_{error}"
-            for error in (retarget_input_qc.get("errors") or ["retarget_input_invalid"])
-        )
-    return {
-        "status": "invalid" if errors else "ok",
-        "errors": sorted(set(errors)),
-        "hand_source": hand_source,
-        "object_pose_quality": object_pose_quality,
-        "retarget_input_qc": retarget_input_qc,
-    }
-
-
-def dai_native_spider_input_preflight(
-    input_bundle: dict[str, Path | str] | None,
-    hand_source: str,
-) -> dict:
-    path = Path(str(input_bundle["adapter_manifest"])) if input_bundle is not None else None
-    result = assess_dai_native_spider_input(load_json_optional(path), hand_source)
-    if input_bundle is None:
-        result = {
-            "status": "invalid",
-            "errors": ["missing exact DAI hand-source input bundle"],
-            "hand_source": hand_source,
-        }
-    result["adapter_manifest"] = str(path) if path is not None and path.exists() else None
-    result["provenance_scope"] = "exact_dai_cell"
-    return result
-
-
-def spider_source_input_preflight_payload(
-    *,
-    route: str,
-    trajectory_6dof: str,
-    hand_source: str,
-    input_bundle: dict[str, Path | str] | None,
-    assessment: dict,
-    input_rc: int = 4,
-) -> dict:
-    adapter_path = (
-        Path(str(input_bundle["adapter_manifest"])).resolve()
-        if input_bundle is not None and input_bundle.get("adapter_manifest")
-        else None
-    )
-    adapter = load_json_optional(adapter_path)
-    binding_errors: list[str] = []
-    if adapter_path is not None and adapter_path.is_file():
-        if adapter is None:
-            binding_errors.append("underlying_adapter_unreadable")
-        elif adapter.get("hand_source") != hand_source:
-            binding_errors.append(
-                f"underlying_adapter_hand_source={adapter.get('hand_source')},expected={hand_source}"
-            )
-    elif adapter_path is not None:
-        binding_errors.append("underlying_adapter_missing")
-    return {
-        "schema_version": 1,
-        "route": route,
-        "trajectory_6dof": trajectory_6dof,
-        "hand_source": hand_source,
-        "retargeting": "spider",
-        "status": "invalid_input",
-        "input_rc": int(input_rc),
-        "input_assessment": assessment,
-        "underlying_adapter_manifest": {
-            "path": str(adapter_path) if adapter_path is not None else None,
-            "path_base": "matrix_root",
-            "sha256": file_sha256(adapter_path),
-            "exists": bool(adapter_path is not None and adapter_path.is_file()),
-            "adapter_schema_version": (
-                adapter.get("adapter_schema_version") if isinstance(adapter, dict) else None
-            ),
-            "hand_source": adapter.get("hand_source") if isinstance(adapter, dict) else None,
-            "retarget_input_qc_status": (
-                (adapter.get("retarget_input_qc") or {}).get("status")
-                if isinstance(adapter, dict)
-                else None
-            ),
-            "adapter_rigid_invariance_status": (
-                (adapter.get("adapter_rigid_invariance") or {}).get("status")
-                if isinstance(adapter, dict)
-                else None
-            ),
-        },
-        "evidence_validation": {
-            "status": "invalid" if binding_errors else "ok",
-            "errors": binding_errors,
-        },
-    }
-
-
-def audited_spider_input_timebase(
+def resolve_spider_input_timebase(
     input_root: Path,
     *,
     task: str,
     hand_type: str,
     data_id: int,
-    adapter_manifest: Path,
+    adapter_manifest: Path | None,
 ) -> dict[str, object]:
-    """Resolve ref_dt only from agreeing, route-bound input evidence."""
-    errors: list[str] = []
+    """Resolve the backend timestep from available input metadata."""
+    warnings: list[str] = []
     evidence: list[dict[str, object]] = []
     task_info_path = input_root / "mano" / hand_type / task / "task_info.json"
     task_info = load_json_optional(task_info_path)
@@ -1826,7 +1326,7 @@ def audited_spider_input_timebase(
             if value > 0:
                 evidence.append({"source": str(task_info_path), "ref_dt": value})
         except (KeyError, TypeError, ValueError):
-            errors.append("spider_task_info_ref_dt_invalid")
+            warnings.append("spider_task_info_ref_dt_invalid")
     adapter = load_json_optional(adapter_manifest)
     clock = (
         ((adapter or {}).get("temporal_alignment") or {}).get("target_clock") or {}
@@ -1838,24 +1338,23 @@ def audited_spider_input_timebase(
         if fps > 0:
             evidence.append({"source": str(adapter_manifest), "ref_dt": 1.0 / fps})
     except (KeyError, TypeError, ValueError):
-        errors.append("spider_adapter_target_clock_invalid")
+        warnings.append("spider_adapter_target_clock_invalid")
     values = [float(item["ref_dt"]) for item in evidence]
     if not values:
-        errors.append("spider_input_timebase_no_audited_ref_dt")
-        ref_dt = None
-    elif any(abs(value - values[0]) > 1e-12 for value in values[1:]):
-        errors.append("spider_input_timebase_evidence_conflict")
-        ref_dt = None
+        ref_dt = 1.0 / 15.0
+        warnings.append("spider_input_timebase_missing_using_15fps_default")
     else:
         ref_dt = values[0]
+        if any(abs(value - ref_dt) > 1e-12 for value in values[1:]):
+            warnings.append("spider_input_timebase_metadata_disagrees_using_task_info_priority")
     return {
-        "status": "ok" if not errors else "invalid",
+        "status": "ok",
         "ref_dt": ref_dt,
         "task": task,
         "hand_type": hand_type,
         "data_id": data_id,
         "evidence": evidence,
-        "errors": errors,
+        "warnings": warnings,
         "backend_tuning": False,
     }
 
@@ -1879,7 +1378,7 @@ def write_native_spider_run_binding(
     ref_dt_evidence: dict[str, object],
     input_root: Path,
     native_run_dir: Path,
-    preflight_path: Path,
+    input_record_path: Path,
     log_path: Path,
     returncode: int,
 ) -> dict[str, object]:
@@ -1921,7 +1420,7 @@ def write_native_spider_run_binding(
         "native_robot_video": rel(robot, route_root) if robot is not None else None,
         "native_metrics": metrics,
         "external_qc": {"role": "diagnostic_only"},
-        "preflight": rel(preflight_path, route_root),
+        "input_record": rel(input_record_path, route_root),
         "log": rel(log_path, route_root),
         "backend_commit": ((run_manifest.get("backend") or {}).get("commit")),
         "backend_clean_after": outcome.get("backend_clean_after"),
@@ -1930,40 +1429,21 @@ def write_native_spider_run_binding(
     return payload
 
 
-def existing_spider_input_binding_errors(
-    route_root: Path,
-    *,
-    route: str,
-    trajectory_6dof: str,
-    hand_source: str,
-    resolved_hand_type: str,
-    resolved_task: str,
-    preflight_payload: dict,
-) -> list[str]:
-    binding = _native_spider_binding(route_root)
-    if binding is None:
-        return ["missing_native_spider_run_binding"]
-    expected = {
-        "route": route,
-        "trajectory_6dof": trajectory_6dof,
-        "hand_source": hand_source,
-        "resolved_hand_type": resolved_hand_type,
-        "resolved_task": resolved_task,
-    }
-    errors = [
-        f"{key}_mismatch"
-        for key, value in expected.items()
-        if binding.get(key) != value
-    ]
-    if preflight_payload.get("status") not in {"ok", "passed"}:
-        errors.append("preflight_not_ok")
-    return errors
-
-
 def run_spider_cells(args: argparse.Namespace, dst: Path) -> list[dict]:
+    selected_spider_cells = [
+        (cell.trajectory_6dof, cell.hand_source)
+        for cell in args.matrix_cells
+        if cell.retargeting == "spider"
+    ]
+    if args.single_cell and not selected_spider_cells:
+        return []
     if args.run_spider == "none":
         return collect_existing_spider_report(args, dst)
-    cells = spider_cell_order(args.run_spider)
+    cells = (
+        selected_spider_cells
+        if args.single_cell
+        else spider_cell_order(args.run_spider)
+    )
 
     results = []
     env = os.environ.copy()
@@ -1976,7 +1456,6 @@ def run_spider_cells(args: argparse.Namespace, dst: Path) -> list[dict]:
             key,
             args.prefer_spider_ik_video,
             allow_mjwp_fallback=args.allow_spider_mjwp_fallback_video,
-            allow_invalid_tracking_for_review=args.include_numerically_invalid_aligned_robot,
         )
         if args.skip_existing_spider and robot is not None and robot.exists():
             item = spider_report_item(args, dst, key, returncode=0)
@@ -1996,49 +1475,15 @@ def run_spider_cells(args: argparse.Namespace, dst: Path) -> list[dict]:
             source_hand_type,
             args,
         )
-        preflight_path = (
+        input_record_path = (
             dst
             / "intermediates"
             / "retargeting"
             / "spider"
             / key
-            / "spider_source_input_preflight.json"
+            / "spider_input_record.json"
         )
-        remove_path(preflight_path)
-        if trajectory == "do_as_i_do":
-            input_preflight = dai_native_spider_input_preflight(input_bundle, hand_source)
-            if input_preflight.get("status") == "invalid":
-                preflight_payload = spider_source_input_preflight_payload(
-                    route=key,
-                    trajectory_6dof=trajectory,
-                    hand_source=hand_source,
-                    input_bundle=input_bundle,
-                    assessment=input_preflight,
-                    input_rc=4,
-                )
-                write_json(preflight_path, preflight_payload)
-                preflight_reference = {
-                    "path": rel(preflight_path, dst),
-                    "path_base": "matrix_root",
-                    "sha256": file_sha256(preflight_path),
-                    "trajectory_6dof": trajectory,
-                    "hand_source": hand_source,
-                    "status": "invalid_input",
-                    "input_rc": 4,
-                }
-                results.append(
-                    {
-                        "cell": key,
-                        "status": "invalid_input",
-                        "input_status": "invalid_input",
-                        "input_rc": 4,
-                        "returncode": 4,
-                        "robot": None,
-                        "input_preflight": input_preflight,
-                        "preflight_evidence": preflight_reference,
-                    }
-                )
-                continue
+        remove_path(input_record_path)
         cell_env = env.copy()
         if input_bundle is not None:
             cell_env["SPIDER_SOURCE_KEYPOINTS"] = str(input_bundle["keypoints"])
@@ -2064,32 +1509,38 @@ def run_spider_cells(args: argparse.Namespace, dst: Path) -> list[dict]:
         write_json(selection_path, hand_selection)
         route_root = selection_path.parent
         if input_bundle is None:
+            write_json(
+                input_record_path,
+                {
+                    "route": key,
+                    "status": "missing_required_input",
+                    "trajectory_6dof": trajectory,
+                    "hand_source": hand_source,
+                },
+            )
             results.append({"cell": key, "status": "invalid_input", "input_rc": 4})
             continue
         input_root = Path(str(input_bundle["keypoints"])).parents[4]
         resolved_task = str(input_bundle["task"])
-        timebase = audited_spider_input_timebase(
+        timebase = resolve_spider_input_timebase(
             input_root,
             task=resolved_task,
             hand_type=resolved_spider_hand_type,
             data_id=args.spider_data_id,
             adapter_manifest=Path(str(input_bundle["adapter_manifest"])),
         )
-        preflight_payload = {
+        input_record = {
             "schema_version": 1,
             "route": key,
             "trajectory_6dof": trajectory,
             "hand_source": hand_source,
-            "status": timebase["status"],
-            "input_rc": 0 if timebase["status"] == "ok" else 4,
-            "input_assessment": timebase,
+            "status": "ready",
+            "input_rc": 0,
+            "timebase": timebase,
             "resolved_hand_type": resolved_spider_hand_type,
             "resolved_task": resolved_task,
         }
-        write_json(preflight_path, preflight_payload)
-        if timebase["status"] != "ok":
-            results.append({"cell": key, "status": "invalid_input", "input_rc": 4})
-            continue
+        write_json(input_record_path, input_record)
         attempt = 1
         while (route_root / "native_runs" / f"attempt{attempt:02d}").exists():
             attempt += 1
@@ -2134,7 +1585,7 @@ def run_spider_cells(args: argparse.Namespace, dst: Path) -> list[dict]:
             ref_dt_evidence=timebase,
             input_root=input_root,
             native_run_dir=native_run,
-            preflight_path=preflight_path,
+            input_record_path=input_record_path,
             log_path=log_path,
             returncode=proc.returncode,
         )
@@ -2143,7 +1594,6 @@ def run_spider_cells(args: argparse.Namespace, dst: Path) -> list[dict]:
             key,
             args.prefer_spider_ik_video,
             allow_mjwp_fallback=args.allow_spider_mjwp_fallback_video,
-            allow_invalid_tracking_for_review=args.include_numerically_invalid_aligned_robot,
         )
         item = spider_report_item(args, dst, key, returncode=proc.returncode, log_path=log_path)
         if item is None:
@@ -2175,13 +1625,20 @@ def spider_cell_order(run_spider: str) -> list[tuple[str, str]]:
 
 def collect_existing_spider_report(args: argparse.Namespace, dst: Path) -> list[dict]:
     results: list[dict] = []
-    for trajectory in TRAJECTORIES:
-        for hand_source in HAND_SOURCES:
-            key = cell_key(trajectory, hand_source, "spider")
-            item = spider_report_item(args, dst, key)
-            if item is not None:
-                item["reindexed_existing"] = True
-                results.append(item)
+    cells = (
+        [cell for cell in args.matrix_cells if cell.retargeting == "spider"]
+        if args.single_cell
+        else [
+            MatrixCell(trajectory, hand_source, "spider")
+            for trajectory in TRAJECTORIES
+            for hand_source in HAND_SOURCES
+        ]
+    )
+    for cell in cells:
+        item = spider_report_item(args, dst, cell.key)
+        if item is not None:
+            item["reindexed_existing"] = True
+            results.append(item)
     return results
 
 
@@ -2195,241 +1652,58 @@ def spider_report_item(
 ) -> dict | None:
     root = dst / "intermediates" / "retargeting" / "spider" / key
     native = _native_spider_binding(root)
+    authoritative_rc = returncode
     if native is not None:
-        native_rc = int(native.get("native_returncode", 1))
-        robot = _recorded_manifest_path(
-            native.get("native_robot_video"), relative_to=root
-        )
-        ok = native_rc == 0 and robot is not None and robot.is_file()
-        return {
-            "cell": key,
-            "status": "ok" if ok else "failed",
-            "robot": rel(robot, dst) if ok else None,
-            "returncode": native_rc,
-            "native_returncode_authoritative": True,
-            "external_qc": native.get("external_qc"),
-            "native_metrics": native.get("native_metrics"),
-            "native_binding": rel(root / "native_spider_run_binding.json", dst),
-        }
-    input_manifest = load_json_optional(root / "spider_input_manifest.json")
-    output_manifest = load_json_optional(root / "spider_output_manifest.json")
-    preflight_path = root / "spider_source_input_preflight.json"
-    input_preflight = load_json_optional(preflight_path)
-    robot = find_spider_robot(
-        dst,
-        key,
-        args.prefer_spider_ik_video,
-        allow_mjwp_fallback=args.allow_spider_mjwp_fallback_video,
-        allow_invalid_tracking_for_review=args.include_numerically_invalid_aligned_robot,
-    )
-    if (
-        input_manifest is None
-        and output_manifest is None
-        and robot is None
-        and input_preflight is None
-    ):
+        authoritative_rc = int(native.get("native_returncode", 1))
+    robot = find_spider_robot(dst, key)
+    if robot is None and authoritative_rc is None and not root.exists():
         return None
-    if (
-        input_preflight is not None
-        and input_preflight.get("status") == "invalid_input"
-        and robot is None
-        and output_manifest is None
-    ):
-        return {
-            "cell": key,
-            "status": "invalid_input",
-            "input_status": "invalid_input",
-            "input_rc": input_preflight.get("input_rc"),
-            "returncode": input_preflight.get("input_rc"),
-            "robot": None,
-            "input_preflight": input_preflight.get("input_assessment"),
-            "preflight_evidence": {
-                "path": rel(preflight_path, dst),
-                "path_base": "matrix_root",
-                "sha256": file_sha256(preflight_path),
-                "trajectory_6dof": input_preflight.get("trajectory_6dof"),
-                "hand_source": input_preflight.get("hand_source"),
-                "status": input_preflight.get("status"),
-                "input_rc": input_preflight.get("input_rc"),
-            },
-        }
-    mjwp_fallback = output_manifest.get("mjwp_fallback") if output_manifest else None
-    alignment = spider_alignment_manifest(root, output_manifest)
-    fallback_applied = bool((mjwp_fallback or {}).get("applied"))
-    tracking_valid = valid_spider_tracking(output_manifest)
-    production_evidence_errors, production_evidence = spider_production_evidence(
-        root,
-        key,
-        input_manifest,
-        output_manifest,
-    )
-    weak_input = bool(input_manifest and not input_manifest.get("quality_valid", True))
-    if robot is not None and robot.exists():
-        if fallback_applied:
-            status = "fallback"
-        elif tracking_valid and not weak_input and not production_evidence_errors:
-            status = "ok"
-        elif weak_input:
-            status = "reviewable_weak_input"
-        elif production_evidence_errors:
-            status = "reviewable_invalid_production_evidence"
-        else:
-            status = "reviewable_invalid_tracking"
-    else:
-        status = "failed"
+    probe = probe_video(robot) if robot is not None else None
+    ok = (authoritative_rc in {None, 0}) and probe is not None
     item = {
         "cell": key,
-        "status": status,
-        "robot": rel(robot, dst) if robot is not None and robot.exists() else None,
-        "input_status": input_manifest.get("status") if input_manifest else None,
-        "quality": input_manifest.get("quality") if input_manifest else None,
-        "quality_errors": input_manifest.get("quality_errors") if input_manifest else None,
-        "input_quality_valid": input_manifest.get("quality_valid") if input_manifest else None,
-        "tracking_quality_valid": tracking_valid,
-        "production_evidence_valid": not production_evidence_errors,
-        "production_evidence_errors": production_evidence_errors,
-        "production_evidence": production_evidence,
-        "alignment": alignment,
-        "mjwp_fallback": mjwp_fallback,
+        "status": "ok" if ok else "failed",
+        "robot": rel(robot, dst) if ok else None,
+        "returncode": authoritative_rc,
+        "backend_success": authoritative_rc in {None, 0},
+        "review_video": probe,
+        "manual_review_required": ok,
+        "success_standard": "backend_success_and_manual_video_review",
     }
-    if returncode is not None:
-        item["returncode"] = returncode
     if log_path is not None:
         item["log"] = rel(log_path, dst)
     return item
-
-
-def valid_spider_alignment(root: Path, output_manifest: dict[str, object] | None = None) -> bool:
-    return _valid_spider_alignment(root, REPO_ROOT, output_manifest)
-
-
-def valid_spider_review_alignment(root: Path, output_manifest: dict[str, object] | None = None) -> bool:
-    # Review may ignore numerical tracking failure, but never artifact identity,
-    # timeline, or byte bindings.  This is the same validator as production
-    # admission with only the tracking-status predicate disabled.
-    return _valid_spider_alignment(
-        root,
-        REPO_ROOT,
-        output_manifest,
-        require_tracking=False,
-    )
-
-
-def spider_production_evidence(
-    root: Path,
-    key: str,
-    input_manifest: dict[str, object] | None,
-    output_manifest: dict[str, object] | None,
-) -> tuple[list[str], dict[str, object]]:
-    input_payload = input_manifest or {}
-    output_payload = output_manifest or {}
-    errors = raw_to_processed_invariance_errors(
-        input_payload.get("raw_to_processed_hoi_invariance"),
-        label="exact-route raw_to_processed_hoi_invariance",
-        trajectory_6dof=str(input_payload.get("trajectory_6dof") or ""),
-        hand_source=str(input_payload.get("hand_source") or ""),
-        hand_type=str(output_payload.get("resolved_hand_type") or ""),
-        adapter_manifest=_recorded_manifest_path(
-            input_payload.get("adapter_manifest"), relative_to=root
-        ),
-        processed_keypoints=_recorded_manifest_path(
-            input_payload.get("source_keypoints"), relative_to=root
-        ),
-    )
-    rest_support = output_payload.get("rest_support_provenance")
-    errors.extend(
-        spider_rest_support_errors(
-            rest_support,
-            cell_key=key,
-            trajectory_6dof=str(output_payload.get("trajectory_6dof") or ""),
-            hand_source=str(output_payload.get("hand_source") or ""),
-            task=str(output_payload.get("task") or ""),
-            hand_type=str(output_payload.get("resolved_hand_type") or ""),
-            data_id=output_payload.get("data_id"),
-            input_manifest=input_payload,
-            root=root,
-            repo_root=REPO_ROOT,
-        )
-    )
-    tracking, tracking_evidence, tracking_errors = (
-        authoritative_spider_aligned_tracking(
-            output_payload,
-            root=root,
-            cell_key=key,
-            repo_root=REPO_ROOT,
-        )
-    )
-    errors.extend(tracking_errors)
-    return errors, {
-        "raw_to_processed_hoi_invariance": input_payload.get(
-            "raw_to_processed_hoi_invariance"
-        ),
-        "rest_support_provenance": rest_support,
-        "authoritative_aligned_tracking": tracking,
-        "authoritative_aligned_tracking_evidence": tracking_evidence,
-    }
 
 
 def find_spider_robot(
     dst: Path,
     key: str,
     prefer_ik: bool = False,
-    *,
-    allow_mjwp_fallback: bool = False,
-    allow_invalid_tracking_for_review: bool = False,
+    **_: object,
 ) -> Path | None:
     del prefer_ik
     root = dst / "intermediates" / "retargeting" / "spider" / key
     native = _native_spider_binding(root)
-    if native is not None:
-        if int(native.get("native_returncode", 1)) != 0:
-            return None
-        robot = _recorded_manifest_path(
-            native.get("native_robot_video"), relative_to=root
+    candidates: list[Path | None] = []
+    if native is not None and int(native.get("native_returncode", 1)) == 0:
+        candidates.append(
+            _recorded_manifest_path(native.get("native_robot_video"), relative_to=root)
         )
-        return robot if robot is not None and robot.is_file() else None
-    input_manifest = load_json_optional(root / "spider_input_manifest.json")
-    if (
-        input_manifest
-        and input_manifest.get("status") == "invalid_weak_interaction"
-        and not allow_invalid_tracking_for_review
-    ):
-        return None
-    output_manifest = load_json_optional(root / "spider_output_manifest.json")
-    fallback = (output_manifest or {}).get("mjwp_fallback") or {}
-    fallback_applied = bool(fallback.get("applied"))
-    if fallback_applied and not allow_mjwp_fallback:
-        return None
-    if (
-        not fallback_applied
-        and not allow_invalid_tracking_for_review
-        and not valid_spider_tracking(output_manifest)
-    ):
-        return None
-    if not allow_invalid_tracking_for_review:
-        production_errors, _ = spider_production_evidence(
-            root,
-            key,
-            input_manifest,
-            output_manifest,
-        )
-        if production_errors:
-            return None
-    alignment_valid = (
-        valid_spider_review_alignment(root, output_manifest)
-        if allow_invalid_tracking_for_review
-        else valid_spider_alignment(root, output_manifest)
-    )
-    if not alignment_valid:
-        return None
-    alignment = spider_alignment_manifest(root, output_manifest)
-    if not isinstance(alignment, dict):
-        return None
-    mjwp_video = _recorded_manifest_path(
-        alignment.get("aligned_video"),
-        relative_to=root,
-    )
-    return mjwp_video if mjwp_video is not None and mjwp_video.is_file() else None
+    output_manifest = load_json_optional(root / "spider_output_manifest.json") or {}
+    alignment = output_manifest.get("alignment") or {}
+    candidates.extend([
+        _recorded_manifest_path(alignment.get("aligned_video"), relative_to=root)
+        if isinstance(alignment, dict)
+        else None,
+        root / "visualization_mjwp_act_aligned.mp4",
+        root / "visualization_mjwp_aligned.mp4",
+        root / "visualization_mjwp.mp4",
+        root / "robot" / "visualization_mjwp.mp4",
+    ])
+    for candidate in candidates:
+        if candidate is not None and probe_video(candidate) is not None:
+            return candidate
+    return None
 
 
 def compose_cell(dst: Path, key: str, duration: float) -> Path:
@@ -2473,51 +1747,6 @@ def dai_adapter_manifest_for_robot(robot_src: Path | None) -> Path | None:
     return candidate if candidate.exists() else None
 
 
-ROUTE_PROVENANCE_FIELDS = (
-    "hand_source",
-    "object_track_source",
-    "object_mesh_source",
-    "retarget_object_source",
-    "canonical_transform",
-    "hoi_refinement",
-    "hoi_contact_alignment",
-    "adapter_rigid_invariance",
-    "route_input_qc",
-)
-
-
-def dai_route_input_qc_for_robot(robot_src: Path | None, key: str) -> dict[str, object] | None:
-    output_root = dai_retarget_output_root(robot_src)
-    candidates: list[Path] = []
-    if output_root is not None:
-        candidates.append(output_root.parent / "route_input_qc.json")
-    if robot_src is not None:
-        for ancestor in robot_src.parents:
-            candidates.append(
-                ancestor
-                / "assets"
-                / "cells"
-                / key
-                / "retargeting"
-                / "do_as_i_do"
-                / "metadata"
-                / "route_input_qc.json"
-            )
-            for manifest_path in (
-                ancestor / "assets" / "cells" / key / "asset_manifest.json",
-                ancestor / "cells" / key / "manifest.json",
-            ):
-                manifest = load_json_optional(manifest_path)
-                route_qc = ((manifest or {}).get("provenance") or {}).get("route_input_qc")
-                if isinstance(route_qc, dict):
-                    return route_qc
-    for candidate in candidates:
-        route_qc = load_json_optional(candidate)
-        if route_qc is not None:
-            return route_qc
-    return None
-
-
 def _recorded_manifest_path(value: object, *, relative_to: Path) -> Path | None:
     if not isinstance(value, str) or not value.strip():
         return None
@@ -2528,367 +1757,6 @@ def _recorded_manifest_path(value: object, *, relative_to: Path) -> Path | None:
         if path.exists():
             return path
     return relative_to / candidate
-
-
-def exact_cell_route_provenance(
-    *,
-    dst: Path,
-    trajectory: str,
-    retargeting: str,
-    hand_source: str,
-    robot_src: Path | None,
-) -> tuple[dict[str, object], dict[str, object]]:
-    provenance: dict[str, object] = {field: None for field in ROUTE_PROVENANCE_FIELDS}
-    evidence: dict[str, object] = {}
-    key = cell_key(trajectory, hand_source, retargeting)
-
-    if retargeting == "do_as_i_do":
-        adapter_path = dai_adapter_manifest_for_robot(robot_src)
-        adapter = load_json_optional(adapter_path)
-        evidence["adapter_manifest"] = str(adapter_path) if adapter_path else None
-        evidence["adapter"] = adapter
-        if adapter is not None:
-            for field in ROUTE_PROVENANCE_FIELDS:
-                if field != "route_input_qc":
-                    provenance[field] = adapter.get(field)
-        provenance["route_input_qc"] = dai_route_input_qc_for_robot(robot_src, key)
-        return provenance, evidence
-
-    if retargeting == "spider":
-        root = dst / "intermediates" / "retargeting" / "spider" / key
-        input_path = root / "spider_input_manifest.json"
-        output_path = root / "spider_output_manifest.json"
-        input_manifest = load_json_optional(input_path)
-        output_manifest = load_json_optional(output_path)
-        evidence.update({
-            "spider_input_manifest_path": str(input_path) if input_path.exists() else None,
-            "spider_output_manifest_path": str(output_path) if output_path.exists() else None,
-            "spider_input_manifest": input_manifest,
-            "spider_output_manifest": output_manifest,
-        })
-        adapter_ref = None
-        for manifest in (output_manifest, input_manifest):
-            if isinstance(manifest, dict) and manifest.get("adapter_manifest"):
-                adapter_ref = manifest.get("adapter_manifest")
-                break
-        adapter_path = _recorded_manifest_path(adapter_ref, relative_to=root)
-        adapter = load_json_optional(adapter_path)
-        evidence["adapter_manifest"] = (
-            str(adapter_path) if adapter_path is not None and adapter_path.exists() else None
-        )
-        evidence["adapter"] = adapter
-        for field in ROUTE_PROVENANCE_FIELDS:
-            for manifest in (output_manifest, input_manifest, adapter):
-                if isinstance(manifest, dict) and manifest.get(field) is not None:
-                    provenance[field] = manifest.get(field)
-                    break
-        if provenance["route_input_qc"] is None:
-            provenance["route_input_qc"] = load_json_optional(root / "route_input_qc.json")
-        return provenance, evidence
-
-    # Native retarget cells do not consume a DAI adapter. Keep the absence of
-    # adapter-specific metadata explicit instead of borrowing a trajectory-wide
-    # convenience manifest.
-    provenance.update({
-        "hand_source": hand_source,
-        "object_track_source": "egoinfinity" if trajectory == "egoinfinity" else None,
-        "object_mesh_source": "egoinfinity" if trajectory == "egoinfinity" else None,
-        "retarget_object_source": "egoinfinity" if trajectory == "egoinfinity" else None,
-    })
-    evidence.update({"adapter_manifest": None, "source_kind": "native_retarget_without_dai_adapter"})
-    return provenance, evidence
-
-
-def validate_route_provenance_payload(
-    provenance: dict[str, object],
-    *,
-    trajectory: str,
-    hand_source: str,
-) -> list[str]:
-    errors: list[str] = []
-    if provenance.get("hand_source") != hand_source:
-        errors.append(
-            f"route hand_source mismatch: expected={hand_source} actual={provenance.get('hand_source')}"
-        )
-    expected_object_source = "egoinfinity" if trajectory == "egoinfinity" else "dai_native"
-    for field in ("object_track_source", "object_mesh_source", "retarget_object_source"):
-        if provenance.get(field) != expected_object_source:
-            errors.append(
-                f"route {field} mismatch: expected={expected_object_source} actual={provenance.get(field)}"
-            )
-    if not isinstance(provenance.get("canonical_transform"), dict):
-        errors.append("missing canonical_transform provenance")
-    refinement = provenance.get("hoi_refinement")
-    if not isinstance(refinement, dict):
-        errors.append("missing hoi_refinement provenance")
-    elif refinement.get("applied") is not False:
-        errors.append("HOI refinement was applied or is not explicitly disabled")
-    contact_alignment = provenance.get("hoi_contact_alignment")
-    if not isinstance(contact_alignment, dict):
-        errors.append("missing hoi_contact_alignment provenance")
-    elif contact_alignment.get("applied") is not False or contact_alignment.get("transforms_modified") is True:
-        errors.append("HOI contact alignment modified production transforms")
-    invariance = provenance.get("adapter_rigid_invariance")
-    if not isinstance(invariance, dict):
-        errors.append("missing adapter_rigid_invariance provenance")
-    elif invariance.get("status") != "ok":
-        errors.append("adapter_rigid_invariance is not ok")
-    route_qc = provenance.get("route_input_qc")
-    if not isinstance(route_qc, dict):
-        errors.append("missing route_input_qc provenance")
-    else:
-        if route_qc.get("status") != "ok":
-            errors.append("route_input_qc is not ok")
-        if route_qc.get("hand_source") != hand_source:
-            errors.append("route_input_qc hand_source does not match cell")
-        if route_qc.get("expected_cell_key") != cell_key(trajectory, hand_source, "do_as_i_do"):
-            errors.append("route_input_qc does not name the exact DAI source cell")
-    return errors
-
-
-def dai_hand_provenance_for_robot(robot_src: Path | None) -> Path | None:
-    output_root = dai_retarget_output_root(robot_src)
-    if output_root is None:
-        return None
-    candidate = output_root.parent / "input_hand_provenance.json"
-    return candidate if candidate.exists() else None
-
-
-def dai_object_mesh_for_robot(robot_src: Path | None, task: str) -> Path | None:
-    output_root = dai_retarget_output_root(robot_src)
-    if output_root is None:
-        return None
-    candidate = output_root / "assets" / "objects" / task / "visual.obj"
-    return candidate if candidate.exists() else None
-
-
-def validate_cell_provenance(
-    *,
-    dst: Path,
-    source: Path,
-    trajectory: str,
-    retargeting: str,
-    hand_source: str,
-    robot_src: Path | None,
-    srcs: dict[str, Path | None],
-    args: argparse.Namespace,
-) -> dict[str, object]:
-    errors: list[str] = []
-    warnings: list[str] = []
-    evidence: dict[str, object] = {
-        "robot_src": rel(robot_src, dst) if robot_src else None,
-        "trajectory_6dof": trajectory,
-        "retargeting": retargeting,
-    }
-
-    if retargeting in {"do_as_i_do", "spider"}:
-        route_provenance, route_evidence = exact_cell_route_provenance(
-            dst=dst,
-            trajectory=trajectory,
-            retargeting=retargeting,
-            hand_source=hand_source,
-            robot_src=robot_src,
-        )
-        evidence["exact_route_provenance"] = route_provenance
-        evidence["exact_route_sources"] = route_evidence
-        errors.extend(
-            validate_route_provenance_payload(
-                route_provenance,
-                trajectory=trajectory,
-                hand_source=hand_source,
-            )
-        )
-
-    if retargeting == "do_as_i_do":
-        expected_cell = cell_key(trajectory, hand_source, "do_as_i_do")
-        if robot_src is None:
-            errors.append(f"missing Do-as-I-Do robot for exact cell {expected_cell}")
-        elif expected_cell not in str(robot_src):
-            errors.append(f"Do-as-I-Do robot does not come from exact hand-source cell {expected_cell}: {robot_src}")
-        hand_provenance_path = dai_hand_provenance_for_robot(robot_src)
-        hand_provenance = load_json_optional(hand_provenance_path)
-        evidence["input_hand_provenance"] = hand_provenance
-        evidence["input_hand_provenance_path"] = str(hand_provenance_path) if hand_provenance_path else None
-        if hand_provenance is None:
-            errors.append(f"missing input_hand_provenance.json for {expected_cell}")
-        else:
-            if hand_provenance.get("status") != "ok":
-                errors.append(f"invalid hand provenance for {expected_cell}: {hand_provenance.get('errors')}")
-            if hand_provenance.get("requested_hand_source") != hand_source:
-                errors.append(
-                    f"hand provenance label mismatch for {expected_cell}: "
-                    f"{hand_provenance.get('requested_hand_source')}"
-                )
-        raw_to_processed_path = dai_raw_to_processed_hoi_for_robot(robot_src)
-        raw_to_processed = load_json_optional(raw_to_processed_path)
-        evidence["raw_to_processed_hoi_invariance_path"] = (
-            str(raw_to_processed_path) if raw_to_processed_path else None
-        )
-        evidence["raw_to_processed_hoi_invariance"] = raw_to_processed
-        errors.extend(
-            raw_to_processed_invariance_errors(
-                raw_to_processed,
-                label="exact-route raw_to_processed_hoi_invariance",
-                trajectory_6dof=trajectory,
-                hand_source=hand_source,
-                hand_type=robot_src.parent.parent.parent.name if robot_src else None,
-                adapter_manifest=dai_adapter_manifest_for_robot(robot_src),
-                processed_keypoints=(
-                    raw_to_processed_path.with_name("trajectory_keypoints.npz")
-                    if raw_to_processed_path
-                    else None
-                ),
-            )
-        )
-    elif retargeting == "spider":
-        expected_dai_cell = cell_key(trajectory, hand_source, "do_as_i_do")
-        root = dst / "intermediates" / "retargeting" / "spider" / cell_key(
-            trajectory, hand_source, "spider"
-        )
-        input_manifest = load_json_optional(root / "spider_input_manifest.json")
-        output_manifest = load_json_optional(root / "spider_output_manifest.json")
-        if input_manifest is None:
-            errors.append("missing SPIDER input manifest")
-        if output_manifest is None:
-            errors.append("missing SPIDER output manifest")
-        for label, manifest in (("SPIDER input", input_manifest), ("SPIDER output", output_manifest)):
-            if manifest is None:
-                continue
-            if manifest.get("trajectory_6dof") != trajectory:
-                errors.append(f"{label} trajectory_6dof does not match cell")
-            if manifest.get("hand_source") != hand_source:
-                errors.append(f"{label} hand_source does not match cell")
-            for field in ROUTE_PROVENANCE_FIELDS[:-1]:
-                value = manifest.get(field)
-                if value is not None and value != route_provenance.get(field):
-                    errors.append(f"{label} {field} conflicts with exact route provenance")
-        if input_manifest is not None and input_manifest.get("expected_dai_cell_key") != expected_dai_cell:
-            errors.append("SPIDER input manifest does not name the exact DAI source cell")
-        production_errors, production_evidence = spider_production_evidence(
-            root,
-            cell_key(trajectory, hand_source, "spider"),
-            input_manifest,
-            output_manifest,
-        )
-        errors.extend(production_errors)
-        evidence["spider_production_evidence"] = production_evidence
-        adapter_path = _recorded_manifest_path(
-            (output_manifest or {}).get("adapter_manifest")
-            or (input_manifest or {}).get("adapter_manifest"),
-            relative_to=root,
-        )
-        if adapter_path is None or not adapter_path.exists():
-            errors.append("missing exact DAI source adapter for SPIDER cell")
-        elif expected_dai_cell not in str(adapter_path):
-            errors.append("SPIDER source adapter path is not from the exact DAI source cell")
-        else:
-            adapter = load_json_optional(adapter_path)
-            if adapter is None:
-                errors.append("invalid exact DAI source adapter for SPIDER cell")
-            else:
-                for field in ROUTE_PROVENANCE_FIELDS[:-1]:
-                    if adapter.get(field) != route_provenance.get(field):
-                        errors.append(f"SPIDER {field} does not match exact DAI source adapter")
-
-    if trajectory == "do_as_i_do":
-        pure_dai_paths = {
-            "dai_keypoints": srcs.get("dai_keypoints"),
-            "dai_object_visual": srcs.get("dai_object_visual"),
-            "dai_object_convex": srcs.get("dai_object_convex"),
-        }
-        evidence["pure_dai_paths"] = {name: str(path) if path else None for name, path in pure_dai_paths.items()}
-        if not args.spider_fuse_ego_object_for_dai:
-            for name, path in pure_dai_paths.items():
-                if path_contains(path, "egoinfinity") or path_contains(path, "fused_ego"):
-                    errors.append(f"pure DAI asset {name} resolves to an EgoInfinity/fused path: {path}")
-            if retargeting == "do_as_i_do" and path_contains(robot_src, "traj_egoinfinity__"):
-                errors.append(f"pure DAI retarget robot resolves to an EgoInfinity DAI cell: {robot_src}")
-        elif retargeting == "spider":
-            warnings.append("DAI->SPIDER uses explicit fused Ego object because --spider-fuse-ego-object-for-dai is enabled")
-
-    if trajectory == "egoinfinity" and retargeting == "do_as_i_do":
-        if robot_src is None:
-            errors.append("missing EgoInfinity->Do-as-I-Do retarget robot")
-        elif not path_contains(robot_src, "traj_egoinfinity__"):
-            errors.append(f"EgoInfinity->Do-as-I-Do robot does not come from traj_egoinfinity cell: {robot_src}")
-        adapter_path = dai_adapter_manifest_for_robot(robot_src)
-        adapter = load_json_optional(adapter_path)
-        evidence["adapter_manifest"] = str(adapter_path) if adapter_path else None
-        if adapter is None:
-            errors.append("missing EgoInfinity adapter_manifest.json for Ego->DAI retarget raw_dir")
-        else:
-            replacement = adapter.get("object_mesh_replacement") or {}
-            evidence["adapter"] = {
-                "ego_object_id": adapter.get("ego_object_id"),
-                "ego_prompt": adapter.get("ego_prompt"),
-                "mesh_scale": adapter.get("mesh_scale"),
-                "mesh_scale_source": adapter.get("mesh_scale_source"),
-                "selected_hand": adapter.get("selected_hand"),
-                "anchor_hand": adapter.get("anchor_hand"),
-                "object_mesh_replacement": {
-                    "ego_mesh": replacement.get("ego_mesh") if isinstance(replacement, dict) else None,
-                    "targets": replacement.get("targets") if isinstance(replacement, dict) else None,
-                    "boxlike_fallback": replacement.get("boxlike_fallback") if isinstance(replacement, dict) else None,
-                },
-                "geometry_interaction_hand": adapter.get("geometry_interaction_hand"),
-                "visual_interaction_hand": adapter.get("visual_interaction_hand"),
-            }
-            if not isinstance(replacement, dict) or not replacement.get("ego_mesh") or not replacement.get("targets"):
-                errors.append("Ego->DAI adapter did not record an Ego object mesh replacement")
-            geometry = adapter.get("geometry_interaction_hand") or {}
-            if isinstance(geometry, dict) and geometry.get("available") and not geometry.get("selected_hand"):
-                warnings.append("Ego object track has no geometric hand-object contact; treat this scene as weak display material")
-        mesh_path = dai_object_mesh_for_robot(robot_src, args.dai_task if trajectory == "egoinfinity" else args.task)
-        extent = obj_extent_summary(mesh_path)
-        evidence["retarget_object_mesh"] = extent
-        if extent.get("available") and float(extent.get("diag", 0.0)) < 0.04:
-            warnings.append(f"Ego object mesh is very small after scale baking: diag={extent.get('diag'):.4f}m")
-
-    status = "invalid" if errors else "ok"
-    return {
-        "status": status,
-        "errors": errors,
-        "warnings": warnings,
-        "evidence": evidence,
-    }
-
-
-def cell_object_provenance(
-    dst: Path,
-    trajectory: str,
-    retargeting: str,
-    hand_source: str,
-    robot_src: Path | None,
-    args: argparse.Namespace,
-    srcs: dict[str, Path | None],
-) -> dict[str, object]:
-    del args, srcs
-    route_provenance, route_evidence = exact_cell_route_provenance(
-        dst=dst,
-        trajectory=trajectory,
-        retargeting=retargeting,
-        hand_source=hand_source,
-        robot_src=robot_src,
-    )
-    object_source = "egoinfinity" if trajectory == "egoinfinity" else "dai_native"
-    object_source_verified = all(
-        route_provenance.get(field) == object_source
-        for field in ("object_track_source", "object_mesh_source", "retarget_object_source")
-    )
-    route_provenance.update({
-        "route_provenance_sources": route_evidence,
-        "route": (
-            f"{object_source}_object_tracking__{retargeting}_retargeting"
-            if object_source_verified
-            else f"unverified_object_source__{retargeting}_retargeting"
-        ),
-        "recommended_route": trajectory == "egoinfinity",
-        "baseline_only": trajectory == "do_as_i_do",
-    })
-    if trajectory == "egoinfinity" and object_source_verified:
-        route_provenance["object_selection_source"] = "bbox_target_point_best"
-        route_provenance["route"] = f"egoinfinity_object_tracking__{retargeting}_retargeting"
-    return route_provenance
 
 
 def build_cells(dst: Path, source: Path, srcs: dict[str, Path | None], args: argparse.Namespace) -> list[dict]:
@@ -2902,7 +1770,6 @@ def build_cells(dst: Path, source: Path, srcs: dict[str, Path | None], args: arg
                     cell_key("do_as_i_do", "estimated", "spider"),
                     args.prefer_spider_ik_video,
                     allow_mjwp_fallback=args.allow_spider_mjwp_fallback_video,
-                    allow_invalid_tracking_for_review=args.include_numerically_invalid_aligned_robot,
                 )
                 or Path("__missing__"),
                 find_spider_robot(
@@ -2910,168 +1777,157 @@ def build_cells(dst: Path, source: Path, srcs: dict[str, Path | None], args: arg
                     cell_key("do_as_i_do", "aoe", "spider"),
                     args.prefer_spider_ik_video,
                     allow_mjwp_fallback=args.allow_spider_mjwp_fallback_video,
-                    allow_invalid_tracking_for_review=args.include_numerically_invalid_aligned_robot,
                 )
                 or Path("__missing__"),
             ]
         )
 
-    for trajectory in TRAJECTORIES:
+    for selected_cell in args.matrix_cells:
+        trajectory = selected_cell.trajectory_6dof
+        hand_source = selected_cell.hand_source
+        retargeting = selected_cell.retargeting
         overlay = dst / "assets" / "trajectory_6dof" / trajectory / args.task / "overlay.mp4"
         depth = dst / "assets" / "trajectory_6dof" / trajectory / args.task / "depth.mp4"
-        for hand_source in HAND_SOURCES:
-            for retargeting in RETARGETERS:
-                key = cell_key(trajectory, hand_source, retargeting)
-                cell_dir = ensure_dir(dst / "cells" / key)
-                assets_dir = ensure_dir(dst / "assets" / "cells" / key)
-                if retargeting == "egoinfinity":
-                    robot_src = srcs["ego_robot"]
-                    robot_note = "reused from source EgoInfinity/G1 full run"
-                elif retargeting == "do_as_i_do":
-                    robot_task = args.dai_task if trajectory == "egoinfinity" else args.dai_source_task
-                    robot_hand_type = args.dai_hand_type if trajectory == "egoinfinity" else args.dai_source_hand_type
-                    robot_src, robot_note = find_dai_robot_in_overrides(
-                        args.dai_override_sources,
-                        trajectory,
-                        hand_source,
-                        robot_task,
-                        robot_hand_type,
-                        args,
-                    )
-                    if robot_src is None:
-                        robot_src, robot_note = find_quality_dai_robot_in_source(
-                            source,
-                            trajectory,
-                            hand_source,
-                            robot_task,
-                            robot_hand_type,
-                            args,
-                        )
-                    if robot_src is None and (robot_task != args.task or robot_hand_type != args.hand_type):
-                        robot_src, robot_note = find_quality_dai_robot_in_source(
-                            source,
-                            trajectory,
-                            hand_source,
-                            args.task,
-                            args.hand_type,
-                            args,
-                        )
-                        robot_note = (
-                            robot_note or "fallback Do-as-I-Do/Sharpa robot from source trajectory task"
-                            if robot_src is not None
-                            else "missing source Do-as-I-Do/Sharpa cell"
-                        )
-                    if robot_src is None and hand_source != "estimated" and args.allow_dai_hand_fallback:
-                        robot_src, robot_note = find_quality_dai_robot_in_source(
-                            source,
-                            trajectory,
-                            "estimated",
-                            robot_task,
-                            robot_hand_type,
-                            args,
-                        )
-                        if robot_src is None and (robot_task != args.task or robot_hand_type != args.hand_type):
-                            robot_src, robot_note = find_quality_dai_robot_in_source(
-                                source,
-                                trajectory,
-                                "estimated",
-                                args.task,
-                                args.hand_type,
-                                args,
-                            )
-                        robot_note = (
-                            robot_note or "fallback Do-as-I-Do/Sharpa robot from same trajectory estimated-hand cell"
-                            if robot_src is not None
-                            else "missing source Do-as-I-Do/Sharpa cell"
-                        )
-                    elif robot_src is None:
-                        robot_note = "missing source Do-as-I-Do/Sharpa cell"
-                else:
-                    exact = find_spider_robot(
-                        dst,
-                        key,
-                        args.prefer_spider_ik_video,
-                        allow_mjwp_fallback=args.allow_spider_mjwp_fallback_video,
-                        allow_invalid_tracking_for_review=args.include_numerically_invalid_aligned_robot,
-                    )
-                    robot_src = exact or fallback_spider
-                    if exact:
-                        robot_note = "exact SPIDER aligned MJWP cell"
-                    elif fallback_spider is not None:
-                        robot_note = "fallback SPIDER robot reused from Do-as-I-Do trajectory cell"
-                    else:
-                        robot_note = "missing source SPIDER cell"
-
-                overlay_dst = materialize(overlay, cell_dir / "overlay.mp4", args.mode)
-                depth_dst = materialize(depth, cell_dir / "depth.mp4", args.mode)
-                robot_dst = materialize(robot_src, cell_dir / "robot.mp4", args.mode)
-                provenance_validation = validate_cell_provenance(
-                    dst=dst,
-                    source=source,
-                    trajectory=trajectory,
-                    retargeting=retargeting,
-                    hand_source=hand_source,
-                    robot_src=robot_src,
-                    srcs=srcs,
-                    args=args,
+        key = selected_cell.key
+        cell_dir = ensure_dir(dst / "cells" / key)
+        assets_dir = ensure_dir(dst / "assets" / "cells" / key)
+        if retargeting == "egoinfinity":
+            robot_src = srcs["ego_robot"]
+            robot_note = "reused from source EgoInfinity/G1 full run"
+        elif retargeting == "do_as_i_do":
+            robot_task = args.dai_task if trajectory == "egoinfinity" else args.dai_source_task
+            robot_hand_type = args.dai_hand_type if trajectory == "egoinfinity" else args.dai_source_hand_type
+            robot_src, robot_note = find_dai_robot_in_overrides(
+                args.dai_override_sources,
+                trajectory,
+                hand_source,
+                robot_task,
+                robot_hand_type,
+                args,
+            )
+            if robot_src is None:
+                robot_src, robot_note = find_quality_dai_robot_in_source(
+                    source,
+                    trajectory,
+                    hand_source,
+                    robot_task,
+                    robot_hand_type,
+                    args,
                 )
-                missing = [
-                    name
-                    for name, value in {
-                        "overlay": overlay_dst,
-                        "depth": depth_dst,
-                        "robot": robot_dst,
-                    }.items()
-                    if value is None
-                ]
-                video = None
-                if args.compose and not missing:
-                    video = compose_cell(dst, key, args.duration)
-                elif args.compose:
-                    remove_path(dst / "videos" / f"{key}__triptych.mp4")
-                manifest = {
-                    "cell_key": key,
-                    "settings": {
-                        "trajectory_6dof": trajectory,
-                        "hand_source": hand_source,
-                        "retargeting": retargeting,
-                        "task": args.task,
-                        "hand_type": args.hand_type,
-                        "spider_hand_type": args.spider_hand_type,
-                        "dai_task": args.dai_task,
-                        "dai_hand_type": args.dai_hand_type,
-                        "dai_source_task": args.dai_source_task,
-                        "dai_source_hand_type": args.dai_source_hand_type,
-                    },
-                    "reuse_policy": {
-                        "source_run": args.source_run,
-                        "overlay_depth": f"from {trajectory} trajectory_6dof full run",
-                        "robot": robot_note,
-                    },
-                    "provenance": cell_object_provenance(
-                        dst,
+            if robot_src is None and (robot_task != args.task or robot_hand_type != args.hand_type):
+                robot_src, robot_note = find_quality_dai_robot_in_source(
+                    source,
+                    trajectory,
+                    hand_source,
+                    args.task,
+                    args.hand_type,
+                    args,
+                )
+                robot_note = (
+                    robot_note or "fallback Do-as-I-Do/Sharpa robot from source trajectory task"
+                    if robot_src is not None
+                    else "missing source Do-as-I-Do/Sharpa cell"
+                )
+            if robot_src is None and hand_source != "estimated" and args.allow_dai_hand_fallback:
+                robot_src, robot_note = find_quality_dai_robot_in_source(
+                    source,
+                    trajectory,
+                    "estimated",
+                    robot_task,
+                    robot_hand_type,
+                    args,
+                )
+                if robot_src is None and (robot_task != args.task or robot_hand_type != args.hand_type):
+                    robot_src, robot_note = find_quality_dai_robot_in_source(
+                        source,
                         trajectory,
-                        retargeting,
-                        hand_source,
-                        robot_src,
+                        "estimated",
+                        args.task,
+                        args.hand_type,
                         args,
-                        srcs,
-                    ),
-                    "provenance_validation": provenance_validation,
-                    "assets": {
-                        "cell.overlay": rel(overlay_dst, dst),
-                        "cell.depth": rel(depth_dst, dst),
-                        "cell.robot": rel(robot_dst, dst),
-                        "source.overlay": rel(overlay, dst),
-                        "source.depth": rel(depth, dst),
-                        "source.robot": rel(robot_src, dst) if robot_src else None,
-                        "video.triptych": rel(video, dst) if video else None,
-                    },
-                    "missing": missing,
-                }
-                write_json(cell_dir / "manifest.json", manifest)
-                write_json(assets_dir / "asset_manifest.json", manifest)
-                reports.append(manifest)
+                    )
+                robot_note = (
+                    robot_note or "fallback Do-as-I-Do/Sharpa robot from same trajectory estimated-hand cell"
+                    if robot_src is not None
+                    else "missing source Do-as-I-Do/Sharpa cell"
+                )
+            elif robot_src is None:
+                robot_note = "missing source Do-as-I-Do/Sharpa cell"
+        else:
+            exact = find_spider_robot(
+                dst,
+                key,
+                args.prefer_spider_ik_video,
+                allow_mjwp_fallback=args.allow_spider_mjwp_fallback_video,
+            )
+            robot_src = exact or fallback_spider
+            if exact:
+                robot_note = "exact SPIDER aligned MJWP cell"
+            elif fallback_spider is not None:
+                robot_note = "fallback SPIDER robot reused from Do-as-I-Do trajectory cell"
+            else:
+                robot_note = "missing source SPIDER cell"
+
+        overlay_dst = materialize(overlay, cell_dir / "overlay.mp4", args.mode)
+        depth_dst = materialize(depth, cell_dir / "depth.mp4", args.mode)
+        robot_dst = materialize(robot_src, cell_dir / "robot.mp4", args.mode)
+        robot_probe = probe_video(robot_dst) if robot_dst is not None else None
+        missing = [
+            name
+            for name, value in {
+                "overlay": overlay_dst,
+                "depth": depth_dst,
+                "robot": robot_dst if robot_probe is not None else None,
+            }.items()
+            if value is None
+        ]
+        video = None
+        if args.compose and not missing:
+            video = compose_cell(dst, key, args.duration)
+        elif args.compose:
+            remove_path(dst / "videos" / f"{key}__triptych.mp4")
+        manifest = {
+            "cell_key": key,
+            "settings": {
+                "trajectory_6dof": trajectory,
+                "hand_source": hand_source,
+                "retargeting": retargeting,
+                "task": args.task,
+                "hand_type": args.hand_type,
+                "spider_hand_type": args.spider_hand_type,
+                "dai_task": args.dai_task,
+                "dai_hand_type": args.dai_hand_type,
+                "dai_source_task": args.dai_source_task,
+                "dai_source_hand_type": args.dai_source_hand_type,
+            },
+            "reuse_policy": {
+                "source_run": args.source_run,
+                "overlay_depth": f"from {trajectory} trajectory_6dof full run",
+                "robot": robot_note,
+            },
+            "route_record": {
+                "trajectory_6dof": trajectory,
+                "hand_source": hand_source,
+                "retargeting": retargeting,
+                "source_robot": rel(robot_src, dst) if robot_src else None,
+            },
+            "success_standard": "backend_success_and_manual_video_review",
+            "manual_review_required": robot_probe is not None,
+            "review_video": robot_probe,
+            "assets": {
+                "cell.overlay": rel(overlay_dst, dst),
+                "cell.depth": rel(depth_dst, dst),
+                "cell.robot": rel(robot_dst, dst),
+                "source.overlay": rel(overlay, dst),
+                "source.depth": rel(depth, dst),
+                "source.robot": rel(robot_src, dst) if robot_src else None,
+                "video.triptych": rel(video, dst) if video else None,
+            },
+            "missing": missing,
+        }
+        write_json(cell_dir / "manifest.json", manifest)
+        write_json(assets_dir / "asset_manifest.json", manifest)
+        reports.append(manifest)
     return reports
 
 
@@ -3096,7 +1952,7 @@ def collect_route_availability(
             "post_retarget_rc": None,
             "status": "invalid_input",
             "available": False,
-            "preflight_evidence": item.get("preflight_evidence"),
+            "reason": "missing_required_backend_input",
         }
     return result
 
@@ -3107,6 +1963,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--source-run", required=True)
     parser.add_argument("--run-name")
+    parser.add_argument(
+        "--cell",
+        choices=[cell.key for cell in all_matrix_cells()],
+        help="Materialize exactly one of the 12 matrix cells instead of the full matrix.",
+    )
+    parser.add_argument("--trajectory-6dof", choices=TRAJECTORIES)
+    parser.add_argument("--hand-source", choices=HAND_SOURCES)
+    parser.add_argument("--retargeting", choices=RETARGETERS)
     parser.add_argument("--task", default="foundation_jar_bimanual_leftscale")
     parser.add_argument("--hand-type", default="bimanual")
     parser.add_argument(
@@ -3155,17 +2019,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--allow-dai-hand-fallback", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
-        "--include-numerically-invalid-aligned-robot",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help=(
-            "Diagnostic opt-in to expose original, finite, aligned DAI/SPIDER MuJoCo videos for plain-video "
-            "review even when numerical quality thresholds fail. Default false: numerical-invalid routes "
-            "cannot enter matrix videos or demo admission. Provenance errors, fallback videos, and unaligned "
-            "outputs remain forbidden even when explicitly enabled."
-        ),
-    )
-    parser.add_argument(
         "--dai-auto-select-interaction-hand",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -3202,42 +2055,6 @@ def parse_args() -> argparse.Namespace:
             "matrix trajectory assets."
         ),
     )
-    parser.add_argument(
-        "--dai-asset-min-distance-threshold",
-        type=float,
-        default=0.35,
-        help="Reject/flag DAI source keypoints when every fingertip stays farther than this from the object center.",
-    )
-    parser.add_argument(
-        "--dai-asset-median-distance-threshold",
-        type=float,
-        default=0.45,
-        help="Reject/flag DAI source keypoints when median fingertip-object distance is above this threshold.",
-    )
-    parser.add_argument(
-        "--dai-asset-no-contact-min-distance-threshold",
-        type=float,
-        default=0.08,
-        help=(
-            "When contact labels are absent or inactive, require at least one fingertip to be this close "
-            "to the object center before accepting the DAI source asset."
-        ),
-    )
-    parser.add_argument(
-        "--dai-asset-no-contact-median-distance-threshold",
-        type=float,
-        default=0.18,
-        help=(
-            "When contact labels are absent or inactive, reject DAI source assets whose median "
-            "fingertip-object distance exceeds this tighter threshold."
-        ),
-    )
-    parser.add_argument(
-        "--dai-asset-require-contact",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Require nonzero contact for DAI assets unless fingertip-object distance is already plausible.",
-    )
     parser.add_argument("--skip-existing-spider", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--keep-going", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
@@ -3268,9 +2085,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     args = parser.parse_args()
+    try:
+        args.matrix_cells = select_matrix_cells(
+            cell=args.cell,
+            trajectory_6dof=args.trajectory_6dof,
+            hand_source=args.hand_source,
+            retargeting=args.retargeting,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+    args.single_cell = len(args.matrix_cells) == 1
     if not args.run_name:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        args.run_name = f"{args.source_run}__reuse12_{stamp}"
+        suffix = (
+            f"cell_{args.matrix_cells[0].key}"
+            if args.single_cell
+            else "reuse12"
+        )
+        args.run_name = f"{args.source_run}__{suffix}_{stamp}"
     if args.dai_task is None:
         args.dai_task = args.task
     if args.dai_hand_type is None:
@@ -3317,32 +2149,19 @@ def main() -> int:
         srcs,
         args.task,
         args.mode,
+        trajectories=tuple(dict.fromkeys(cell.trajectory_6dof for cell in args.matrix_cells)),
         spider_fuse_ego_object_for_dai=args.spider_fuse_ego_object_for_dai,
-    )
-    trajectory_asset_validation = validate_trajectory_assets(
-        dst,
-        args.task,
-        dai_task=args.dai_task,
-        dai_hand_type=args.dai_hand_type,
-        dai_source_task=args.dai_source_task,
-        dai_source_hand_type=args.dai_source_hand_type,
-        spider_fuse_ego_object_for_dai=args.spider_fuse_ego_object_for_dai,
-        dai_override_asset_report=dai_override_asset_report,
-        dai_asset_min_distance_threshold=args.dai_asset_min_distance_threshold,
-        dai_asset_median_distance_threshold=args.dai_asset_median_distance_threshold,
-        dai_asset_no_contact_min_distance_threshold=args.dai_asset_no_contact_min_distance_threshold,
-        dai_asset_no_contact_median_distance_threshold=args.dai_asset_no_contact_median_distance_threshold,
-        dai_asset_require_contact=args.dai_asset_require_contact,
     )
     spider_report = run_spider_cells(args, dst)
     route_availability = collect_route_availability(source, spider_report)
+    if args.single_cell:
+        selected_keys = {cell.key for cell in args.matrix_cells}
+        route_availability = {
+            key: value
+            for key, value in route_availability.items()
+            if key in selected_keys
+        }
     cell_reports = build_cells(dst, source, srcs, args)
-    provenance_validation = {
-        item["cell_key"]: item.get("provenance_validation")
-        for item in cell_reports
-        if (item.get("provenance_validation") or {}).get("status") != "ok"
-        or (item.get("provenance_validation") or {}).get("warnings")
-    }
     summary = {
         "run_name": args.run_name,
         "source_run": args.source_run,
@@ -3358,15 +2177,17 @@ def main() -> int:
             "dai_native_reconstruction": "baseline_only",
             "note": "Pure DAI cells do not use EgoInfinity object assets unless an explicit fused-Ego option is enabled.",
         },
-        "demo_admission_policy": {
-            "policy": "retarget_only_plain_mujoco_numerical_and_visual_v3",
-            "criterion": "route_specific_numerical_qc_and_provenance_and_plain_visual_review",
+        "success_policy": {
+            "policy": "backend_success_and_manual_video_review",
+            "criterion": "backend_returncode_zero_and_decodable_robot_video_then_manual_review",
             "matrix_completeness_required": False,
-            "numerical_qc_is_diagnostic": False,
-            "numerical_invalid_can_be_visual_success": False,
+            "numerical_qc_is_diagnostic": True,
+            "manual_review_required": True,
             "failed_routes_must_remain_explicit": True,
         },
         "mode": args.mode,
+        "selection_mode": "single_cell" if args.single_cell else "full_12",
+        "selected_cells": [cell.key for cell in args.matrix_cells],
         "task": args.task,
         "hand_type": args.hand_type,
         "spider_hand_type": args.spider_hand_type,
@@ -3375,12 +2196,9 @@ def main() -> int:
         "dai_source_task": args.dai_source_task,
         "dai_source_hand_type": args.dai_source_hand_type,
         "spider_fuse_ego_object_for_dai": args.spider_fuse_ego_object_for_dai,
-        "include_numerically_invalid_aligned_robot": args.include_numerically_invalid_aligned_robot,
         "dai_override_runs": args.dai_override_run,
         "dai_override_assets": dai_override_asset_report,
         "trajectory_assets": traj_report,
-        "trajectory_asset_validation": trajectory_asset_validation,
-        "provenance_validation": provenance_validation,
         "spider": spider_report,
         "route_availability": route_availability,
         "cells": len(cell_reports),

@@ -202,33 +202,6 @@ def assess_object_pose_continuity(
     }
 
 
-def assess_dai_native_retarget_input(
-    contact_alignment: dict,
-    overlap_frames: float,
-    min_visual_overlap_frames: int = 3,
-    object_pose_quality: dict | None = None,
-) -> dict:
-    errors: list[str] = []
-    if float(overlap_frames) < min_visual_overlap_frames:
-        errors.append(f"weak_visual_hand_object_overlap:{int(overlap_frames)}")
-    if contact_alignment.get("reason") == "offset_exceeds_max":
-        errors.append("hoi_coordinate_offset_exceeds_max")
-    if object_pose_quality is not None and object_pose_quality.get("status") != "ok":
-        errors.extend(
-            f"source_{error}" for error in (object_pose_quality.get("errors") or ["object_pose_invalid"])
-        )
-    return {
-        "status": "invalid" if errors else "ok",
-        "errors": errors,
-        "visual_overlap_frames": float(overlap_frames),
-        "min_visual_overlap_frames": int(min_visual_overlap_frames),
-        "hoi_contact_alignment_reason": contact_alignment.get("reason"),
-        "required_offset_norm": contact_alignment.get("required_offset_norm"),
-        "max_offset": contact_alignment.get("max_offset"),
-        "object_pose_quality": object_pose_quality,
-    }
-
-
 def align_layout(
     layout: dict,
     hand_npz: Path,

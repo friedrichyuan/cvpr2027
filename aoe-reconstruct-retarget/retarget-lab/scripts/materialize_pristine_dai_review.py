@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import os
@@ -15,13 +14,10 @@ from pathlib import Path
 import numpy as np
 import yaml
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+from aoe_retarget_lab.io_utils import file_sha256 as sha256  # noqa: E402
 
 
 def video_probe(path: Path) -> dict[str, float | int]:
@@ -141,7 +137,7 @@ def main() -> int:
     if not scene.is_file() and legacy_scene.is_file():
         # Pinned pristine DAI writes the actuator-capable scene under the
         # historical scene.xml name.  Keep the native byte stream untouched and
-        # install the canonical review alias expected by strict Lab admission.
+        # install the canonical actuator-scene alias used by the review renderer.
         shutil.copy2(legacy_scene, scene)
     config_path = run_dir / "config.yaml"
     for label, path in (

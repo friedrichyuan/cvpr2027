@@ -3,7 +3,7 @@
 Language: **English** | [中文](AOE_DATASET_PRACTICES.zh-CN.md)
 
 This guide focuses on scene selection, instance binding, and data quality.
-For clean-machine setup, third-party compatibility, 12-cell admission, and
+For clean-machine setup, third-party compatibility, 12-cell review, and
 failure classification, see
 [Clean-Machine Deployment and Reproduction Practices](REPRODUCTION_PRACTICES.md).
 
@@ -54,7 +54,7 @@ pipeline as direct entry.
   leaves view, or tracking switches identity.
 - Direct entry is for a manually audited clip, reference frame, and box, and
   provides a reproducible baseline.
-- Neither mode may bypass reconstruction, route binding, or backend input QC.
+- Neither mode bypasses reconstruction or native backend execution.
 
 If a long window switches instance but a shorter continuous window with the
 same anchor passes, classify that as a frontend window problem, not a DAI or
@@ -109,12 +109,13 @@ Inspect boundaries in order:
    robot palm is offset, inspect morphology and IK mapping.
 4. Before and after MJWP optimization: if IK is plausible but contact is lost
    after warmup, preserve it as native backend behavior.
-5. DAI/SPIDER plain video: admit a demo only from the real backend output.
+5. DAI/SPIDER plain video: count a demo only when the real backend returns
+   successfully and the video passes manual review.
 
 Do not hide failures in overlays or triptychs. Do not use post-hoc object scale
 or translation to present a diagnostic result as backend success.
 
-## 6. Common Fail-Closed Outcomes
+## 6. Common Data and Review Outcomes
 
 | Failure | Meaning | Correct response |
 | --- | --- | --- |
@@ -124,12 +125,12 @@ or translation to present a diagnostic result as backend success.
 | Low interaction containment | The mask disagrees with the hand-object interaction region | Correct the real box/reference frame; do not lower thresholds |
 | Oversized or shifted action box | AoE `xyxy` was interpreted as `xywh` | Convert normalized-to-1000 `xyxy` and verify on RGB |
 | Camera-intrinsics mismatch | Hand, object, and RGB use different cameras | Apply an auditable K-to-K ray conversion |
-| Only one hand passes bimanual overlap | The other annotated hand lacks sufficient visual interaction | Fail each hand independently; one hand cannot substitute for a bimanual task |
-| HOI coordinate offset exceeds maximum | Preserving source HOI requires excessive rigid compensation | Classify as input/reconstruction quality; do not translate the object or relax the cap |
-| Missing layout/timestamp binding | The route timeline is incomplete | Reconstruct fresh or convert the exact timebase; never fabricate frames |
+| Only one hand has visible bimanual interaction | The other annotated hand lacks sufficient visual interaction | Record the limitation and decide from the backend video; do not relabel the task |
+| Large HOI coordinate offset | Hand/object reconstruction is visibly inconsistent | Keep the diagnostic and inspect the backend video; do not post-hoc translate the object |
+| Missing layout/timestamp input | The backend cannot establish its input timeline | Reconstruct fresh or convert the real timebase; never fabricate frames |
 | DAI/SPIDER hand-object separation | Backend output loses the source HOI | Preserve native output, verify the input boundary, then classify backend behavior |
-| Backend returns zero but post-QC fails | Optimization completion does not imply display quality | Keep native trajectory/video for diagnosis but do not admit it as a demo |
-| Native rollout ends before the source | Valid post-warmup motion does not cover the action | Do not extrapolate or repeat the last frame; materialization must fail closed |
+| Backend returns zero but numerical diagnostics are poor | Diagnostics and visual quality can disagree | Keep the diagnostics as advisory and decide from the plain backend video |
+| Native rollout is shorter than the source | The backend produced a partial result | Do not fabricate frames; review and label the native video as partial |
 
 ## 7. Evidence Required for Every Scene
 
@@ -141,7 +142,7 @@ dai_*.mp4 and/or spider_*.mp4
 triptych.mp4 (optional review packaging)
 fresh_input_manifest.json
 prompt_gate.json / mask_qc_summary.json
-adapter + route + backend manifests
+adapter + backend manifests; optional numerical diagnostics
 native logs and return codes
 SHA256SUMS.txt
 ```
