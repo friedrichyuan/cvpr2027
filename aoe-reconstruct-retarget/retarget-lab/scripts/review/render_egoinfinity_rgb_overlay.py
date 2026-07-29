@@ -2,18 +2,22 @@
 from __future__ import annotations
 
 import argparse
-import gzip
-import io
-import pickle
+import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-def decode_rgb(blob: bytes) -> np.ndarray:
-    return np.asarray(Image.open(io.BytesIO(blob)).convert("RGB"))
+from aoe_retarget_lab.egoinfinity_utils import (  # noqa: E402
+    load_result,
+    mask_centroid as mask_centroid_from_obj_data,
+    object_prompt,
+    object_prompt_score,
+)
+from aoe_retarget_lab.image_utils import decode_rgb  # noqa: E402
 
 
 def load_ply_vertices(path: Path, max_points: int = 12000) -> np.ndarray:
@@ -83,6 +87,56 @@ def align_uv_to_joints(
     return np.round(uv_aligned).astype(np.int32), valid_vertices
 
 
+def estimate_joint_affine(src: np.ndarray, dst: np.ndarray) -> np.ndarray | None:
+    src = np.asarray(src, dtype=np.float32)
+    dst = np.asarray(dst, dtype=np.float32)
+    if src.shape != dst.shape or src.ndim != 2 or src.shape[1] != 2 or len(src) == 0:
+        return None
+    if len(src) >= 4:
+        affine, _ = cv2.estimateAffinePartial2D(src, dst, method=cv2.LMEDS)
+        if affine is not None:
+            return affine.astype(np.float32)
+    delta = np.median(dst - src, axis=0)
+    return np.array([[1.0, 0.0, float(delta[0])], [0.0, 1.0, float(delta[1])]], dtype=np.float32)
+
+
+def apply_affine_to_uv(uv: np.ndarray, affine: np.ndarray | None) -> np.ndarray:
+    uv = np.asarray(uv, dtype=np.int32)
+    if affine is None or len(uv) == 0:
+        return uv
+    uv_float = uv.astype(np.float32)
+    uv_aligned = uv_float @ affine[:, :2].T + affine[:, 2]
+    return np.round(uv_aligned).astype(np.int32)
+
+
+def estimate_frame_affine(
+    joints_3d_per_hand: list[np.ndarray],
+    joints_2d_per_hand: list[np.ndarray],
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
+) -> np.ndarray | None:
+    src_chunks = []
+    dst_chunks = []
+    for joints_3d, joints_2d in zip(joints_3d_per_hand, joints_2d_per_hand):
+        joints_3d = np.asarray(joints_3d, dtype=np.float32)
+        joints_2d = np.asarray(joints_2d, dtype=np.float32)
+        if joints_3d.ndim != 2 or joints_2d.shape != joints_3d.shape:
+            continue
+        uv_joints, valid_joints = project_camera_points(joints_3d, fx, fy, cx, cy)
+        good = valid_joints & np.isfinite(joints_2d).all(axis=1)
+        if int(good.sum()) < 4:
+            continue
+        src_chunks.append(uv_joints[good].astype(np.float32))
+        dst_chunks.append(joints_2d[good].astype(np.float32))
+    if not src_chunks:
+        return None
+    src = np.concatenate(src_chunks, axis=0)
+    dst = np.concatenate(dst_chunks, axis=0)
+    return estimate_joint_affine(src, dst)
+
+
 def draw_point_cloud(
     rgb: np.ndarray,
     points_cam: np.ndarray,
@@ -91,9 +145,15 @@ def draw_point_cloud(
     cx: float,
     cy: float,
     point_radius: int,
+    uv_override: np.ndarray | None = None,
+    valid_override: np.ndarray | None = None,
 ) -> None:
     h, w = rgb.shape[:2]
-    uv, valid = project_camera_points(points_cam, fx, fy, cx, cy)
+    if uv_override is None or valid_override is None:
+        uv, valid = project_camera_points(points_cam, fx, fy, cx, cy)
+    else:
+        uv = np.asarray(uv_override, dtype=np.int32)
+        valid = np.asarray(valid_override, dtype=bool)
     inside = valid & (uv[:, 0] >= 0) & (uv[:, 0] < w) & (uv[:, 1] >= 0) & (uv[:, 1] < h)
     pts = uv[inside]
     if len(pts) == 0:
@@ -157,20 +217,6 @@ def draw_triangle_mesh(
                 cv2.line(rgb, pa, pb, edge_color, 1, cv2.LINE_AA)
 
 
-def mask_centroid_from_obj_data(obj: dict) -> np.ndarray | None:
-    packed = obj.get("mask_packed")
-    shape = obj.get("mask_shape")
-    if packed is None or shape is None:
-        return None
-    h, w = [int(x) for x in shape]
-    bits = np.unpackbits(np.asarray(packed, dtype=np.uint8))[: h * w]
-    mask = bits.reshape(h, w).astype(bool)
-    if not mask.any():
-        return None
-    ys, xs = np.where(mask)
-    return np.array([(xs.min() + xs.max()) * 0.5, (ys.min() + ys.max()) * 0.5], dtype=np.float32)
-
-
 def stable_prefix_len(result: dict, obj_id, max_jump_px: float) -> tuple[int, float]:
     frames = result.get("frame_data") or []
     centroids = []
@@ -190,17 +236,6 @@ def stable_prefix_len(result: dict, obj_id, max_jump_px: float) -> tuple[int, fl
                 return i, max_jump
         last = centroid
     return len(frames), max_jump
-
-
-def object_prompt(result: dict, obj_id) -> str:
-    mapping = result.get("sam3_prompt_mapping") or []
-    try:
-        idx = int(obj_id)
-    except Exception:
-        return ""
-    if 0 <= idx < len(mapping) and isinstance(mapping[idx], dict):
-        return str(mapping[idx].get("prompt", ""))
-    return ""
 
 
 def select_object_ids(
@@ -227,7 +262,15 @@ def select_object_ids(
         if target_prompt and prompt != target_prompt:
             continue
         stable_len, max_jump = stable_prefix_len(result, obj_id, max_centroid_jump_px)
-        rows.append((stable_len, -max_jump, float(info.get("n_points", 0) or 0), obj_id))
+        rows.append(
+            (
+                stable_len,
+                object_prompt_score(result, obj_id),
+                -max_jump,
+                float(info.get("n_points", 0) or 0),
+                obj_id,
+            )
+        )
     if target_prompt and rows and select_best:
         rows.sort(reverse=True)
         return {rows[0][-1]}
@@ -339,8 +382,7 @@ def main() -> int:
     parser.set_defaults(align_hands_to_joints=True)
     args = parser.parse_args()
 
-    with gzip.open(args.pipeline_result, "rb") as handle:
-        result = pickle.load(handle)
+    result = load_result(args.pipeline_result)
     frames = result["frame_data"]
     object_items = build_object_items(
         result,
@@ -373,15 +415,32 @@ def main() -> int:
             rgb = np.zeros_like(rgb)
         elif args.background == "white":
             rgb = np.full_like(rgb, 255)
+        joints_3d_per_hand = frame.get("joints_3d_pred", []) or []
+        joints_2d_per_hand = frame.get("joints_2d_pred", []) or []
+        frame_affine = None
+        if args.align_hands_to_joints:
+            frame_affine = estimate_frame_affine(joints_3d_per_hand, joints_2d_per_hand, fx, fy, cx, cy)
         for vertices, transforms, obj_id, valid_until in object_items:
             if i >= valid_until:
                 continue
             transform = transforms[min(i, len(transforms) - 1)]
             points_cam = (transform[:3, :3] @ vertices.T).T + transform[:3, 3]
-            draw_point_cloud(rgb, points_cam, fx, fy, cx, cy, args.object_point_radius)
+            uv_override = valid_override = None
+            if frame_affine is not None:
+                uv_raw, valid_override = project_camera_points(points_cam, fx, fy, cx, cy)
+                uv_override = apply_affine_to_uv(uv_raw, frame_affine)
+            draw_point_cloud(
+                rgb,
+                points_cam,
+                fx,
+                fy,
+                cx,
+                cy,
+                args.object_point_radius,
+                uv_override=uv_override,
+                valid_override=valid_override,
+            )
 
-        joints_3d_per_hand = frame.get("joints_3d_pred", []) or []
-        joints_2d_per_hand = frame.get("joints_2d_pred", []) or []
         for hand_idx, vertices in enumerate(frame.get("vertices_3d", []) or []):
             if vertices is None:
                 continue
@@ -389,7 +448,10 @@ def main() -> int:
             fill = (245, 115, 45) if is_right else (50, 130, 255)
             edge = (255, 165, 70) if is_right else (90, 180, 255)
             uv_override = valid_override = None
-            if args.align_hands_to_joints and hand_idx < len(joints_3d_per_hand) and hand_idx < len(joints_2d_per_hand):
+            if frame_affine is not None:
+                uv_raw, valid_override = project_camera_points(vertices, fx, fy, cx, cy)
+                uv_override = apply_affine_to_uv(uv_raw, frame_affine)
+            elif args.align_hands_to_joints and hand_idx < len(joints_3d_per_hand) and hand_idx < len(joints_2d_per_hand):
                 uv_override, valid_override = align_uv_to_joints(
                     vertices,
                     joints_3d_per_hand[hand_idx],

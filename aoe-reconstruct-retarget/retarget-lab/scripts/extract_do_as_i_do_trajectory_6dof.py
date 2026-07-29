@@ -4,20 +4,16 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import numpy as np
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-def load_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def rel(path: Path, root: Path) -> str:
-    try:
-        return str(path.relative_to(root))
-    except ValueError:
-        return str(path)
+from aoe_retarget_lab.io_utils import read_json as load_json  # noqa: E402
+from aoe_retarget_lab.path_utils import relative_path as rel  # noqa: E402
 
 
 def link_or_copy(src: Path, dst: Path, mode: str) -> None:
@@ -34,6 +30,26 @@ def link_or_copy(src: Path, dst: Path, mode: str) -> None:
             shutil.copy2(src, dst)
     else:
         dst.symlink_to(src, target_is_directory=src.is_dir())
+
+
+def export_scaled_obj(src: Path, dst: Path, scale: float) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists() or dst.is_symlink():
+        if dst.is_dir() and not dst.is_symlink():
+            shutil.rmtree(dst)
+        else:
+            dst.unlink()
+    out = []
+    with src.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if line.startswith("v "):
+                parts = line.rstrip("\n").split()
+                xyz = [float(parts[i]) * scale for i in range(1, 4)]
+                suffix = " " + " ".join(parts[4:]) if len(parts) > 4 else ""
+                out.append(f"v {xyz[0]:.9g} {xyz[1]:.9g} {xyz[2]:.9g}{suffix}\n")
+            else:
+                out.append(line)
+    dst.write_text("".join(out), encoding="utf-8")
 
 
 def main() -> int:
@@ -71,6 +87,9 @@ def main() -> int:
             "SAM3 masks + hand_anchored_pointmap scale optimization, or pass "
             "--allow-diagnostic-shim-scale only for debugging."
         )
+    mesh_scale = float(scale_meta.get("mesh_scale") or 1.0)
+    if mesh_scale <= 0:
+        raise RuntimeError(f"invalid Do-as-I-Do mesh_scale={mesh_scale} in {layout_path}")
 
     max_idx = -1
     for obj in layout.get("objects", []):
@@ -95,6 +114,8 @@ def main() -> int:
         valid=valid,
         object_id=object_id,
         layout_path=str(layout_path),
+        mesh_scale=np.asarray(mesh_scale, dtype=np.float32),
+        scale_meta_json=np.asarray(json.dumps(scale_meta), dtype="<U2048"),
     )
     link_or_copy(layout_path, assets / "source_layout_camera_frame_optimized.json", args.mode)
 
@@ -102,7 +123,11 @@ def main() -> int:
         raw_dir.glob(f"video_segmentation/masks/frame_*_masks/{object_id}/{object_id}.obj")
     )
     if mesh_candidates:
-        link_or_copy(mesh_candidates[0], assets / "object_meshes" / "visual.obj", args.mode)
+        object_mesh = assets / "object_meshes" / "visual.obj"
+        if abs(mesh_scale - 1.0) > 1e-6:
+            export_scaled_obj(mesh_candidates[0], object_mesh, mesh_scale)
+        else:
+            link_or_copy(mesh_candidates[0], object_mesh, args.mode)
 
     hand_candidates = [
         raw_dir / "raw" / "all_hand_meshes.npz",
@@ -147,6 +172,9 @@ def main() -> int:
         "object_id": object_id,
         "object_6dof_npz": rel(assets / "object_6dof.npz", exp),
         "layout": rel(assets / "source_layout_camera_frame_optimized.json", exp),
+        "object_mesh": rel(assets / "object_meshes" / "visual.obj", exp) if (assets / "object_meshes" / "visual.obj").exists() else None,
+        "mesh_scale_baked_into_object_mesh": mesh_scale,
+        "scale_meta": scale_meta,
         "pre_sam3d_mask": rel(assets / "pre_sam3d_mask.mp4", exp) if (assets / "pre_sam3d_mask.mp4").exists() else None,
         "mask_qc": rel(assets / "mask_qc_summary.json", exp) if (assets / "mask_qc_summary.json").exists() else None,
         "asset_root": rel(assets, exp),

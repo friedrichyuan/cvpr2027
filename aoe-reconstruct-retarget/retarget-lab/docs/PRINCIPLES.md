@@ -72,6 +72,13 @@ The full matrix has 12 cells:
 2 trajectory_6dof x 2 hand_source x 3 retargeting
 ```
 
+This is a comparison schema, not a claim that every backend accepts every axis
+combination. Do-as-I-Do and SPIDER each expose four native combinations.
+EgoInfinity exposes one native G1 result bound to its own estimated-hand
+trajectory; its other three matrix cells are reported as unsupported. Thus a
+fully prepared source run can provide at most nine native backend routes
+without changing an upstream backend API.
+
 Running every cell from raw RGB would repeat heavy EgoInfinity/Do-as-I-Do
 reconstruction and Do-as-I-Do physics optimization. A short clip can therefore
 take hours if every cell starts from scratch.
@@ -83,6 +90,24 @@ The recommended policy is:
 3. Save reusable assets under `experiments/<run>/intermediates` and
    `experiments/<run>/assets`.
 4. Reuse those assets for downstream hand-source and retargeter comparisons.
+
+The 12-cell interface is a selector, not permission to relabel one backend
+result as another cell. A cell is materialized only when its saved provenance
+matches all three requested axes. In particular:
+
+- the native EgoInfinity/G1 video belongs only to the exact cell recorded by
+  the source-run manifest;
+- an `egoinfinity -> do_as_i_do` or `egoinfinity -> spider` route must use an
+  adapter whose object track, object mesh, and retarget object source are all
+  `egoinfinity`; it may not fall back to `dai_native` reconstruction assets;
+- task names and hand sources are exact bindings, so a missing task/hand route
+  stays unavailable instead of globbing or borrowing another cell;
+- DAI-produced task-info/keypoint staging in an Ego route is a backend input
+  conversion. It does not change the recorded reconstruction source.
+
+Each `cells/<cell>/manifest.json` stores the resulting
+`asset_provenance_contract`. Cross-cell fallback and override flags are rejected
+by the production matrix entry point.
 
 ## 4. EgoInfinity Flow
 
@@ -103,14 +128,13 @@ Key diagnostics:
 mask_overlay.mp4
 rgb_mesh_overlay.mp4
 mesh_pure_camera.mp4
-object_filter_report.json
 pipeline_result.pkl.gz
 retarget/g1/robot_sim.mp4
 ```
 
-For scenes with multiple same-prompt objects, do not silently keep only one
-object. Use `EGOINFINITY_OBJECT_SELECTION_MODE=all` by default. Use
-`best` and `EGOINFINITY_TARGET_POINT=x,y` only for single-object debugging.
+EgoInfinity outputs are kept as produced by the upstream pipeline. Do not
+post-filter `pipeline_result.pkl.gz`; object identity issues should be debugged
+in the segmentation / SAM3D / pose stages.
 
 Scale issues should be diagnosed through SAM3D canonical scale, mask+depth
 physical bounding boxes, pose scale, and `scale_sanity` outputs. Do not use a
@@ -156,9 +180,25 @@ experiments/<run>/assets/trajectory_6dof/<pipeline>/<task>/
     -> visualization_ik.mp4 / visualization_mjwp.mp4
 ```
 
-The SPIDER wrapper copies inputs into an experiment-local dataset directory.
-Do not symlink an entire historical `mano/` directory from another workspace,
-because SPIDER metadata writes should not leak back into external outputs.
+The SPIDER wrapper performs input staging only, then invokes the three original
+entry points on a pinned, tracked-clean checkout. Runtime patchers and physical
+optimizer tuning are forbidden. Hash the source and staged
+`trajectory_keypoints.npz`, robot assets, and object assets. Do not symlink an
+entire historical `mano/` directory from another workspace, because SPIDER
+metadata writes should not leak back into external outputs.
+
+For a single-object route sourced from bimanual DAI output, Retarget Lab chooses
+the interaction side from the adapter's recorded contact/anchor evidence before
+falling back to keypoint-distance heuristics. It writes an experiment-local
+task-info binding for that side while preserving keypoints and object assets
+byte-for-byte. XHand assets are copied from the pinned clean SPIDER checkout,
+not assumed to exist in the DAI/Sharpa output tree.
+
+Keep `ref_dt` on the exact DAI input frame grid. If the original MJWP `sim_dt`
+does not divide it, select the largest exact substep no coarser than the
+upstream `0.01 s` default and record the policy in the manifest. For example,
+30 FPS uses `sim_dt=1/120 s`. Never hide a time-grid conflict by resampling
+keypoints or changing backend optimization parameters.
 
 ## 7. Visualization Rules
 
@@ -188,13 +228,27 @@ These views may be useful diagnostics, but they are not final demo outputs.
 Typical transform chain:
 
 ```text
-camera frame
+camera frame (x-right, y-down, z-fwd)
+gravity alignment (camera-frame world-up -> MuJoCo +Z)
 object canonical mesh frame
 local object frame
-scene/world frame
-robot/MuJoCo frame
+scene/world frame (Z-up)
+robot/MuJoCo frame (gravity 0 0 -9.81)
 render camera frame
 ```
+
+For Do-as-I-Do, `gravity.json["vec3d"]` is the camera-frame world-up direction.
+For an upright camera fallback this is `[0, -1, 0]`, not `[0, 0, 1]`. A
+legacy `[0, 0, 1]` shim makes camera-forward become world-up, which corrupts
+the DAI and SPIDER physical retargeting frames even if the final render camera
+is later adjusted.
+
+When GeoCalib classifies a clip as a dynamic camera, the selector binds gravity
+to the sample nearest the object-reconstruction reference frame. A large tilt
+in that explicitly selected sample is not an upright-camera failure and must
+not be replaced with `[0, -1, 0]`; doing so rotates the source reference but not
+MuJoCo's world. The upright fallback remains limited to unqualified/static
+estimates whose tilt exceeds the configured assumption.
 
 When overlay or robot scale is wrong, debug in this order:
 
@@ -217,22 +271,26 @@ replacing object with a point marker
 replacing robot hand with skeleton or fingertips
 ```
 
-## 9. Fixed Integration Issues To Remember
+## 9. Integration Practices
 
-| Issue | Cause | Current handling |
+| Symptom | Common cause | Recommended handling |
 | --- | --- | --- |
 | Do-as-I-Do hand mesh did not overlap RGB hand | hand mesh projected with object/MoGe intrinsics | use AoE hand camera intrinsics and clip-resolution scaling |
 | Do-as-I-Do frame mapping was wrong | `source_frame_ids` are original full-video ids while clips may use local indices | prefer local sequential indices unless source-id files exist |
 | Do-as-I-Do object became a point | overlay applied an extra hard-coded scale | use layout/optimized scale by default |
 | Do-as-I-Do object asset was mixed up | physical retarget assets used as RGB reconstruction assets | prefer `clip_dir/obj_tracking_out` and `video_segmentation/masks` |
+| Projection failed with `Meshes does not have textures` | reconstructed OBJ contains geometry but no MTL/texture | use the projector's `--object-color` for a deterministic diagnostic-only vertex texture; never rewrite geometry or physical assets |
 | Do-as-I-Do scale reached meter level | scale optimization fell back to shim because hand masks/meshes were missing | render hand masks, pass hand meshes, and reject shim by default |
 | EgoInfinity selected the wrong same-prompt bottle | multiple candidates existed | object filter supports `all`, `best`, and target point hints |
 | EgoInfinity mesh was much larger than mask | SAM3D monocular canonical/pose scale was wrong | `scale_sanity.py` checks mask+depth physical bbox |
 | EgoInfinity overlay lacked `T_seq` | newer pkl stores pose in `frame_data[*].sam3_obj_data` | renderer assembles 4x4 transforms from frame data |
 | SAM3D worker OOM while task looked idle | interrupted run left an orphan worker | check and clean only verified stale socket workers |
-| SPIDER produced no robot output | early runner was import-only | wrapper now follows generate_xml -> ik_fast -> run_mjwp |
+| SPIDER produced no robot output | early runner was import-only | pristine wrapper invokes the original generate_xml -> ik_fast -> run_mjwp and preserves native return codes |
+| SPIDER reported `trace_dt must be divisible by sim_dt` | 30 FPS `ref_dt=1/30` is not exactly divisible by the upstream `0.01` default | preserve keypoints/ref_dt and deterministically use the largest exact substep; 30 FPS uses `sim_dt=1/120` |
+| SPIDER `generate_xml` could not open object `visual.obj` | staged task info did not bind object assets inside the experiment-local processed dataset | copy hash-verified object assets and rewrite only the staged task-info copy; never mutate the source DAI output |
+| DAI/SPIDER robot row did not match the RGB camera aspect/view | official MJWP videos concatenate ref/sim views and use default offscreen resolution | re-render `scene.xml + trajectory_mjwp.npz` with `render_mujoco_trajectory.py --camera front --width 1280 --height 720` |
 
-## 10. Acceptance Checklist
+## 10. Run Artifact Check
 
 - `experiments/<run>/run_env.txt` records input video, time range, GPU ids, and
   task name.

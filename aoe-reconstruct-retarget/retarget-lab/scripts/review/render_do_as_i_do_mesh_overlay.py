@@ -3,17 +3,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-def object_id_from_task(task: str) -> str:
-    for marker in ["_bimanual", "_right", "_left"]:
-        if marker in task:
-            return task.split(marker, 1)[0]
-    return task
+from aoe_retarget_lab.projection_utils import (  # noqa: E402
+    parse_resolution,
+    project_camera_points,
+    scale_intrinsics_to_shape,
+)
+from aoe_retarget_lab.task_utils import find_hand_mesh_npz, object_id_from_task  # noqa: E402
 
 
 def object_id_from_config(raw_dir: Path, task: str) -> str:
@@ -73,21 +77,6 @@ def quat_wxyz_to_matrix(quat: list[float] | np.ndarray) -> np.ndarray:
         ],
         dtype=np.float64,
     )
-
-
-def project_camera_points(points: np.ndarray, K: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    points = np.asarray(points, dtype=np.float32)
-    z = points[:, 2]
-    valid = np.isfinite(points).all(axis=1) & (z > 1e-4)
-    uv = np.full((len(points), 2), -100000, dtype=np.int32)
-    if valid.any():
-        pts = points[valid]
-        uv_float = np.stack(
-            [K[0, 0] * pts[:, 0] / pts[:, 2] + K[0, 2], K[1, 1] * pts[:, 1] / pts[:, 2] + K[1, 2]],
-            axis=1,
-        )
-        uv[valid] = np.round(uv_float).astype(np.int32)
-    return uv, valid
 
 
 def draw_hand_mesh(
@@ -173,34 +162,6 @@ def read_intrinsics(frame_dir: Path, frame_id: int, shape: tuple[int, int, int])
     h, w = shape[:2]
     focal = float(max(w, h) * 0.75)
     return np.array([[focal, 0.0, w * 0.5], [0.0, focal, h * 0.5], [0.0, 0.0, 1.0]], dtype=np.float32)
-
-
-def parse_resolution(value: str | None) -> tuple[float, float] | None:
-    if not value or "x" not in value:
-        return None
-    left, right = value.lower().split("x", 1)
-    try:
-        return float(left), float(right)
-    except ValueError:
-        return None
-
-
-def scale_intrinsics_to_shape(
-    fx: float,
-    fy: float,
-    cx: float,
-    cy: float,
-    source_width: float,
-    source_height: float,
-    shape: tuple[int, int, int],
-) -> np.ndarray:
-    h, w = shape[:2]
-    sx = float(w) / max(float(source_width), 1e-6)
-    sy = float(h) / max(float(source_height), 1e-6)
-    return np.array(
-        [[fx * sx, 0.0, cx * sx], [0.0, fy * sy, cy * sy], [0.0, 0.0, 1.0]],
-        dtype=np.float32,
-    )
 
 
 def read_hand_intrinsics(hands: np.lib.npyio.NpzFile, shape: tuple[int, int, int]) -> np.ndarray | None:
@@ -289,21 +250,6 @@ def resolve_object_source(clip_dir: Path, raw_dir: Path, object_id: str, overrid
     if clip_layout.is_dir() and clip_masks.is_dir():
         return clip_dir
     return raw_dir
-
-
-def find_hand_mesh_npz(raw_dir: Path, task: str) -> Path:
-    candidates = [
-        raw_dir / task / "all_hand_meshes.npz",
-        raw_dir / "raw" / "all_hand_meshes.npz",
-        raw_dir / "all_hand_meshes.npz",
-    ]
-    for path in candidates:
-        if path.exists():
-            return path
-    raise FileNotFoundError(
-        "missing hand mesh file; checked: "
-        + ", ".join(str(path) for path in candidates)
-    )
 
 
 def main() -> int:

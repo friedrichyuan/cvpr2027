@@ -32,6 +32,7 @@ dai_ref_frame="${V4_DAI_REF_FRAME:-}"
 dai_optimize_scale="${V4_DAI_OPTIMIZE_SCALE:-1}"
 
 main_cuda="${MAIN_CUDA:-0}"
+dai_cuda_visible_devices="${DAI_CUDA_VISIBLE_DEVICES:-$main_cuda}"
 sam3_cuda="${SAM3_WORKER_CUDA:-1}"
 sam3d_cuda="${SAM3D_WORKER_CUDA:-2}"
 
@@ -45,7 +46,6 @@ spider_data_id="${SPIDER_DATA_ID:-0}"
 spider_max_sim_steps="${SPIDER_MAX_SIM_STEPS:--1}"
 spider_num_samples="${SPIDER_NUM_SAMPLES:-1024}"
 spider_max_num_iterations="${SPIDER_MAX_NUM_ITERATIONS:-16}"
-allow_spider_fallback=1
 skip_existing_spider=1
 keep_going=1
 
@@ -56,11 +56,11 @@ Usage:
 
 Default mode:
   Run the two heavy full pipelines once, then reuse their intermediate assets to
-  compose the 12-cell demo matrix.
+  write the 12-cell matrix report and compose videos for exact available cells.
 
 Reuse mode:
   Pass --source-run <run> to skip the heavy full pipelines and only build the
-  12 demos from an existing experiments/<run>/ source run.
+  matrix report from an existing experiments/<run>/ source run.
 
 Required for full mode, either as options or environment variables:
   --ego-video PATH          AoE undistorted RGB mp4 (V4_EGO_VIDEO)
@@ -75,7 +75,7 @@ Required for full mode, either as options or environment variables:
 Common options:
   --run-name NAME           source run name for full mode
   --source-run NAME         reuse an existing source run instead of running full mode
-  --matrix-run-name NAME    12-demo output run name
+  --matrix-run-name NAME    12-cell report output run name
   --task NAME               task name used in output paths
   --hand-type TYPE          right, left, or bimanual
   --ego-start SEC           EgoInfinity clip start time
@@ -92,6 +92,8 @@ Common options:
   --dai-ref-frame N         reference frame for scale optimization
   --no-dai-scale-optimize   skip official hand-anchored scale optimization
   --main-cuda ID            GPU for main processes
+  --dai-cuda-visible-devices IDS
+                            GPU visibility for Do-as-I-Do retarget/Mujoco
   --sam3-cuda ID            GPU for SAM3/SAM3.1 worker
   --sam3d-cuda ID           GPU for SAM3D worker
   --run-spider MODE         none, do_as_i_do, or all
@@ -104,7 +106,8 @@ Common options:
   --mode MODE               symlink, hardlink, or copy
   --duration SEC            triptych duration; 0 keeps source duration
   --no-compose              prepare assets without composing mp4 demos
-  --no-spider-fallback      fail/miss EgoInfinity+SPIDER cells instead of fallback
+  --allow-spider-fallback   rejected: production runs use the selected cell's native SPIDER output
+  --no-spider-fallback      fail/miss EgoInfinity+SPIDER cells instead of fallback (default)
   --force-spider            rerun existing SPIDER cells
   --stop-on-error           stop on a failed SPIDER cell
   -h, --help
@@ -118,6 +121,18 @@ die() {
 
 need_value() {
   [[ $# -ge 2 && -n "${2:-}" ]] || die "$1 requires a value"
+}
+
+resolve_repo_path() {
+  local path="$1"
+  if [[ -z "$path" ]]; then
+    return 0
+  fi
+  if [[ "$path" == /* ]]; then
+    readlink -f "$path"
+  else
+    readlink -f "$repo_root/$path"
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -166,6 +181,8 @@ while [[ $# -gt 0 ]]; do
       dai_optimize_scale=0; shift ;;
     --main-cuda)
       need_value "$@"; main_cuda="$2"; shift 2 ;;
+    --dai-cuda-visible-devices)
+      need_value "$@"; dai_cuda_visible_devices="$2"; shift 2 ;;
     --sam3-cuda)
       need_value "$@"; sam3_cuda="$2"; shift 2 ;;
     --sam3d-cuda)
@@ -198,8 +215,10 @@ while [[ $# -gt 0 ]]; do
       need_value "$@"; duration="$2"; shift 2 ;;
     --no-compose)
       compose=0; shift ;;
+    --allow-spider-fallback)
+      die "--allow-spider-fallback is diagnostic-only and forbidden in production full runs" ;;
     --no-spider-fallback)
-      allow_spider_fallback=0; shift ;;
+      shift ;;
     --force-spider)
       skip_existing_spider=0; shift ;;
     --stop-on-error)
@@ -234,7 +253,10 @@ if [[ -z "$source_run" ]]; then
       "$repo_root/scripts/prepare_do_as_i_do_scene_adapter.py"
       --source-dir "$dai_source_dir"
       --output-dir "$dai_prepared_raw_dir"
+      --task "$task"
+      --hand-source aoe
       --python-bin "$retargeting_python"
+      --hoi-contact-alignment diagnostic
       --force
     )
     if [[ -n "$dai_object_id" ]]; then
@@ -246,19 +268,28 @@ if [[ -z "$source_run" ]]; then
     if [[ -n "$dai_fallback_gravity_json" ]]; then
       adapter_cmd+=(--fallback-gravity-json "$dai_fallback_gravity_json")
     fi
-    if [[ -n "$dai_anchor_hand" ]]; then
-      adapter_cmd+=(--anchor-hand "$dai_anchor_hand")
-    else
-      adapter_cmd+=(--anchor-hand "$hand_type")
+    resolved_dai_anchor_hand="$dai_anchor_hand"
+    if [[ -z "$resolved_dai_anchor_hand" && "$hand_type" =~ ^(left|right)$ ]]; then
+      resolved_dai_anchor_hand="$hand_type"
     fi
+    if [[ -z "$resolved_dai_anchor_hand" && -s "$dai_source_dir/scale_anchor_hand_selection.json" ]]; then
+      resolved_dai_anchor_hand="$("$retargeting_python" -c 'import json, sys; print(json.load(open(sys.argv[1])).get("selected_anchor_hand", ""))' "$dai_source_dir/scale_anchor_hand_selection.json")"
+    fi
+    if [[ -z "$resolved_dai_anchor_hand" && -s "$dai_source_dir/config.json" ]]; then
+      resolved_dai_anchor_hand="$("$retargeting_python" -c 'import json, sys; print(json.load(open(sys.argv[1])).get("scale_anchor_hand", ""))' "$dai_source_dir/config.json")"
+    fi
+    case "$resolved_dai_anchor_hand" in
+      left|right) ;;
+      *) die "DAI scale optimization requires a resolved left/right anchor; pass --dai-anchor-hand or provide scale_anchor_hand_selection.json" ;;
+    esac
+    adapter_cmd+=(--anchor-hand "$resolved_dai_anchor_hand")
     if [[ -n "$dai_ref_frame" ]]; then
       adapter_cmd+=(--ref-frame "$dai_ref_frame")
     fi
-    if [[ "$dai_optimize_scale" == "0" ]]; then
-      adapter_cmd+=(--no-optimize-scale)
-    else
-      adapter_cmd+=(--scale-viz-dir "$repo_root/experiments/$base_run_name/intermediates/adapters/do_as_i_do/scale_optimization_viz")
-    fi
+    # Production route adapters preserve the source HOI exactly. The adapter
+    # CLI still supports scale optimization for diagnostics, but matrix inputs
+    # must opt out so hoi_refinement.applied remains false.
+    adapter_cmd+=(--no-optimize-scale)
     echo "[full12] adapting Do-as-I-Do scene: $dai_source_dir"
     (cd "$repo_root" && "${adapter_cmd[@]}")
     dai_raw_dir="$dai_prepared_raw_dir"
@@ -271,6 +302,9 @@ if [[ -z "$source_run" ]]; then
   [[ -n "$ego_objects" ]] || die "set --ego-objects or V4_EGO_OBJECTS"
   [[ -n "$dai_raw_dir" ]] || die "set --dai-raw-dir or V4_DAI_RAW_DIR"
   [[ -n "$dai_clip_dir" ]] || die "set --dai-clip-dir or V4_DAI_CLIP_DIR"
+  ego_video="$(resolve_repo_path "$ego_video")"
+  dai_raw_dir="$(resolve_repo_path "$dai_raw_dir")"
+  dai_clip_dir="$(resolve_repo_path "$dai_clip_dir")"
 
   export V4_RUN_NAME="$base_run_name"
   export V4_TASK="$task"
@@ -284,6 +318,7 @@ if [[ -z "$source_run" ]]; then
   export V4_DAI_RAW_DIR="$dai_raw_dir"
   export V4_DAI_CLIP_DIR="$dai_clip_dir"
   export MAIN_CUDA="$main_cuda"
+  export DAI_CUDA_VISIBLE_DEVICES="$dai_cuda_visible_devices"
   export SAM3_WORKER_CUDA="$sam3_cuda"
   export SAM3D_WORKER_CUDA="$sam3d_cuda"
 
@@ -314,6 +349,10 @@ reuse_cmd=(
   --spider-max-sim-steps "$spider_max_sim_steps"
   --spider-num-samples "$spider_num_samples"
   --spider-max-num-iterations "$spider_max_num_iterations"
+  --no-allow-spider-fallback
+  --no-allow-spider-mjwp-fallback-video
+  --no-allow-dai-hand-fallback
+  --no-allow-cross-trajectory-dai-robot-fallback
 )
 
 if [[ "$compose" -eq 1 ]]; then
@@ -328,11 +367,6 @@ fi
 if [[ -n "$spider_cuda_visible_devices" ]]; then
   reuse_cmd+=(--spider-cuda-visible-devices "$spider_cuda_visible_devices")
 fi
-if [[ "$allow_spider_fallback" -eq 1 ]]; then
-  reuse_cmd+=(--allow-spider-fallback)
-else
-  reuse_cmd+=(--no-allow-spider-fallback)
-fi
 if [[ "$skip_existing_spider" -eq 1 ]]; then
   reuse_cmd+=(--skip-existing-spider)
 else
@@ -344,8 +378,10 @@ else
   reuse_cmd+=(--no-keep-going)
 fi
 
-echo "[full12] expanding 12 demos: experiments/$matrix_run_name"
+echo "[full12] expanding the 12-cell matrix report: experiments/$matrix_run_name"
 (cd "$repo_root" && "${reuse_cmd[@]}")
+
+matrix_root="$repo_root/experiments/$matrix_run_name"
 
 cat <<EOF
 [full12] done
@@ -353,4 +389,5 @@ source_run: experiments/$source_run
 matrix_run: experiments/$matrix_run_name
 videos:     experiments/$matrix_run_name/videos/
 manifest:   experiments/$matrix_run_name/reuse_12_demo_manifest.json
+review:     backend success is recorded in the manifest; final acceptance requires manual video review
 EOF

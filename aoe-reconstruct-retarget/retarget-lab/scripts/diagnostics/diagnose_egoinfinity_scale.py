@@ -2,16 +2,25 @@
 from __future__ import annotations
 
 import argparse
-import gzip
-import io
 import json
-import pickle
+import sys
 from itertools import combinations
 from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from aoe_retarget_lab.egoinfinity_utils import (  # noqa: E402
+    load_result,
+    object_prompt,
+    object_prompt_score,
+    oid_get,
+)
+from aoe_retarget_lab.image_utils import decode_rgb  # noqa: E402
+from aoe_retarget_lab.io_utils import file_sha256 as sha256  # noqa: E402
 
 
 COLORS = [
@@ -42,15 +51,6 @@ PLY_DTYPES = {
     "double": "<f8",
     "float64": "<f8",
 }
-
-
-def load_result(path: Path) -> dict:
-    with gzip.open(path, "rb") as handle:
-        return pickle.load(handle)
-
-
-def decode_rgb(blob: bytes) -> np.ndarray:
-    return np.asarray(Image.open(io.BytesIO(blob)).convert("RGB"))
 
 
 def decode_depth_png(blob: bytes | None) -> np.ndarray | None:
@@ -109,32 +109,6 @@ def load_ply_vertices(path: Path) -> np.ndarray:
     dtype = np.dtype([(name, dtype) for name, dtype in props])
     arr = np.fromfile(path, dtype=dtype, offset=offset, count=vertex_count)
     return np.stack([arr["x"], arr["y"], arr["z"]], axis=1).astype(np.float64)
-
-
-def object_prompt(result: dict, obj_id) -> str:
-    mapping = result.get("sam3_prompt_mapping") or []
-    try:
-        idx = int(obj_id)
-    except Exception:
-        return ""
-    if 0 <= idx < len(mapping) and isinstance(mapping[idx], dict):
-        return str(mapping[idx].get("prompt", ""))
-    return ""
-
-
-def object_prompt_score(result: dict, obj_id) -> float:
-    mapping = result.get("sam3_prompt_mapping") or []
-    try:
-        idx = int(obj_id)
-    except Exception:
-        return 0.0
-    if 0 <= idx < len(mapping) and isinstance(mapping[idx], dict):
-        return float(mapping[idx].get("score", 0.0) or 0.0)
-    return 0.0
-
-
-def oid_get(mapping: dict, obj_id):
-    return mapping.get(obj_id) or mapping.get(str(obj_id)) or mapping.get(int(obj_id))
 
 
 def pose_sequence_for(result: dict, obj_id, pose_info: dict) -> np.ndarray | None:
@@ -310,6 +284,12 @@ def main() -> int:
     parser.add_argument("--target-prompt", default=None)
     parser.add_argument("--sample-count", type=int, default=7)
     parser.add_argument("--scale-threshold", type=float, default=1.8)
+    parser.add_argument(
+        "--trusted-pickle",
+        action="store_true",
+        required=True,
+        help="Acknowledge that the pipeline result pickle is trusted local input.",
+    )
     args = parser.parse_args()
 
     result = load_result(args.pipeline_result)
@@ -406,6 +386,7 @@ def main() -> int:
                 "prompt": object_prompt(result, obj_id),
                 "prompt_score": object_prompt_score(result, obj_id),
                 "ply_path": str(ply),
+                "ply_sha256": sha256(ply),
                 "n_vertices": int(len(vertices)),
                 "mesh_raw_bbox": raw_bbox.tolist(),
                 "mesh_raw_centroid": raw_centroid.tolist(),
@@ -451,7 +432,10 @@ def main() -> int:
         cv2.imwrite(str(key_dir / f"frame_{frame_idx:04d}_mesh_projection.png"), cv2.cvtColor(mesh_rgb, cv2.COLOR_RGB2BGR))
 
     report = {
+        "scope": "diagnostic_only_object_scale_evidence",
+        "automatic_scale_application_allowed": False,
         "pipeline_result": str(args.pipeline_result),
+        "pipeline_result_sha256": sha256(args.pipeline_result),
         "target_prompt": args.target_prompt,
         "camera": {"fx": fx, "fy": fx, "cx": cx, "cy": cy, "width": width, "height": height},
         "sample_frames": sample_frames,

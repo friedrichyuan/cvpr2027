@@ -32,7 +32,66 @@ traj_<egoinfinity|do_as_i_do>__hand_<aoe|estimated>__retarget_<egoinfinity|do_as
 `hand_source` 属于共享的 retargeting 输入层，不属于某一个 retargeter。每个
 cell 的 manifest 应记录真实使用的 hand source 资产。
 
-## 2. 推荐主入口：完整 12 demos
+## 2. AoE fresh 自动/直接入口
+
+自动入口按从长到短的顺序进行 SAM3 窗口预检，首个通过的窗口
+只启动一次正式 full run：
+
+```bash
+python3 scripts/run_fresh_aoe_auto_window.py \
+  --runner scripts/run_fresh_aoe_scene_12_demos.sh \
+  --experiments-root experiments \
+  --source-run <source_run> --matrix-run <matrix_run> \
+  --window-selection-mode auto \
+  --candidate-durations-sec 6.0,5.0,4.0,3.0 \
+  --manifest experiments/<source_run>_window.json -- \
+  --dataset-root "$AOE_DATA_ROOT" \
+  --scene <scene> --segment <segment> --annotation-id <id> \
+  --object-name "<object prompt>" --task <task> \
+  --hand-type <left|right|bimanual> \
+  --anchor-hand <left|right|bimanual> \
+  --ref-source-frame <absolute_frame> \
+  --run-spider all --compose
+```
+
+人工已确认 clip、bbox 和参考帧时使用直接入口：
+
+```bash
+python3 scripts/run_fresh_aoe_auto_window.py \
+  --runner scripts/run_fresh_aoe_scene_12_demos.sh \
+  --experiments-root experiments \
+  --source-run <source_run> --matrix-run <matrix_run> \
+  --window-selection-mode direct --direct-duration-sec 3.0 \
+  --manifest experiments/<source_run>_window.json -- \
+  --dataset-root "$AOE_DATA_ROOT" \
+  --scene <scene> --segment <segment> --annotation-id <id> \
+  --object-name "<object prompt>" --task <task> \
+  --hand-type <left|right|bimanual> \
+  --anchor-hand <left|right|bimanual> \
+  --ref-source-frame <absolute_frame> \
+  --run-spider all --compose
+```
+
+direct 只跳过自动窗口搜索，不跳过 SAM3、SAM3D/6DoF、Ego 或
+DAI/SPIDER 原生执行。
+
+## 3. 推荐主入口：12-cell 矩阵报告
+
+矩阵始终包含 12 个可单独选择的 cell，但上游后端并没有提供 12 个彼此独立的
+原生重定向接口：
+
+| Retargeter | 可选 cell | 原生可执行 cell |
+| --- | ---: | ---: |
+| Do-as-I-Do / Sharpa | 4 | 4 |
+| SPIDER / XHand | 4 | 4 |
+| EgoInfinity / G1 | 4 | 1 |
+
+EgoInfinity 只会产生一个绑定到
+`traj_egoinfinity__hand_estimated__retarget_egoinfinity` 的原生结果，并不提供
+注入任意矩阵 trajectory 和 hand source 的接口。因此另外三个
+EgoInfinity-retarget cell 会明确保持 unavailable，不能给同一视频换标签补齐。
+若某个场景对应的重建或 adapter 没有完成，DAI/SPIDER 的相应 cell 也会保持
+unavailable。
 
 ```bash
 scripts/run_full_12_demos.sh \
@@ -56,7 +115,7 @@ scripts/run_full_12_demos.sh \
 该脚本会：
 
 1. 先调用 `scripts/run_v4_two_full_pipelines.sh`，生成一个 source run。
-2. 再调用 `scripts/reuse_v4_for_12_demos.py`，把中间结果展开成 12 个 cell。
+2. 再调用 `scripts/reuse_v4_for_12_demos.py`，把中间结果展开成 12-cell 报告。
 3. 默认对 Do-as-I-Do trajectory 输入运行 SPIDER cell。
 4. 将 triptych review 视频和 manifest 都写入 `experiments/`。
 
@@ -66,7 +125,7 @@ scripts/run_full_12_demos.sh \
 experiments/<source_run_name>/videos/v4_egoinfinity_full__triptych.mp4
 experiments/<source_run_name>/videos/v4_do_as_i_do_full__triptych.mp4
 experiments/<source_run_name>/reuse/reuse_manifest.json
-experiments/<matrix_run_name>/videos/<cell>__triptych.mp4
+experiments/<matrix_run_name>/videos/<supported_cell>__triptych.mp4
 experiments/<matrix_run_name>/reuse_12_demo_manifest.json
 experiments/<matrix_run_name>/cells/<cell>/manifest.json
 ```
@@ -87,14 +146,133 @@ scripts/run_full_12_demos.sh \
 | 选项 | 含义 |
 | --- | --- |
 | `--source-run` | 跳过两条完整管线，复用 `experiments/<source_run>/` |
-| `--matrix-run-name` | 12 demos 的输出 run |
-| `--run-spider none|do_as_i_do|all` | 控制 SPIDER cell |
+| `--matrix-run-name` | 12 组合矩阵报告的输出 run |
+| `--run-spider none\|do_as_i_do\|all` | 控制 SPIDER cell |
 | `--duration <sec>` | 截断合成视频；`0` 表示使用原时长 |
-| `--mode symlink|hardlink|copy` | 复用资产落盘方式 |
+| `--mode symlink\|hardlink\|copy` | 复用资产落盘方式 |
 | `--force-spider` | 已有 SPIDER cell 也重新跑 |
-| `--no-spider-fallback` | EgoInfinity+SPIDER 展示 cell 不复用 Do-as-I-Do SPIDER robot 视频 |
+| `--allow-spider-mjwp-fallback-video` | 仅用于诊断；允许 SPIDER IK/object-reference fallback 视频进入 compose |
 
-## 3. 仅运行两条完整管线
+## 4. 运行指定组合
+
+已有 source run 时，可以通过同一个复用入口只物化 12 个组合中的一格：
+
+```bash
+python3 scripts/reuse_v4_for_12_demos.py \
+  --source-run <source_run> \
+  --run-name <single_cell_run> \
+  --cell traj_egoinfinity__hand_aoe__retarget_do_as_i_do \
+  --task <task> --hand-type <left|right|bimanual> \
+  --compose
+```
+
+也可以使用等价的三个轴参数：
+
+```bash
+python3 scripts/reuse_v4_for_12_demos.py \
+  --source-run <source_run> \
+  --run-name <single_cell_run> \
+  --trajectory-6dof egoinfinity \
+  --hand-source aoe \
+  --retargeting do_as_i_do \
+  --task <task> --hand-type <left|right|bimanual> \
+  --compose
+```
+
+`--cell` 不能与三个轴参数混用，三个轴必须同时提供。两种选择方式都不传
+时，入口保持原行为并展开全部 12 格。单格模式只写一个 cell manifest，
+只物化所选 trajectory 的审阅资产。只有 task、trajectory、hand source 和
+retargeter 绑定都与所选 cell 精确一致时才会复用结果；选择 SPIDER 时只执行
+该精确路线或复用该路线自己的结果。不支持的组合仍会出现在 12-cell 报告中，
+但 robot 资产保持缺失，不能把原生 EgoInfinity 视频换标签填入其他 cell。
+每个 cell manifest 的 `asset_provenance_contract` 会记录已检查的来源字段。
+生产入口会拒绝跨 cell fallback 和 override 参数。这里“支持全部 12 个 cell”
+表示每个 cell 都能被选择、写入报告并执行来源校验，不表示上游不支持的
+EgoInfinity 外部注入路线也会产生 robot 视频。
+
+如果需要重新执行原生后端而不是复用，继续使用下面的后端专用命令。
+
+### 4.1 Ego reconstruction + DAI
+
+先使用 `prepare_egoinfinity_do_as_i_do_raw_dir.py` 生成 route-specific DAI raw
+input，再运行：
+
+```bash
+scripts/run_do_as_i_do_official_retarget.sh \
+  --raw-dir experiments/<source_run>/intermediates/trajectory_6dof/egoinfinity/<prepared_raw_dir> \
+  --task <task> \
+  --output-root-dir experiments/<matrix_run>/intermediates/retargeting/do_as_i_do/<cell>/retargeting_outputs \
+  --cuda-visible-devices <gpu> \
+  --egl-device-id 0 --headless --no-wait
+```
+
+### 4.2 DAI reconstruction + DAI
+
+```bash
+scripts/run_do_as_i_do_official_retarget.sh \
+  --raw-dir experiments/<source_run>/intermediates/trajectory_6dof/do_as_i_do/reconstruction/raw_dir \
+  --task <task> \
+  --output-root-dir experiments/<matrix_run>/intermediates/retargeting/do_as_i_do/<cell>/retargeting_outputs \
+  --cuda-visible-devices <gpu> \
+  --egl-device-id 0 --headless --no-wait
+```
+
+pristine DAI wrapper 不接收矩阵轴参数。原生 DAI 成功后，再用
+`index_cell_assets.py` 的 `--trajectory-6dof`、`--hand-source` 和
+`--retargeting do_as_i_do` 记录所选矩阵标签与可解码审阅视频，最终由人工验收。
+indexer 会先校验该精确 cell 的 adapter manifest，包括请求的 hand source 和
+object track/mesh 来源；来源不一致的后端结果会被拒绝，不能只改标签写入。
+
+```bash
+$RETARGETING_PYTHON scripts/index_cell_assets.py \
+  --run-name <matrix_run> \
+  --trajectory-6dof <egoinfinity|do_as_i_do> \
+  --hand-source <aoe|estimated> \
+  --retargeting do_as_i_do \
+  --task <task> --hand-type <left|right|bimanual> --robot sharpa
+```
+
+### 4.3 Ego reconstruction + SPIDER
+
+先把 Ego 输入所需的 keypoints、object mesh 和 robot assets 准备到同一
+`run-name` 下，再运行：
+
+```bash
+scripts/run_spider_retarget.sh \
+  --run-name <matrix_run> \
+  --trajectory-6dof egoinfinity \
+  --hand-source <aoe|estimated> \
+  --task <task> --hand-type <left|right|bimanual> \
+  --robot-type xhand --max-sim-steps -1
+```
+
+### 4.4 DAI reconstruction + SPIDER
+
+```bash
+scripts/run_spider_retarget.sh \
+  --run-name <matrix_run> \
+  --trajectory-6dof do_as_i_do \
+  --hand-source <aoe|estimated> \
+  --task <task> --hand-type <left|right|bimanual> \
+  --robot-type xhand --max-sim-steps -1
+```
+
+### 4.5 Ego reconstruction + Ego G1
+
+Ego G1 路线使用 EgoInfinity 原生入口：
+
+```bash
+scripts/run_egoinfinity_retarget.sh \
+  --clip-dir /path/to/raw_video_undistorted.mp4 \
+  --clip-id <clip_id> --objects "<object prompt>" \
+  --start <sec> --end <sec> --fps 15 \
+  --run-name <run_name> --robot g1
+```
+
+对外部手源或已有 reconstruction 强行组合 Ego G1 时，不应伪造成
+EgoInfinity 原生路线；这类组合应通过 matrix adapter 的显式资产绑定生成。
+
+## 5. 仅运行两条完整管线
 
 ```bash
 V4_RUN_NAME=<run_name> \
@@ -147,7 +325,7 @@ experiments/<run>/run_env.txt
 experiments/<run>/logs/
 ```
 
-## 4. EgoInfinity 6DoF + G1 retargeting
+## 6. EgoInfinity 6DoF + G1 retargeting
 
 ```bash
 scripts/run_egoinfinity_retarget.sh \
@@ -173,10 +351,10 @@ start/end/fps
 
 | 变量 | 含义 |
 | --- | --- |
-| `EGOINFINITY_OBJECT_SELECTION_MODE=all|best` | 保留所有稳定实例，或选择一个实例 |
+| `EGOINFINITY_OBJECT_SELECTION_MODE=all\|best` | 保留所有稳定实例，或选择一个实例 |
 | `EGOINFINITY_TARGET_POINT=x,y` | 同 prompt 多物体时的像素提示 |
 | `EGOINFINITY_MAX_CENTROID_JUMP_PX` | object 连续性阈值 |
-| `EGOINFINITY_POST_SCALE_SANITY=0|1` | 是否运行 scale sanity |
+| `EGOINFINITY_POST_SCALE_SANITY=0\|1` | 是否运行 scale sanity |
 | `EGOINFINITY_SCALE_SANITY_THRESHOLD` | mask/depth 尺度 sanity 阈值 |
 | `EGOINFINITY_RESET_OUTPUT=1` | 删除当前 clip cache 并重跑 |
 | `SAM3_WORKER_SOCKET`, `SAM3D_WORKER_SOCKET` | 复用外部 worker |
@@ -197,7 +375,7 @@ experiments/<run>/logs/retarget_egoinfinity_g1.log
 最终 robot render 使用 `retarget/g1/robot_sim.mp4`。不要把 input visualization、
 fingertip marker 或 skeleton debug view 当作最终 robot 输出。
 
-## 5. Do-as-I-Do 6DoF 准备
+## 7. Do-as-I-Do 6DoF 准备
 
 ```bash
 scripts/prepare_do_as_i_do_trajectory_6dof.sh \
@@ -216,6 +394,14 @@ video_segmentation/masks/frame_*_masks/<object>/<object>.obj
 */all_hand_meshes.npz
 ```
 
+`all_hand_meshes.npz` 中的 `left_joints` / `right_joints` 需要是
+`N x 21 x 3` 的 OpenPose/WiLoR hand joint layout。部分 Do-as-I-Do trial
+只保存标准 MANO `N x 16 x 3` joints；这类输入在进入官方
+`retargeting/launch.py` 前，应在本次实验自己的 prepared raw dir 中转换：
+用原 16 点保留 wrist 和每根手指的 3 个关节，并从同一帧 MANO vertices
+补 5 个 fingertip joints。这个步骤只做 hand-joint 格式适配，不改变物体
+scale、pose 或 mesh。
+
 输出：
 
 ```text
@@ -230,7 +416,7 @@ experiments/<run>/logs/trajectory_6dof_do_as_i_do.log
 生成 Do-as-I-Do overlay/depth/纯 mesh 诊断：
 
 ```bash
-$RETARGETING_PYTHON scripts/materialize_do_as_i_do_visuals.py \
+$RETARGETING_PYTHON scripts/review/materialize_do_as_i_do_visuals.py \
   --run-name <run_name> \
   --clip-dir <do_as_i_do_clip_dir> \
   --task <task_name> \
@@ -246,18 +432,17 @@ experiments/<run>/intermediates/trajectory_6dof/do_as_i_do/reconstruction/depth.
 experiments/<run>/intermediates/trajectory_6dof/do_as_i_do/reconstruction/mesh_pure_camera.mp4
 ```
 
-## 6. Do-as-I-Do 官方 Sharpa retargeting
+## 8. Do-as-I-Do 官方 Sharpa retargeting
 
 ```bash
 scripts/run_do_as_i_do_official_retarget.sh \
   --raw-dir <complete_do_as_i_do_raw_dir> \
-  --run-name <run_name> \
   --task <task_name> \
-  --trajectory-6dof do_as_i_do \
-  --hand-source estimated \
-  --hand-type bimanual \
-  --robot-type sharpa \
-  --max-sim-steps -1
+  --output-root-dir experiments/<run_name>/intermediates/retargeting/do_as_i_do/<cell>/retargeting_outputs \
+  --cuda-visible-devices <gpu> \
+  --egl-device-id 0 \
+  --headless \
+  --no-wait
 ```
 
 主上游入口：
@@ -267,8 +452,8 @@ third_party/do-as-i-do/retargeting/launch.py
 ```
 
 不要把 `decompose_mesh`、`generate_scene`、`solve_ik`、`optimize_physics`
-作为主路径逐个 wrapper 调用。首次完整跑可按需使用 `--force`；快速复跑时不要
-强制全链路重跑。
+作为主路径逐个 wrapper 调用。输出目录必须尚不存在；wrapper 在临时的干净
+pinned checkout 中运行未修改的 `launch.py`，成功后再原子发布完整输出。
 
 输出：
 
@@ -285,9 +470,9 @@ experiments/<run>/logs/do_as_i_do_official_retarget.log
 scene.xml + trajectory_mjwp.npz
 ```
 
-调用 `scripts/render_mujoco_trajectory.py` 离屏渲染。
+调用 `scripts/diagnostics/render_mujoco_trajectory.py` 离屏渲染。
 
-## 7. SPIDER / XHand retargeting
+## 9. SPIDER / XHand retargeting
 
 ```bash
 scripts/run_spider_retarget.sh \
@@ -345,7 +530,7 @@ scripts/run_spider_retarget.sh \
   --max-num-iterations 4
 ```
 
-## 8. 资产索引和 triptych 合成
+## 10. 资产索引和 triptych 合成
 
 把 cell 资产整理到稳定 review 路径：
 
@@ -372,7 +557,7 @@ experiments/<run>/assets/cells/<cell>/asset_manifest.json
 合成同步视频：
 
 ```bash
-$EGOINFINITY_PYTHON scripts/compose_triptych.py \
+$EGOINFINITY_PYTHON scripts/review/compose_triptych.py \
   --overlay experiments/<run>/cells/<cell>/overlay.mp4 \
   --depth experiments/<run>/cells/<cell>/depth.mp4 \
   --robot experiments/<run>/cells/<cell>/robot.mp4 \
@@ -380,7 +565,7 @@ $EGOINFINITY_PYTHON scripts/compose_triptych.py \
   --duration 0
 ```
 
-## 9. 资产布局
+## 11. 资产布局
 
 ```text
 experiments/<run>/
