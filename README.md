@@ -167,7 +167,7 @@ The technical report is available on [arXiv](https://arxiv.org/abs/2607.14183).
 
 ## Contact
 
-- **Data processing pipeline applications:** [open.aoe@gmail.com](mailto:open.aoe@gmail.com)
+- **Data processing pipeline applications:** [kaile.zk@antgroup.com](mailto:kaile.zk@antgroup.com)
 - **Industry collaboration:** [kaile.zk@antgroup.com](mailto:kaile.zk@antgroup.com)
 
 ## Contributing

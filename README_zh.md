@@ -167,7 +167,7 @@ Open-AoE/
 
 ## 联系我们
 
-- **数据加工管线申请：** [open.aoe@gmail.com](mailto:open.aoe@gmail.com)
+- **数据加工管线申请：** [kaile.zk@antgroup.com](mailto:kaile.zk@antgroup.com)
 - **产业合作申请：** [kaile.zk@antgroup.com](mailto:kaile.zk@antgroup.com)
 
 ## 参与贡献
