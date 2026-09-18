@@ -24,6 +24,8 @@ from .geometry import (
     transform_pose,
 )
 from .gripper import GripperTrajectory, convert_episode_to_grippers
+from .ik import ARXDualArmIKSolver, IKTrajectory
+from .smoothing import SmoothingConfig, smooth_gripper_trajectory
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SCENE = PROJECT_ROOT / "assets" / "mujoco_arx_scene" / "scene.xml"
@@ -218,12 +220,25 @@ def _draw_overlay(
     _draw_camera(scene, scene_T_egodex, episode.world_T_camera[frame])
 
 
-def _print_summary(episode: EgoDexEpisode, scene_path: Path) -> None:
+def _print_summary(
+    episode: EgoDexEpisode,
+    scene_path: Path,
+    ik_trajectory: IKTrajectory | None = None,
+) -> None:
     description = episode.metadata.get("llm_description", "")
     print(f"EgoDex episode: {episode.path}")
     print(f"Task: {episode.metadata.get('task', 'unknown')} | frames: {episode.frame_count} | FPS: {FPS:g}")
     print(f"Description: {description}")
     print(f"MuJoCo scene: {scene_path}")
+    if ik_trajectory is not None:
+        valid = ~np.isnan(ik_trajectory.position_error)
+        position_mm = 1000.0 * ik_trajectory.position_error[valid]
+        orientation_deg = np.degrees(ik_trajectory.orientation_error[valid])
+        print(
+            "IK target error: "
+            f"median {np.median(position_mm):.1f} mm / {np.median(orientation_deg):.1f} deg, "
+            f"converged {ik_trajectory.converged[valid].mean() * 100.0:.1f}%"
+        )
     print("Controls: space play/pause | J/L or arrows step | R restart | -/+ speed | viewer mouse to orbit")
 
 
@@ -232,12 +247,14 @@ def replay(
     scene_path: Path,
     scene_anchor: np.ndarray,
     mode: str,
+    smoothing_window: int,
+    no_smoothing: bool,
 ) -> None:
     episode = load_episode(episode_path)
     scene_T_egodex = make_scene_T_egodex(episode.world_T_joint, scene_anchor)
-    gripper_trajectory = (
+    target_grippers = (
         convert_episode_to_grippers(episode, scene_T_egodex)
-        if mode in {"gripper", "both"}
+        if mode in {"gripper", "both", "ik", "all"}
         else None
     )
     model = mujoco.MjModel.from_xml_path(str(scene_path))
@@ -245,18 +262,32 @@ def replay(
     mujoco.mj_resetDataKeyframe(model, data, 0)
     mujoco.mj_forward(model, data)
 
+    if target_grippers is not None and not no_smoothing:
+        target_grippers = smooth_gripper_trajectory(
+            target_grippers,
+            SmoothingConfig(window=smoothing_window),
+        )
+    ik_trajectory = None
+    if mode in {"ik", "all"}:
+        assert target_grippers is not None
+        ik_trajectory = ARXDualArmIKSolver(model).solve_episode(target_grippers)
+
     controller = ReplayController(episode.frame_count, FPS)
-    _print_summary(episode, scene_path)
+    _print_summary(episode, scene_path, ik_trajectory)
     with mujoco.viewer.launch_passive(model, data, key_callback=controller.on_key) as viewer:
         while viewer.is_running():
             frame = controller.advance()
+            if ik_trajectory is not None:
+                data.qpos[:] = ik_trajectory.qpos[frame]
+                data.ctrl[:] = ik_trajectory.ctrl[frame]
+                mujoco.mj_forward(model, data)
             _draw_overlay(
                 viewer,
                 episode,
                 scene_T_egodex,
                 frame,
-                gripper_trajectory=gripper_trajectory,
-                show_skeleton=mode in {"skeleton", "both"},
+                gripper_trajectory=target_grippers,
+                show_skeleton=mode in {"skeleton", "both", "all"},
             )
             viewer.sync()
             time.sleep(0.005)
@@ -268,9 +299,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scene", type=Path, default=DEFAULT_SCENE, help="ARX5 MuJoCo scene.xml")
     parser.add_argument(
         "--mode",
-        choices=("skeleton", "gripper", "both"),
+        choices=("skeleton", "gripper", "both", "ik", "all"),
         default="skeleton",
-        help="Draw raw EgoDex skeleton, converted grippers, or both (default: skeleton)",
+        help="Draw skeleton, gripper targets, target+robot IK, or all overlays (default: skeleton)",
+    )
+    parser.add_argument(
+        "--smoothing-window",
+        type=int,
+        default=9,
+        help="Odd target smoothing window in frames (default: 9)",
+    )
+    parser.add_argument(
+        "--no-smoothing",
+        action="store_true",
+        help="Use unsmoothed hand-to-gripper targets (useful for an ablation)",
     )
     parser.add_argument(
         "--scene-anchor",
@@ -288,7 +330,14 @@ def main() -> None:
     scene_path = args.scene.expanduser().resolve()
     if not scene_path.is_file():
         raise FileNotFoundError(f"MuJoCo scene does not exist: {scene_path}")
-    replay(args.episode, scene_path, np.asarray(args.scene_anchor, dtype=np.float64), args.mode)
+    replay(
+        args.episode,
+        scene_path,
+        np.asarray(args.scene_anchor, dtype=np.float64),
+        args.mode,
+        args.smoothing_window,
+        args.no_smoothing,
+    )
 
 
 if __name__ == "__main__":

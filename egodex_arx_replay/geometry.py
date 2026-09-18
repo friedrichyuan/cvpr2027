@@ -16,11 +16,11 @@ R_EGODEX_WORLD_TO_ARX = np.array(
 
 # The ARX table top is z=-0.085 in assets/mujoco_arx_scene/scene.xml.  Human
 # shoulders are substantially higher than the fixed ARX arm roots.  For the
-# stack sample, anchoring the first hip at z=-0.30 puts its fingertip/gripper
-# targets in the ARX's central vertical workspace rather than 25--40 cm above
-# the neutral TCP.  This is one fixed visualization/reference transform, not a
+# stack sample, anchoring the first hip at z=-0.48 puts its initial gripper
+# targets 6--12 cm above the z=-0.085 tabletop, instead of 25--40 cm above the
+# neutral TCP.  This is one fixed visualization/reference transform, not a
 # moving-base optimisation.
-DEFAULT_SCENE_ANCHOR = np.array([0.0, 0.0, -0.30], dtype=np.float64)
+DEFAULT_SCENE_ANCHOR = np.array([0.0, 0.0, -0.48], dtype=np.float64)
 
 BODY_BONES: tuple[tuple[str, str], ...] = (
     ("hip", "spine1"),
