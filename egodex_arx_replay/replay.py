@@ -16,6 +16,7 @@ import mujoco.viewer
 import numpy as np
 
 from .data import EgoDexEpisode, load_episode
+from .defaults import DEFAULT_EPISODE, DEFAULT_SCENE, EGODEX_FPS
 from .geometry import (
     DEFAULT_SCENE_ANCHOR,
     SKELETON_BONES,
@@ -27,10 +28,7 @@ from .gripper import GripperTrajectory, convert_episode_to_grippers
 from .ik import ARXDualArmIKSolver, IKTrajectory
 from .smoothing import SmoothingConfig, smooth_gripper_trajectory
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SCENE = PROJECT_ROOT / "assets" / "mujoco_arx_scene" / "scene.xml"
-DEFAULT_EPISODE = Path("/home/ymq/code/EGODEX_DATASET/test/stack/0.hdf5")
-FPS = 30.0
+FPS = EGODEX_FPS
 
 
 class ReplayController:

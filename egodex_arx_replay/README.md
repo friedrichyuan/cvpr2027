@@ -76,3 +76,23 @@ warm-starting from the preceding frame, and a posture penalty.  It uses 80
 iterations for the initial seed and 30 thereafter.  Human jaw width is mapped
 symmetrically to the two ARX slide joints and clipped to their model limits.
 The console reports median TCP tracking error and convergence rate.
+
+## Offline reference cache
+
+Before MjLab training, export each episode once into a versioned robot-motion
+reference.  The cache holds the smoothed Cartesian targets, the warm-started
+ARX IK solution, command targets, finite-difference joint velocity, IK errors,
+and all conversion metadata.  It makes IK deterministic and keeps it out of
+the GPU RL loop.
+
+```bash
+python -m egodex_arx_replay.export_references \
+  --task stack \
+  --output-root references/arx5_v1 \
+  --skip-existing
+```
+
+Start with `--limit 1` when checking a new scene alignment.  The generated
+`manifest.jsonl` records per-reference error and strict convergence statistics;
+the forthcoming MjLab reference-bank command will consume only these NPZ files,
+never the original HDF5 episodes.
