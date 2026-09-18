@@ -1,4 +1,0 @@
-# Open-AoE laom recipe — converter dependencies only.
-# LAOM training runs inside the upstream dunnolab/laom environment (torch, wandb, etc.).
-numpy<2        # h5py ABI compatibility
-h5py

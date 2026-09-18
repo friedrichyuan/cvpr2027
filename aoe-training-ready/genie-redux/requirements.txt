@@ -1,7 +1,0 @@
-# Open-AoE GenieRedux recipe — data/plot dependencies only.
-# Training runs inside the upstream GenieRedux environment, which provides torch,
-# omegaconf, einops, hydra-core, etc. (see README "Environment").
-numpy
-pillow
-imageio[ffmpeg]
-matplotlib
