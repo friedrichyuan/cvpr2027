@@ -27,7 +27,11 @@ def joint_tracking_exp(env, command_name: str, std: float) -> torch.Tensor:
     command = env.command_manager.get_term(command_name)
     assert isinstance(command, ReferenceBankCommand)
     robot = env.scene["robot"]
-    error = torch.mean(torch.square(robot.data.joint_pos - command.qpos), dim=-1)
+    arm_joint_ids = (0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13)
+    error = torch.mean(
+        torch.square(robot.data.joint_pos[:, arm_joint_ids] - command.qpos[:, arm_joint_ids]),
+        dim=-1,
+    )
     return torch.exp(-error / std**2)
 
 

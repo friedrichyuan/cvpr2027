@@ -44,7 +44,8 @@ def main() -> None:
     env = ManagerBasedRlEnv(cfg, device=args.device)
     wrapped = RslRlVecEnvWrapper(env, clip_actions=1.0)
     if args.checkpoint is None:
-        policy = lambda _obs: torch.zeros((1, 16), device=args.device)
+        action_dim = env.action_space.shape[1]
+        policy = lambda _obs: torch.zeros((1, action_dim), device=args.device)
         label = "zero_residual"
     else:
         runner = MjlabOnPolicyRunner(wrapped, asdict(runner_cfg()), device=args.device)

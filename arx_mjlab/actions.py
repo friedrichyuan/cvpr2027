@@ -1,4 +1,4 @@
-"""Reference-residual position action for ARX tracking RL."""
+"""Arm reference-residual action with deterministic reference gripper control."""
 
 from __future__ import annotations
 
@@ -13,24 +13,45 @@ from .reference_bank import ReferenceBankCommand
 
 
 @dataclass(kw_only=True)
-class ReferenceResidualActionCfg(BaseActionCfg):
+class ArmResidualActionCfg(BaseActionCfg):
     command_name: str = "reference"
-    lead_time: float = 0.06
 
     def __post_init__(self) -> None:
         self.transmission_type = TransmissionType.JOINT
 
-    def build(self, env) -> "ReferenceResidualAction":
-        return ReferenceResidualAction(self, env)
+    def build(self, env) -> "ArmResidualAction":
+        return ArmResidualAction(self, env)
 
 
-class ReferenceResidualAction(BaseAction):
+class ArmResidualAction(BaseAction):
+    _GRIPPER_JOINT_NAMES = (
+        "left_joint7",
+        "left_joint8",
+        "right_joint17",
+        "right_joint18",
+    )
+
+    def __init__(self, cfg: ReferenceResidualActionCfg, env) -> None:
+        super().__init__(cfg, env)
+        self._gripper_joint_ids = torch.tensor(
+            [self._entity.joint_names.index(name) for name in self._GRIPPER_JOINT_NAMES],
+            device=self.device,
+            dtype=torch.long,
+        )
+
     def apply_actions(self) -> None:
         command = self._env.command_manager.get_term(self.cfg.command_name)
         assert isinstance(command, ReferenceBankCommand)
-        target = (
-            command.qpos[:, self.target_ids]
-            + self.cfg.lead_time * command.qvel[:, self.target_ids]
-            + self._processed_actions
+        # The actor only corrects the arm reference.  A zero action therefore
+        # recovers the offline IK controller, making it a safe RL baseline.
+        self._entity.set_joint_position_target(
+            command.qpos[:, self.target_ids] + self._processed_actions,
+            joint_ids=self.target_ids,
         )
-        self._entity.set_joint_position_target(target, joint_ids=self.target_ids)
+        # The parallel-jaw opening comes from the retargeted human width.  It
+        # is a deterministic reference command, not an independent PPO action.
+        gripper_target = command.qpos[:, self._gripper_joint_ids]
+        self._entity.set_joint_position_target(
+            gripper_target,
+            joint_ids=self._gripper_joint_ids,
+        )

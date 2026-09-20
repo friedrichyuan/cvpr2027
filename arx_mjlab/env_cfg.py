@@ -5,7 +5,6 @@ from __future__ import annotations
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as builtin_mdp
 from mjlab.managers import (
-    EventTermCfg,
     ObservationGroupCfg,
     ObservationTermCfg,
     RewardTermCfg,
@@ -17,11 +16,10 @@ from mjlab.sim import MujocoCfg, SimulationCfg
 from mjlab.terrains import TerrainEntityCfg
 from mjlab.viewer import ViewerConfig
 
-from .actions import ReferenceResidualActionCfg
+from .actions import ArmResidualActionCfg
 from .mdp import (
     joint_tracking_exp,
     reference_command,
-    reset_to_reference,
     tcp_orientation_tracking_exp,
     tcp_position_tracking_exp,
     tcp_target_error,
@@ -56,10 +54,13 @@ def make_env_cfg(reference_dir: str, num_envs: int = 128) -> ManagerBasedRlEnvCf
             "critic": ObservationGroupCfg(actor_terms, concatenate_terms=True),
         },
         actions={
-            "residual_joint_pos": ReferenceResidualActionCfg(
+            "arm_joint_residual": ArmResidualActionCfg(
                 entity_name="robot",
-                actuator_names=(".*",),
-                scale=0.03,
+                actuator_names=(
+                    "left_joint[1-6]",
+                    "right_joint1[1-6]",
+                ),
+                scale=0.025,
                 clip={".*": (-0.05, 0.05)},
             )
         },
@@ -69,13 +70,7 @@ def make_env_cfg(reference_dir: str, num_envs: int = 128) -> ManagerBasedRlEnvCf
                 resampling_time_range=(1.0e9, 1.0e9),
             )
         },
-        events={
-            "reset_reference": EventTermCfg(
-                func=reset_to_reference,
-                mode="reset",
-                params={"command_name": "reference"},
-            )
-        },
+        events={},
         rewards={
             "joint_tracking": RewardTermCfg(
                 func=joint_tracking_exp,

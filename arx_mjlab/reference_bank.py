@@ -16,6 +16,7 @@ class ReferenceBankCommandCfg(CommandTermCfg):
     reference_dir: str
     fps: float = 30.0
     fixed_trajectory_id: int | None = None
+    random_start: bool = True
 
     def build(self, env) -> "ReferenceBankCommand":
         return ReferenceBankCommand(self, env)
@@ -84,6 +85,29 @@ class ReferenceBankCommand(CommandTerm):
     def command(self) -> torch.Tensor:
         return torch.cat((self.qpos, self.qvel), dim=-1)
 
+    def reset(self, env_ids: torch.Tensor | slice | None) -> dict[str, float]:
+        """Sample first, then reset the robot to that exact reference state.
+
+        MjLab resets event terms before it resets command terms.  Writing the
+        reference state from an event therefore observes the previous clip and
+        causes a visible first-frame correction.  Doing it here guarantees the
+        selected trajectory and phase are already current.
+        """
+        assert isinstance(env_ids, torch.Tensor)
+        extras = super().reset(env_ids)
+        robot = self._env.scene["robot"]
+        robot.write_joint_state_to_sim(
+            self.qpos[env_ids],
+            # Do not inject the finite-difference reference velocity at reset:
+            # a large first-frame qvel produces a visible impulse before the
+            # first policy action.  qvel_ref remains available to the policy
+            # through the reference command.
+            torch.zeros_like(self.qvel[env_ids]),
+            env_ids=env_ids,
+        )
+        robot.reset(env_ids=env_ids)
+        return extras
+
     def _update_metrics(self) -> None:
         self.metrics["reference_id"] = self.trajectory_ids.float()
 
@@ -99,7 +123,15 @@ class ReferenceBankCommand(CommandTerm):
                     f"[0, {len(self.lengths)})"
                 )
             self.trajectory_ids[env_ids] = self.cfg.fixed_trajectory_id
-        self.phase[env_ids] = 0.0
+        if self.cfg.random_start and self.cfg.fixed_trajectory_id is None:
+            episode_frames = int(round(self._env.cfg.episode_length_s * self.cfg.fps))
+            max_start = torch.clamp(
+                self.lengths[self.trajectory_ids[env_ids]] - 1 - episode_frames,
+                min=0,
+            )
+            self.phase[env_ids] = torch.rand(len(env_ids), device=self.device) * max_start
+        else:
+            self.phase[env_ids] = 0.0
 
     def _update_command(self, env_ids: torch.Tensor | None) -> None:
         ids = torch.arange(self.num_envs, device=self.device) if env_ids is None else env_ids
