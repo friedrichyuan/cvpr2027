@@ -20,10 +20,12 @@ from .actions import ArmTransitionActionCfg
 from .initial_reference_command import InitialReferenceCommandCfg
 from .mdp import (
     action_l2,
+    final_joint_tracking_exp,
+    final_tcp_orientation_tracking_exp,
+    final_tcp_position_tracking_exp,
     target_pose_command,
     tcp_orientation_error,
     tcp_position_error,
-    transition_success,
     transition_success_reward,
 )
 from .robot import get_arx5_robot_cfg
@@ -69,8 +71,10 @@ def make_transition_env_cfg(
                     "left_joint[1-6]",
                     "right_joint1[1-6]",
                 ),
-                scale=0.5,
-                clip={".*": (-0.5, 0.5)},
+                scale=0.05,
+                clip={".*": (-0.05, 0.05)},
+                end_velocity_scale=0.2,
+                max_end_velocity=0.5,
             )
         },
         commands={
@@ -101,26 +105,30 @@ def make_transition_env_cfg(
                     "orientation_threshold": 0.2,
                 },
             ),
-            "action_rate": RewardTermCfg(func=builtin_mdp.action_rate_l2, weight=-0.0001),
-            "action_magnitude": RewardTermCfg(func=action_l2, weight=-0.005),
+            "final_joint": RewardTermCfg(
+                func=final_joint_tracking_exp,
+                weight=2.0,
+                params={"command_name": "reference", "std": 0.10},
+            ),
+            "final_tcp_position": RewardTermCfg(
+                func=final_tcp_position_tracking_exp,
+                weight=5.0,
+                params={"command_name": "reference", "asset_cfg": tcp_cfg, "std": 0.025},
+            ),
+            "final_tcp_orientation": RewardTermCfg(
+                func=final_tcp_orientation_tracking_exp,
+                weight=1.0,
+                params={"command_name": "reference", "asset_cfg": tcp_cfg, "std": 0.20},
+            ),
+            "action_rate": RewardTermCfg(func=builtin_mdp.action_rate_l2, weight=-0.001),
+            "action_magnitude": RewardTermCfg(func=action_l2, weight=-0.01),
             "joint_vel": RewardTermCfg(
                 func=builtin_mdp.joint_vel_l2,
-                weight=-0.0001,
+                weight=-0.001,
                 params={"asset_cfg": arm_joint_cfg},
             ),
         },
-        terminations={
-            "success": TerminationTermCfg(
-                func=transition_success,
-                params={
-                    "command_name": "reference",
-                    "asset_cfg": tcp_cfg,
-                    "position_threshold": 0.05,
-                    "orientation_threshold": 0.2,
-                },
-            ),
-            "time_out": TerminationTermCfg(func=builtin_mdp.time_out, time_out=True),
-        },
+        terminations={"time_out": TerminationTermCfg(func=builtin_mdp.time_out, time_out=True)},
         sim=SimulationCfg(mujoco=MujocoCfg(timestep=0.005, iterations=10, ls_iterations=20)),
         decimation=4,
         episode_length_s=episode_length_s,

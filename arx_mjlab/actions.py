@@ -26,6 +26,8 @@ class ArmResidualActionCfg(BaseActionCfg):
 @dataclass(kw_only=True)
 class ArmTransitionActionCfg(BaseActionCfg):
     command_name: str = "reference"
+    end_velocity_scale: float = 1.0
+    max_end_velocity: float = 1.5
 
     def __post_init__(self) -> None:
         self.transmission_type = TransmissionType.JOINT
@@ -82,14 +84,35 @@ class ArmTransitionAction(BaseAction):
     def apply_actions(self) -> None:
         command = self._env.command_manager.get_term(self.cfg.command_name)
         progress = _episode_progress(self._env, self.device)
+        duration = float(self._env.cfg.episode_length_s)
         # A zero policy follows a smooth zero-to-first-frame joint ramp; PPO
         # only needs to learn residual corrections for dynamics and limits.
-        arm_target = progress * command.qpos[:, self.target_ids]
+        arm_end_velocity = _clipped_end_velocity(
+            command.qvel[:, self.target_ids],
+            scale=self.cfg.end_velocity_scale,
+            limit=self.cfg.max_end_velocity,
+        )
+        arm_target = _quintic_endpoint_velocity(
+            progress,
+            command.qpos[:, self.target_ids],
+            arm_end_velocity,
+            duration,
+        )
         self._entity.set_joint_position_target(
             arm_target + self._processed_actions,
             joint_ids=self.target_ids,
         )
-        gripper_target = progress * command.qpos[:, self._gripper_joint_ids]
+        gripper_end_velocity = _clipped_end_velocity(
+            command.qvel[:, self._gripper_joint_ids],
+            scale=self.cfg.end_velocity_scale,
+            limit=self.cfg.max_end_velocity,
+        )
+        gripper_target = _quintic_endpoint_velocity(
+            progress,
+            command.qpos[:, self._gripper_joint_ids],
+            gripper_end_velocity,
+            duration,
+        )
         self._entity.set_joint_position_target(
             gripper_target,
             joint_ids=self._gripper_joint_ids,
@@ -108,3 +131,24 @@ def _episode_progress(env, device: torch.device) -> torch.Tensor:
         1.0,
     )
     return torch.clamp(progress, 0.0, 1.0).unsqueeze(-1)
+
+
+def _minimum_jerk(progress: torch.Tensor) -> torch.Tensor:
+    """Quintic time-scaling with zero endpoint velocity and acceleration."""
+    return progress**3 * (10.0 - 15.0 * progress + 6.0 * progress**2)
+
+
+def _quintic_endpoint_velocity(
+    progress: torch.Tensor,
+    target: torch.Tensor,
+    end_velocity: torch.Tensor,
+    duration: float,
+) -> torch.Tensor:
+    """Quintic interpolation with zero start velocity and target end velocity."""
+    minimum_jerk = _minimum_jerk(progress)
+    velocity_basis = progress**3 * (-4.0 + 7.0 * progress - 3.0 * progress**2)
+    return minimum_jerk * target + velocity_basis * duration * end_velocity
+
+
+def _clipped_end_velocity(velocity: torch.Tensor, scale: float, limit: float) -> torch.Tensor:
+    return torch.clamp(scale * velocity, min=-limit, max=limit)

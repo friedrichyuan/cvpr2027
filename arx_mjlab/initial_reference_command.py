@@ -8,7 +8,10 @@ from pathlib import Path
 import numpy as np
 import torch
 
+import mujoco
 from mjlab.managers import CommandTerm, CommandTermCfg
+
+from .robot import SCENE_XML
 
 
 @dataclass(kw_only=True)
@@ -31,6 +34,12 @@ class InitialReferenceCommand(CommandTerm):
         self.files = files
 
         refs = [np.load(path, allow_pickle=False) for path in files]
+        model = mujoco.MjModel.from_xml_path(str(SCENE_XML))
+        data = mujoco.MjData(model)
+        tcp_site_ids = [
+            mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, name)
+            for name in ("left_tcp", "right_tcp")
+        ]
         nq = refs[0]["qpos_ref"].shape[1]
         self.qpos_bank = torch.empty(len(refs), nq, device=self.device)
         self.qvel_bank = torch.empty_like(self.qpos_bank)
@@ -44,12 +53,9 @@ class InitialReferenceCommand(CommandTerm):
             self.qvel_bank[index] = torch.as_tensor(
                 ref["qvel_ref"][0], dtype=torch.float32, device=self.device
             )
-            self.tcp_pos_bank[index] = torch.as_tensor(
-                ref["tcp_pos_ref"][0], dtype=torch.float32, device=self.device
-            )
-            self.tcp_quat_bank[index] = torch.as_tensor(
-                ref["tcp_quat_wxyz_ref"][0], dtype=torch.float32, device=self.device
-            )
+            tcp_pos, tcp_quat = _reference_tcp_pose(model, data, tcp_site_ids, ref["qpos_ref"][0])
+            self.tcp_pos_bank[index] = torch.as_tensor(tcp_pos, dtype=torch.float32, device=self.device)
+            self.tcp_quat_bank[index] = torch.as_tensor(tcp_quat, dtype=torch.float32, device=self.device)
             self.width_bank[index] = torch.as_tensor(
                 ref["gripper_width_ref"][0], dtype=torch.float32, device=self.device
             )
@@ -121,3 +127,19 @@ class InitialReferenceCommand(CommandTerm):
     def _update_command(self, env_ids: torch.Tensor | None) -> None:
         # Static command: the target is always frame zero of the sampled reference.
         return None
+
+
+def _reference_tcp_pose(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    tcp_site_ids: list[int],
+    qpos: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute the reachable robot TCP pose at the stored IK reference qpos."""
+    data.qpos[:] = qpos
+    mujoco.mj_forward(model, data)
+    tcp_pos = data.site_xpos[tcp_site_ids].copy()
+    tcp_quat = np.empty((len(tcp_site_ids), 4), dtype=np.float64)
+    for index, site_id in enumerate(tcp_site_ids):
+        mujoco.mju_mat2Quat(tcp_quat[index], data.site_xmat[site_id])
+    return tcp_pos, tcp_quat

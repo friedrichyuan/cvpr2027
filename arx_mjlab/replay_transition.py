@@ -35,7 +35,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episode-length-s", type=float, default=1.0)
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--fps", type=float, default=50.0)
+    parser.add_argument("--control-fps", type=float, default=50.0)
+    parser.add_argument("--reference-fps", type=float, default=30.0)
+    parser.add_argument("--fps", type=float, default=50.0, help="Fallback playback FPS")
     parser.add_argument("--no-viewer", action="store_true", help="Only save/evaluate, do not launch MuJoCo")
     return parser.parse_args()
 
@@ -47,10 +49,14 @@ def rollout_prefix(
     device: str,
     episode_length_s: float,
     steps: int | None,
+    control_fps: float = 50.0,
+    reference_fps: float = 30.0,
 ) -> dict[str, np.ndarray | str | float]:
     reference_files = sorted(reference_dir.expanduser().resolve().glob("*.npz"))
     trajectory_id = _resolve_trajectory_id(reference_files, trajectory)
-    steps = steps or int(np.ceil(episode_length_s / 0.02))
+    control_dt = 1.0 / control_fps
+    reference_dt = 1.0 / reference_fps
+    steps = steps or max(1, int(np.ceil(episode_length_s / control_dt)) - 1)
 
     cfg = make_transition_env_cfg(str(reference_dir), num_envs=1, episode_length_s=episode_length_s)
     cfg.commands["reference"].fixed_trajectory_id = trajectory_id
@@ -86,13 +92,22 @@ def rollout_prefix(
     reference = load_reference(reference_files[trajectory_id])
     prefix_qpos = np.asarray(qpos, dtype=np.float32)
     full_qpos = np.concatenate((prefix_qpos, reference.qpos_ref[1:]), axis=0)
+    prefix_time = np.arange(len(prefix_qpos), dtype=np.float32) * control_dt
+    reference_time = prefix_time[-1] + reference_dt * np.arange(
+        1,
+        reference.frame_count,
+        dtype=np.float32,
+    )
+    full_time = np.concatenate((prefix_time, reference_time), axis=0)
     return {
         "prefix_qpos": prefix_qpos,
         "prefix_qvel": np.asarray(qvel, dtype=np.float32),
         "full_qpos": full_qpos.astype(np.float32),
+        "full_time": full_time.astype(np.float32),
         "source_reference": str(reference_files[trajectory_id]),
         "agent": agent_label,
-        "fps": np.float32(50.0),
+        "control_fps": np.float32(control_fps),
+        "reference_fps": np.float32(reference_fps),
         "joint_mae": np.float32(joint_mae),
         "qvel_mae": np.float32(qvel_mae),
         "tcp_error": np.float32(tcp_error),
@@ -100,10 +115,15 @@ def rollout_prefix(
     }
 
 
-def replay_qpos(scene_path: Path, qpos: np.ndarray, fps: float) -> None:
+def replay_qpos(
+    scene_path: Path,
+    qpos: np.ndarray,
+    frame_time: np.ndarray | None,
+    fallback_fps: float,
+) -> None:
     model = mujoco.MjModel.from_xml_path(str(scene_path.expanduser().resolve()))
     data = mujoco.MjData(model)
-    frame_time = 1.0 / fps
+    fallback_frame_time = 1.0 / fallback_fps
     frame = 0
     paused = False
 
@@ -124,13 +144,20 @@ def replay_qpos(scene_path: Path, qpos: np.ndarray, fps: float) -> None:
         last_update = time.monotonic()
         while viewer.is_running():
             now = time.monotonic()
-            if not paused and now - last_update >= frame_time:
+            duration = _frame_duration(frame_time, frame, fallback_frame_time)
+            if not paused and now - last_update >= duration:
                 frame = (frame + 1) % len(qpos)
                 last_update = now
             data.qpos[:] = qpos[frame]
             mujoco.mj_forward(model, data)
             viewer.sync()
             time.sleep(0.005)
+
+
+def _frame_duration(frame_time: np.ndarray | None, frame: int, fallback: float) -> float:
+    if frame_time is None or len(frame_time) < 2 or frame >= len(frame_time) - 1:
+        return fallback
+    return max(float(frame_time[frame + 1] - frame_time[frame]), 1.0e-4)
 
 
 def _make_policy(wrapped, env, checkpoint: Path | None, device: str):
@@ -162,6 +189,8 @@ def main() -> None:
         args.device,
         args.episode_length_s,
         args.steps,
+        args.control_fps,
+        args.reference_fps,
     )
     if args.output is not None:
         output = args.output.expanduser().resolve()
@@ -174,7 +203,7 @@ def main() -> None:
     print(f"Final TCP error: {float(rollout['tcp_error']) * 1000.0:.1f} mm")
     print(f"Final orientation error: {np.degrees(float(rollout['orientation_error'])):.1f} deg")
     if not args.no_viewer:
-        replay_qpos(args.scene, rollout["full_qpos"], args.fps)
+        replay_qpos(args.scene, rollout["full_qpos"], rollout.get("full_time"), args.fps)
 
 
 if __name__ == "__main__":

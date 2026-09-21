@@ -38,7 +38,7 @@ def main() -> None:
     if len(matches) != 1:
         raise FileNotFoundError(f"Reference '{args.trajectory}' was not found")
     trajectory_id = matches[0]
-    steps = args.steps or int(np.ceil(args.episode_length_s / 0.02))
+    steps = args.steps or max(1, int(np.ceil(args.episode_length_s / 0.02)) - 1)
 
     cfg = make_transition_env_cfg(
         str(reference_dir),
