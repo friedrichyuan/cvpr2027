@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import mujoco
 import numpy as np
+from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
 
 from .gripper import GripperTrajectory
@@ -15,15 +16,20 @@ from .gripper import GripperTrajectory
 class IKConfig:
     """Shared, task-independent solver settings for all EgoDex episodes."""
 
+    warm_start: bool = False
+    temporal_after_first: bool = True
     seed_iterations: int = 80
     step_iterations: int = 30
     position_weight: float = 1.0
     orientation_weight: float = 0.10
     damping: float = 0.02
-    posture_weight: float = 0.005
+    posture_weight: float = 0.0
     max_joint_step: float = 0.15
     position_tolerance: float = 0.004
     orientation_tolerance: float = 0.12
+    independent_random_restarts: int = 8
+    independent_max_nfev: int = 2000
+    independent_continuity_weight: float = 0.05
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,10 @@ class ARXDualArmIKSolver:
         self.config = config
         self.arm_joint_ids = tuple(tuple(self._joint_id(name) for name in names) for names in self._ARM_JOINTS)
         self.gripper_joint_ids = tuple(tuple(self._joint_id(name) for name in names) for names in self._GRIPPER_JOINTS)
+        self.arm_qpos_indices_by_side = tuple(
+            np.array([int(model.jnt_qposadr[joint_id]) for joint_id in side], dtype=int)
+            for side in self.arm_joint_ids
+        )
         self.arm_qpos_indices = np.array(
             [int(model.jnt_qposadr[joint_id]) for side in self.arm_joint_ids for joint_id in side], dtype=int
         )
@@ -63,11 +73,17 @@ class ARXDualArmIKSolver:
         arm_joint_ids = np.array(self.arm_joint_ids).reshape(-1)
         self._arm_lower = model.jnt_range[arm_joint_ids, 0]
         self._arm_upper = model.jnt_range[arm_joint_ids, 1]
+        self._arm_lower_by_side = tuple(model.jnt_range[np.array(side), 0] for side in self.arm_joint_ids)
+        self._arm_upper_by_side = tuple(model.jnt_range[np.array(side), 1] for side in self.arm_joint_ids)
         self._gripper_min_gap = self._measure_minimum_gripper_gaps()
         self._ctrl_qpos_indices = self._actuator_qpos_indices()
 
     def solve_episode(self, targets: GripperTrajectory) -> IKTrajectory:
         """Solve a smoothed sequence, warm-starting every frame from the prior."""
+        if not self.config.warm_start:
+            if self.config.temporal_after_first:
+                return self._solve_episode_seeded_warm_start(targets)
+            return self._solve_episode_independent(targets)
         frame_count = targets.position.shape[0]
         qpos_out = np.zeros((frame_count, self.model.nq), dtype=np.float64)
         ctrl_out = np.zeros((frame_count, self.model.nu), dtype=np.float64)
@@ -99,6 +115,163 @@ class ARXDualArmIKSolver:
             previous = qpos
 
         return IKTrajectory(qpos_out, ctrl_out, position_error, orientation_error, converged)
+
+    def _solve_episode_seeded_warm_start(self, targets: GripperTrajectory) -> IKTrajectory:
+        """Solve frame zero accurately, then warm-start subsequent frames from it."""
+        frame_count = targets.position.shape[0]
+        qpos_out = np.zeros((frame_count, self.model.nq), dtype=np.float64)
+        ctrl_out = np.zeros((frame_count, self.model.nu), dtype=np.float64)
+        position_error = np.full((frame_count, 2), np.nan, dtype=np.float64)
+        orientation_error = np.full((frame_count, 2), np.nan, dtype=np.float64)
+        converged = np.zeros((frame_count, 2), dtype=bool)
+        initial = self.model.key_qpos[0].copy() if self.model.nkey else np.zeros(self.model.nq)
+        previous = initial.copy()
+
+        for frame in range(frame_count):
+            if frame == 0:
+                qpos = initial.copy()
+                self._write_grippers(qpos, targets.width[frame], targets.valid[frame])
+                for side in range(2):
+                    if targets.valid[frame, side]:
+                        self._solve_side_independent(qpos, targets, frame, side, previous)
+            else:
+                qpos = previous.copy()
+                self._write_grippers(qpos, targets.width[frame], targets.valid[frame])
+                qpos = self._solve_frame(qpos, previous, targets, frame, self.config.step_iterations)
+            self._write_grippers(qpos, targets.width[frame], targets.valid[frame])
+
+            self.data.qpos[:] = qpos
+            mujoco.mj_forward(self.model, self.data)
+            frame_position_error, frame_orientation_error = self._task_errors(targets, frame)
+            position_error[frame] = frame_position_error
+            orientation_error[frame] = frame_orientation_error
+            valid = targets.valid[frame]
+            converged[frame, valid] = (
+                (frame_position_error[valid] <= self.config.position_tolerance)
+                & (frame_orientation_error[valid] <= self.config.orientation_tolerance)
+            )
+            qpos_out[frame] = qpos
+            ctrl_out[frame] = qpos[self._ctrl_qpos_indices]
+            previous = qpos
+
+        return IKTrajectory(qpos_out, ctrl_out, position_error, orientation_error, converged)
+
+    def _solve_episode_independent(self, targets: GripperTrajectory) -> IKTrajectory:
+        """Solve each frame directly from fixed seeds instead of previous-frame warm-starts."""
+        frame_count = targets.position.shape[0]
+        qpos_out = np.zeros((frame_count, self.model.nq), dtype=np.float64)
+        ctrl_out = np.zeros((frame_count, self.model.nu), dtype=np.float64)
+        position_error = np.full((frame_count, 2), np.nan, dtype=np.float64)
+        orientation_error = np.full((frame_count, 2), np.nan, dtype=np.float64)
+        converged = np.zeros((frame_count, 2), dtype=bool)
+        initial = self.model.key_qpos[0].copy() if self.model.nkey else np.zeros(self.model.nq)
+        previous_qpos = initial.copy()
+
+        for frame in range(frame_count):
+            qpos = initial.copy()
+            self._write_grippers(qpos, targets.width[frame], targets.valid[frame])
+            for side in range(2):
+                if targets.valid[frame, side]:
+                    self._solve_side_independent(qpos, targets, frame, side, previous_qpos)
+            self._write_grippers(qpos, targets.width[frame], targets.valid[frame])
+
+            self.data.qpos[:] = qpos
+            mujoco.mj_forward(self.model, self.data)
+            frame_position_error, frame_orientation_error = self._task_errors(targets, frame)
+            position_error[frame] = frame_position_error
+            orientation_error[frame] = frame_orientation_error
+            valid = targets.valid[frame]
+            converged[frame, valid] = (
+                (frame_position_error[valid] <= self.config.position_tolerance)
+                & (frame_orientation_error[valid] <= self.config.orientation_tolerance)
+            )
+            qpos_out[frame] = qpos
+            ctrl_out[frame] = qpos[self._ctrl_qpos_indices]
+            previous_qpos = qpos.copy()
+
+        return IKTrajectory(qpos_out, ctrl_out, position_error, orientation_error, converged)
+
+    def _solve_side_independent(
+        self,
+        qpos: np.ndarray,
+        targets: GripperTrajectory,
+        frame: int,
+        side: int,
+        continuity_qpos: np.ndarray,
+    ) -> None:
+        qpos_indices = self.arm_qpos_indices_by_side[side]
+        lower = self._arm_lower_by_side[side]
+        upper = self._arm_upper_by_side[side]
+        site_id = self.tcp_site_ids[side]
+        target_position = targets.position[frame, side]
+        target_rotation = targets.rotation[frame, side]
+        base_qpos = qpos.copy()
+
+        def residual(arm_qpos: np.ndarray) -> np.ndarray:
+            probe_qpos = base_qpos.copy()
+            probe_qpos[qpos_indices] = arm_qpos
+            self.data.qpos[:] = probe_qpos
+            mujoco.mj_forward(self.model, self.data)
+            position_residual = self.data.site_xpos[site_id] - target_position
+            current_rotation = self.data.site_xmat[site_id].reshape(3, 3)
+            rotation_residual = Rotation.from_matrix(
+                target_rotation @ current_rotation.T
+            ).as_rotvec()
+            return np.concatenate((
+                self.config.position_weight * position_residual,
+                self.config.orientation_weight * rotation_residual,
+            ))
+
+        best: tuple[tuple[int, float, float], np.ndarray] | None = None
+        seeds = [np.clip(continuity_qpos[qpos_indices], lower, upper)]
+        seeds.extend(self._independent_seeds(qpos[qpos_indices], lower, upper, frame, side))
+        for seed in seeds:
+            result = least_squares(
+                residual,
+                seed,
+                bounds=(lower, upper),
+                xtol=1.0e-10,
+                ftol=1.0e-10,
+                gtol=1.0e-10,
+                max_nfev=self.config.independent_max_nfev,
+            )
+            position_norm = float(np.linalg.norm(residual(result.x)[:3]))
+            continuity_norm = float(np.linalg.norm(result.x - continuity_qpos[qpos_indices]))
+            # First prefer any candidate inside the position tolerance, then
+            # choose the most joint-continuous branch.  This avoids framewise
+            # IK branch flicker without using the previous frame as an initial
+            # guess for the nonlinear solve.
+            outside_tolerance = int(position_norm > self.config.position_tolerance)
+            position_score = (
+                position_norm + self.config.independent_continuity_weight * continuity_norm
+                if outside_tolerance
+                else 0.0
+            )
+            score = (outside_tolerance, position_score, continuity_norm)
+            if best is None or score < best[0]:
+                best = (score, result.x.copy())
+
+        assert best is not None
+        qpos[qpos_indices] = best[1]
+
+    def _independent_seeds(
+        self,
+        nominal: np.ndarray,
+        lower: np.ndarray,
+        upper: np.ndarray,
+        frame: int,
+        side: int,
+    ) -> list[np.ndarray]:
+        seeds = [
+            np.clip(nominal, lower, upper),
+            0.5 * (lower + upper),
+            0.25 * lower + 0.75 * upper,
+            0.75 * lower + 0.25 * upper,
+        ]
+        rng = np.random.default_rng(7919 + 31 * frame + side)
+        for _ in range(self.config.independent_random_restarts):
+            seeds.append(rng.uniform(lower, upper))
+        return seeds
 
     def _solve_frame(self, qpos, previous, targets, frame, iterations) -> np.ndarray:
         for _ in range(iterations):
