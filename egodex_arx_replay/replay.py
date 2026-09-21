@@ -42,6 +42,8 @@ class ReplayController:
         self.speed = 1.0
         self._last_update = time.monotonic()
         self._frame_credit = 0.0
+        self._advanced_frames = 0
+        self._seeked = False
 
     def on_key(self, keycode: int) -> None:
         # GLFW key codes: SPACE=32, R=82, J=74, L=76, -=45, +=61.
@@ -50,18 +52,22 @@ class ReplayController:
         elif keycode in (74, 263):  # J or left arrow
             self.playing = False
             self.frame = max(0, self.frame - 1)
+            self._seeked = True
         elif keycode in (76, 262):  # L or right arrow
             self.playing = False
             self.frame = min(self.frame_count - 1, self.frame + 1)
+            self._seeked = True
         elif keycode in (82, 114):  # R or r
             self.frame = 0
             self._frame_credit = 0.0
+            self._seeked = True
         elif keycode in (45, 95):  # - or _
             self.speed = max(0.125, self.speed / 2.0)
         elif keycode in (61, 43):  # = or +
             self.speed = min(8.0, self.speed * 2.0)
 
     def advance(self) -> int:
+        self._advanced_frames = 0
         now = time.monotonic()
         elapsed = now - self._last_update
         self._last_update = now
@@ -73,7 +79,46 @@ class ReplayController:
             if step_count:
                 self.frame = (self.frame + step_count) % self.frame_count
                 self._frame_credit -= step_count
+                self._advanced_frames = step_count
         return self.frame
+
+    def consume_advanced_frames(self) -> int:
+        """Return the number of forward video frames advanced this update."""
+        advanced_frames = self._advanced_frames
+        self._advanced_frames = 0
+        return advanced_frames
+
+    def consume_seek(self) -> bool:
+        """Report and clear a keyboard seek, which cannot be simulated backward."""
+        seeked = self._seeked
+        self._seeked = False
+        return seeked
+
+
+class DynamicsFrameStepper:
+    """Advance MuJoCo by one 30 Hz control interval using fixed-size substeps."""
+
+    def __init__(self, model: mujoco.MjModel, data: mujoco.MjData, control_fps: float) -> None:
+        if control_fps <= 0.0:
+            raise ValueError("Control FPS must be positive")
+        if model.opt.timestep <= 0.0:
+            raise ValueError("MuJoCo timestep must be positive")
+        self.model = model
+        self.data = data
+        self._substeps_per_frame = 1.0 / (control_fps * model.opt.timestep)
+        self._substep_credit = 0.0
+
+    def reset(self) -> None:
+        self._substep_credit = 0.0
+
+    def step_frame(self, ctrl: np.ndarray) -> None:
+        """Hold ``ctrl`` for one video frame while advancing real dynamics."""
+        self.data.ctrl[:] = ctrl
+        self._substep_credit += self._substeps_per_frame
+        substep_count = int(self._substep_credit)
+        self._substep_credit -= substep_count
+        for _ in range(substep_count):
+            mujoco.mj_step(self.model, self.data)
 
 
 def _add_sphere(scene: mujoco.MjvScene, position: np.ndarray, rgba: tuple[float, ...]) -> None:
@@ -271,14 +316,38 @@ def replay(
         ik_trajectory = ARXDualArmIKSolver(model).solve_episode(target_grippers)
 
     controller = ReplayController(episode.frame_count, FPS)
+    dynamics_stepper = DynamicsFrameStepper(model, data, FPS) if ik_trajectory is not None else None
+    simulated_frame = controller.frame
+    if ik_trajectory is not None:
+        # qpos remains exclusively owned by MuJoCo after this point.  The IK
+        # result supplies position-actuator setpoints; mj_step integrates the
+        # response to them, including joint limits and any contacts.
+        data.ctrl[:] = ik_trajectory.ctrl[simulated_frame]
+        mujoco.mj_forward(model, data)
+
     _print_summary(episode, scene_path, ik_trajectory)
     with mujoco.viewer.launch_passive(model, data, key_callback=controller.on_key) as viewer:
         while viewer.is_running():
             frame = controller.advance()
             if ik_trajectory is not None:
-                data.qpos[:] = ik_trajectory.qpos[frame]
-                data.ctrl[:] = ik_trajectory.ctrl[frame]
-                mujoco.mj_forward(model, data)
+                assert dynamics_stepper is not None
+                if controller.consume_seek():
+                    # Stepping backward in a dynamics simulation is not
+                    # meaningful.  Recreate the requested state from the
+                    # keyframe by replaying the preceding 30 Hz controls.
+                    mujoco.mj_resetDataKeyframe(model, data, 0)
+                    dynamics_stepper.reset()
+                    simulated_frame = 0
+                    for _ in range(frame):
+                        dynamics_stepper.step_frame(ik_trajectory.ctrl[simulated_frame])
+                        simulated_frame = (simulated_frame + 1) % episode.frame_count
+                    data.ctrl[:] = ik_trajectory.ctrl[simulated_frame]
+                    mujoco.mj_forward(model, data)
+                else:
+                    for _ in range(controller.consume_advanced_frames()):
+                        dynamics_stepper.step_frame(ik_trajectory.ctrl[simulated_frame])
+                        simulated_frame = (simulated_frame + 1) % episode.frame_count
+                    data.ctrl[:] = ik_trajectory.ctrl[simulated_frame]
             _draw_overlay(
                 viewer,
                 episode,
