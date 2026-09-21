@@ -16,6 +16,8 @@ from egodex_arx_replay.gripper import GripperTrajectory, convert_episode_to_grip
 from egodex_arx_replay.ik import ARXDualArmIKSolver
 from egodex_arx_replay.smoothing import SmoothingConfig, smooth_gripper_trajectory
 
+from .base_search import _apply_base_offset
+
 
 def generate_impainted_trajectory(
     episode_path: Path,
@@ -28,6 +30,7 @@ def generate_impainted_trajectory(
     no_smoothing: bool,
     end_velocity_scale: float,
     max_end_velocity: float,
+    base_offset: np.ndarray,
 ) -> None:
     """Solve per-frame IK, then prepend a smooth zero-to-first-frame prefix."""
     episode = load_episode(episode_path)
@@ -39,6 +42,7 @@ def generate_impainted_trajectory(
     )
 
     model = mujoco.MjModel.from_xml_path(str(scene_path))
+    _apply_base_offset(model, base_offset)
     ik = ARXDualArmIKSolver(model).solve_episode(targets)
     qvel_ref = np.gradient(ik.qpos, 1.0 / EGODEX_FPS, axis=0, edge_order=1)
 
@@ -64,6 +68,12 @@ def generate_impainted_trajectory(
         "control_fps": control_fps,
         "prefix_duration_s": prefix_duration_s,
         "scene_anchor": np.asarray(scene_anchor, dtype=np.float64).tolist(),
+        "base_offset": {
+            "dx": float(base_offset[0]),
+            "dy": float(base_offset[1]),
+            "yaw_rad": float(base_offset[2]),
+            "yaw_deg": float(np.degrees(base_offset[2])),
+        },
         "smoothing_window": None if no_smoothing else smoothing_window,
         "ik_solver": "first_frame_independent_then_warm_start",
     }
@@ -148,6 +158,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-smoothing", action="store_true")
     parser.add_argument("--end-velocity-scale", type=float, default=1.0)
     parser.add_argument("--max-end-velocity", type=float, default=5.0)
+    parser.add_argument("--base-dx", type=float, default=0.0)
+    parser.add_argument("--base-dy", type=float, default=0.0)
+    parser.add_argument("--base-yaw-deg", type=float, default=0.0)
     parser.add_argument(
         "--scene-anchor",
         type=float,
@@ -174,6 +187,7 @@ def main() -> None:
         args.no_smoothing,
         args.end_velocity_scale,
         args.max_end_velocity,
+        np.array([args.base_dx, args.base_dy, np.deg2rad(args.base_yaw_deg)], dtype=np.float64),
     )
 
 

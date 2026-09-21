@@ -19,6 +19,8 @@ from egodex_arx_replay.data import load_episode
 from egodex_arx_replay.geometry import DEFAULT_SCENE_ANCHOR, frame_joint_positions, make_scene_T_egodex
 from egodex_arx_replay.replay import _draw_gripper, _draw_skeleton
 
+from .base_search import _apply_base_offset
+
 
 class TimeController:
     """Looping playback controller for a trajectory with per-frame timestamps."""
@@ -90,6 +92,7 @@ def replay_impainted(
     episode, scene_t_egodex = _load_source_episode(metadata) if show_skeleton else (None, None)
 
     model = mujoco.MjModel.from_xml_path(str(scene_path))
+    _apply_base_offset(model, _metadata_base_offset(metadata))
     data = mujoco.MjData(model)
     _print_summary(trajectory_path, qpos, frame_time, raw_pos)
     if no_viewer:
@@ -161,6 +164,18 @@ def _load_source_episode(metadata: dict):
     episode = load_episode(source_episode)
     scene_anchor = np.asarray(metadata.get("scene_anchor", DEFAULT_SCENE_ANCHOR), dtype=np.float64)
     return episode, make_scene_T_egodex(episode.world_T_joint, scene_anchor)
+
+
+def _metadata_base_offset(metadata: dict) -> np.ndarray:
+    offset = metadata.get("base_offset", {})
+    return np.array(
+        [
+            float(offset.get("dx", 0.0)),
+            float(offset.get("dy", 0.0)),
+            float(offset.get("yaw_rad", 0.0)),
+        ],
+        dtype=np.float64,
+    )
 
 
 def parse_args() -> argparse.Namespace:
