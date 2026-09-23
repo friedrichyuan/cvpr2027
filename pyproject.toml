@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cvpr2027-ego2robot"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "h5py>=3.8",
+    "mujoco>=3.0",
+    "numpy>=1.26,<2",
+    "scipy>=1.10",
+    "opencv-python",
+    "imageio",
+    "imageio-ffmpeg",
+    "ray>=2.40",
+    "pytest",
+    "psutil",
+    "Pillow",
+    "einops",
+    "av",
+    "addict",
+    "matplotlib",
+    "scikit-image",
+    "pyyaml",
+    "requests",
+    "timm>=1.0.17",
+    "tqdm",
+    "pycocotools",
+    "future",
+    "yapf",
+]
+
+[tool.setuptools.packages.find]
+include = ["egowhale*"]

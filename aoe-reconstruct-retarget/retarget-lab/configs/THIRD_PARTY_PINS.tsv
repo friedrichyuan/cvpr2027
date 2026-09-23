@@ -1,9 +1,0 @@
-name	url	commit
-EgoInfinity	https://github.com/Rice-RobotPI-Lab/EgoInfinity.git	de59610531c08010d63d0493d6a72973eabd402e
-do-as-i-do	https://github.com/malik-group/do-as-i-do.git	b5a617060a970ba2d9af7b2e216903c643cda185
-SPIDER	https://github.com/facebookresearch/spider.git	2e54f19ee6ab8e0690c0f585beb1e9f8f53a6898
-dinov2	https://github.com/facebookresearch/dinov2.git	7764ea0f912e53c92e82eb78a2a1631e92725fc8
-GeoCalib	https://github.com/cvg/GeoCalib.git	97b8968e7798a66bf04fcf791fb535624241bda7
-do-as-i-do/reconstruction/modules/sam3	https://github.com/malik-group/sam3.git	b8e18f5f021fb27c4f6eeb1a8f4ecfa3fa0bec39
-do-as-i-do/reconstruction/modules/sam-3d-objects	https://github.com/malik-group/sam-3d-objects.git	875b010016f4c86936985b74ffcd7230e6979d02
-do-as-i-do/reconstruction/modules/Fast-SAM3D	https://github.com/malik-group/Fast-SAM3D.git	823d4784dbf73a9a58ca8b2384dee1eaf8fc1c6b

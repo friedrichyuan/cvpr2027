@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Kinematics-only ARX AC one URDF for cuRobo. Origins/limits match assets/mujoco_arx_scene/scene.xml. -->
+<robot name="ACone">
+  <link name="base_link"/>
+
+  <link name="left_link1"/>
+  <joint name="left_joint1" type="revolute">
+    <origin xyz="-0.01602 0.25 0.0215" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="left_link1"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.094" upper="3.1416" effort="27" velocity="5.5"/>
+  </joint>
+
+  <link name="left_link2"/>
+  <joint name="left_joint2" type="revolute">
+    <origin xyz="0.02 0 0.04" rpy="0 0 0"/>
+    <parent link="left_link1"/>
+    <child link="left_link2"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0" upper="3.665" effort="27" velocity="5.5"/>
+  </joint>
+
+  <link name="left_link3"/>
+  <joint name="left_joint3" type="revolute">
+    <origin xyz="-0.264 3e-05 0" rpy="0 0 0"/>
+    <parent link="left_link2"/>
+    <child link="left_link3"/>
+    <axis xyz="0 -1 0"/>
+    <limit lower="0" upper="3.24" effort="27" velocity="5.5"/>
+  </joint>
+
+  <link name="left_link4"/>
+  <joint name="left_joint4" type="revolute">
+    <origin xyz="0.245 -3e-05 0.056" rpy="0 0 0"/>
+    <parent link="left_link3"/>
+    <child link="left_link4"/>
+    <axis xyz="0 -1 0"/>
+    <limit lower="-1.571" upper="1.571" effort="7" velocity="20"/>
+  </joint>
+
+  <link name="left_link5"/>
+  <joint name="left_joint5" type="revolute">
+    <origin xyz="0.06775 0 0.0845" rpy="0 0 0"/>
+    <parent link="left_link4"/>
+    <child link="left_link5"/>
+    <axis xyz="0 0 -1"/>
+    <limit lower="-1.571" upper="1.571" effort="7" velocity="20"/>
+  </joint>
+
+  <link name="left_link6"/>
+  <joint name="left_joint6" type="revolute">
+    <origin xyz="0.02895 0 -0.0845" rpy="0 0 0"/>
+    <parent link="left_link5"/>
+    <child link="left_link6"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-2.094" upper="2.094" effort="7" velocity="20"/>
+  </joint>
+
+  <link name="left_link7"/>
+  <joint name="left_joint7" type="prismatic">
+    <origin xyz="0.08397 0.02721 -0.0062702" rpy="0 0 0"/>
+    <parent link="left_link6"/>
+    <child link="left_link7"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0" upper="0.044" effort="300" velocity="0.053"/>
+  </joint>
+
+  <link name="left_link8"/>
+  <joint name="left_joint8" type="prismatic">
+    <origin xyz="0.08397 -0.023638 -0.0062703" rpy="0 0 0"/>
+    <parent link="left_link6"/>
+    <child link="left_link8"/>
+    <axis xyz="0 -1 0"/>
+    <limit lower="0" upper="0.044" effort="300" velocity="0.053"/>
+  </joint>
+
+  <link name="left_tcp"/>
+  <joint name="left_tcp_fixed" type="fixed">
+    <origin xyz="0.105 0.0018 -0.0063" rpy="0 0 0"/>
+    <parent link="left_link6"/>
+    <child link="left_tcp"/>
+  </joint>
+
+  <link name="right_link11"/>
+  <joint name="right_joint11" type="revolute">
+    <origin xyz="-0.01602 -0.25 0.0215" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="right_link11"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.094" upper="3.1416" effort="27" velocity="5.5"/>
+  </joint>
+
+  <link name="right_link12"/>
+  <joint name="right_joint12" type="revolute">
+    <origin xyz="0.02 0 0.04" rpy="0 0 0"/>
+    <parent link="right_link11"/>
+    <child link="right_link12"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0" upper="3.665" effort="27" velocity="5.5"/>
+  </joint>
+
+  <link name="right_link13"/>
+  <joint name="right_joint13" type="revolute">
+    <origin xyz="-0.264 3e-05 0" rpy="0 0 0"/>
+    <parent link="right_link12"/>
+    <child link="right_link13"/>
+    <axis xyz="0 -1 0"/>
+    <limit lower="0" upper="3.24" effort="27" velocity="5.5"/>
+  </joint>
+
+  <link name="right_link14"/>
+  <joint name="right_joint14" type="revolute">
+    <origin xyz="0.245 -3e-05 0.056" rpy="0 0 0"/>
+    <parent link="right_link13"/>
+    <child link="right_link14"/>
+    <axis xyz="0 -1 0"/>
+    <limit lower="-1.571" upper="1.571" effort="7" velocity="20"/>
+  </joint>
+
+  <link name="right_link15"/>
+  <joint name="right_joint15" type="revolute">
+    <origin xyz="0.06775 0 0.0845" rpy="0 0 0"/>
+    <parent link="right_link14"/>
+    <child link="right_link15"/>
+    <axis xyz="0 0 -1"/>
+    <limit lower="-1.571" upper="1.571" effort="7" velocity="20"/>
+  </joint>
+
+  <link name="right_link16"/>
+  <joint name="right_joint16" type="revolute">
+    <origin xyz="0.02895 0 -0.0845" rpy="0 0 0"/>
+    <parent link="right_link15"/>
+    <child link="right_link16"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-2.094" upper="2.094" effort="7" velocity="20"/>
+  </joint>
+
+  <link name="right_link17"/>
+  <joint name="right_joint17" type="prismatic">
+    <origin xyz="0.08397 0.02721 -0.0062702" rpy="0 0 0"/>
+    <parent link="right_link16"/>
+    <child link="right_link17"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0" upper="0.044" effort="300" velocity="0.053"/>
+  </joint>
+
+  <link name="right_link18"/>
+  <joint name="right_joint18" type="prismatic">
+    <origin xyz="0.08397 -0.023638 -0.0062703" rpy="0 0 0"/>
+    <parent link="right_link16"/>
+    <child link="right_link18"/>
+    <axis xyz="0 -1 0"/>
+    <limit lower="0" upper="0.044" effort="300" velocity="0.053"/>
+  </joint>
+
+  <link name="right_tcp"/>
+  <joint name="right_tcp_fixed" type="fixed">
+    <origin xyz="0.105 0.0018 -0.0063" rpy="0 0 0"/>
+    <parent link="right_link16"/>
+    <child link="right_tcp"/>
+  </joint>
+</robot>

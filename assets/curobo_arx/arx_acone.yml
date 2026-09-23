@@ -1,0 +1,29 @@
+robot_cfg:
+  kinematics:
+    urdf_path: "arx_acone_kin.urdf"
+    asset_root_path: ""
+    base_link: "base_link"
+    tool_frames: ["left_tcp", "right_tcp"]
+    extra_links: null
+    collision_link_names: null
+    collision_spheres: null
+    self_collision_ignore: null
+    cspace:
+      joint_names:
+        - left_joint1
+        - left_joint2
+        - left_joint3
+        - left_joint4
+        - left_joint5
+        - left_joint6
+        - right_joint11
+        - right_joint12
+        - right_joint13
+        - right_joint14
+        - right_joint15
+        - right_joint16
+      default_joint_position: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      null_space_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+      cspace_distance_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+      max_acceleration: 15.0
+      max_jerk: 500.0

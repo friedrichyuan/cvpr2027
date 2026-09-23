@@ -70,3 +70,5 @@ outputs/
 references/
 logs/
 evaluations/
+thirdparty/
+EGODEX_DATASET/
