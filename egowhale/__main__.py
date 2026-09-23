@@ -12,10 +12,11 @@ from egowhale.action.base_ik import BaseIK
 from egowhale.action.retarget import Retarget
 from egowhale.step import ROOT, run
 from egowhale.visual.composite import Composite
+from egowhale.visual.depth import Depth
 from egowhale.visual.inpaint import Inpaint
 from egowhale.visual.segment import Segment
 
-STEPS = (Retarget, Segment, Inpaint, BaseIK, Composite)
+STEPS = (Retarget, Segment, Inpaint, Depth, BaseIK, Composite)
 
 
 def main() -> None:

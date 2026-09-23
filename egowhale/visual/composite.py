@@ -1,4 +1,4 @@
-"""Render the ARX arm and paste it onto the inpainted frame. No depth test."""
+"""Render the ARX arm and composite it. The arm is pasted; the gripper uses depth."""
 
 from __future__ import annotations
 
@@ -8,20 +8,23 @@ from pathlib import Path
 
 os.environ.setdefault("MUJOCO_GL", "egl")
 
+import cv2
 import mujoco
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from egowhale.media import read_rgb, write_rgb
-from egowhale.step import BASE, COMPOSITE, GRIPPER, IK, INPAINT, ROOT, Step
+from egowhale.media import load_masks, read_rgb, write_rgb
+from egowhale.step import BASE, COMPOSITE, DEPTH, GRIPPER, IK, INPAINT, MASKS, ROOT, Step
 
 _SCENE = ROOT / "assets" / "mujoco_arx_scene" / "scene.xml"
 _HIDE = ("floor", "table", "camera", "workspace", "front_workspace", "base_plus", "base_minus", "robot_front", "humanego")
+_GRIPPER_GEOMS = ("left_link7", "left_link8", "right_link17", "right_link18")
+_HAND_KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
 
 class Composite(Step):
     name = "composite"
-    needs = (INPAINT, IK, BASE, GRIPPER)
+    needs = (INPAINT, IK, BASE, GRIPPER, DEPTH, MASKS)
     makes = (COMPOSITE,)
 
     def run(self, src: Path, dst: Path) -> None:
@@ -38,9 +41,10 @@ class Composite(Step):
         frames = min(len(background), len(qpos))
         background, qpos = background[:frames], qpos[:frames]
         height, width = background.shape[1], background.shape[2]
-        robot, mask = _render(qpos, base, intrinsic, height, width)
-        image = background.copy()
-        image[mask] = robot[mask]
+        robot, robot_mask, gripper_mask, robot_depth = _render(qpos, base, intrinsic, height, width)
+        scene_depth = _match_depth(np.load(dst / DEPTH)["depth"], height, width)
+        hand = _match_mask(load_masks(dst / MASKS), height, width)
+        image = _composite(background, robot, robot_mask, gripper_mask, robot_depth, scene_depth, hand)
         write_rgb(dst / COMPOSITE, image, fps)
 
 
@@ -60,13 +64,20 @@ def _render(qpos, base, intrinsic, height, width):
     _hide(model)
     _place_base(model, base)
     _place_camera(model, intrinsic, height)
+    gripper_ids = np.array([
+        geom_id
+        for geom_id in range(model.ngeom)
+        if (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom_id) or "").startswith(_GRIPPER_GEOMS)
+    ])
     data = mujoco.MjData(model)
     model.vis.global_.offwidth = max(int(model.vis.global_.offwidth), width)
     model.vis.global_.offheight = max(int(model.vis.global_.offheight), height)
     renderer = mujoco.Renderer(model, height=height, width=width)
-    rgb = np.zeros((len(qpos), height, width, 3), dtype=np.uint8)
-    mask = np.zeros((len(qpos), height, width), dtype=bool)
-    count = min(len(qpos), len(rgb))
+    count = len(qpos)
+    rgb = np.zeros((count, height, width, 3), dtype=np.uint8)
+    robot_mask = np.zeros((count, height, width), dtype=bool)
+    gripper_mask = np.zeros((count, height, width), dtype=bool)
+    depth = np.zeros((count, height, width), dtype=np.float32)
     for index in range(count):
         data.qpos[:] = qpos[index]
         mujoco.mj_forward(model, data)
@@ -74,10 +85,43 @@ def _render(qpos, base, intrinsic, height, width):
         rgb[index] = renderer.render()
         renderer.enable_segmentation_rendering()
         renderer.update_scene(data, camera="ego_camera_calibrated")
-        mask[index] = renderer.render()[:, :, 0] >= 0
+        geom = renderer.render()[:, :, 0]
         renderer.disable_segmentation_rendering()
+        robot_mask[index] = geom >= 0
+        gripper_mask[index] = np.isin(geom, gripper_ids)
+        renderer.enable_depth_rendering()
+        renderer.update_scene(data, camera="ego_camera_calibrated")
+        depth[index] = renderer.render()
+        renderer.disable_depth_rendering()
     renderer.close()
-    return rgb, mask
+    return rgb, robot_mask, gripper_mask, depth
+
+
+def _composite(background, robot, robot_mask, gripper_mask, robot_depth, scene_depth, hand):
+    count = min(len(background), len(robot), len(scene_depth), len(hand))
+    image = background[:count].copy()
+    for index in range(count):
+        dilated = cv2.dilate(hand[index].astype(np.uint8), _HAND_KERNEL, iterations=1).astype(bool)
+        arm = robot_mask[index] & ~gripper_mask[index]
+        hidden = gripper_mask[index] & (scene_depth[index] < robot_depth[index]) & ~dilated
+        visible = arm | (gripper_mask[index] & ~hidden)
+        image[index][visible] = robot[index][visible]
+    return image
+
+
+def _match_depth(depth: np.ndarray, height: int, width: int) -> np.ndarray:
+    if depth.shape[1:] == (height, width):
+        return depth
+    return np.stack([cv2.resize(frame, (width, height), interpolation=cv2.INTER_LINEAR) for frame in depth])
+
+
+def _match_mask(masks: np.ndarray, height: int, width: int) -> np.ndarray:
+    if masks.shape[1:] == (height, width):
+        return masks
+    return np.stack([
+        cv2.resize(mask.astype(np.uint8), (width, height), interpolation=cv2.INTER_NEAREST).astype(bool)
+        for mask in masks
+    ])
 
 
 def _hide(model: mujoco.MjModel) -> None:

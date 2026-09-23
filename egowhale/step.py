@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GRIPPER = "action/gripper.npz"
 MASKS = "visual/masks.npz"
 INPAINT = "visual/inpaint.mp4"
+DEPTH = "visual/depth.npz"
 BASE = "action/base.json"
 IK = "action/ik.npz"
 COMPOSITE = "visual/composite.mp4"
