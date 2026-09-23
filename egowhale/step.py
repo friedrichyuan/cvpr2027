@@ -14,6 +14,7 @@ DEPTH = "visual/depth.npz"
 BASE = "action/base.json"
 IK = "action/ik.npz"
 COMPOSITE = "visual/composite.mp4"
+QUALITY = "action/quality.json"
 
 
 class Step:
