@@ -328,7 +328,7 @@ def _audit(frames, fps: float, description: str) -> dict:
         content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{payload}"}})
     content.append({"type": "text", "text": _PROMPT.replace("{description}", description)})
     body = json.dumps({
-        "model": os.environ.get("EGOWHALE_VLM_MODEL", "qwen3.5-plus"),
+        "model": os.environ.get("EGOWHALE_VLM_MODEL", "qwen3.8-flash"),
         "messages": [{"role": "user", "content": content}],
     }).encode("utf-8")
     base = os.environ.get("EGOWHALE_VLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1").rstrip("/")
