@@ -27,7 +27,7 @@ class Depth(Step):
             raise FileNotFoundError(_WEIGHTS)
         frames, _fps = read_rgb(Path(dst) / INPAINT)
         extrinsics, intrinsics = _cameras(Path(src), frames.shape[1], frames.shape[2], len(frames))
-        depth = _estimate(frames[: len(extrinsics)], extrinsics, intrinsics)
+        depth = _estimate(frames[: len(extrinsics)], extrinsics, intrinsics, getattr(self, "_model", None))
         path = Path(dst) / DEPTH
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(path, depth=depth.astype(np.float32))
@@ -51,18 +51,15 @@ def _cameras(episode: Path, height: int, width: int, frames: int):
     return extrinsics, np.repeat(intrinsic[None], count, axis=0)
 
 
-def _estimate(frames: np.ndarray, extrinsics: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
+def load_model():
+    """DA3-GIANT kept on a depth actor. Serial runs load and drop it per episode."""
     if str(_SRC) not in sys.path:
         sys.path.insert(0, str(_SRC))
     _stub_evo()
-    import torch
     from safetensors.torch import load_file
 
     from depth_anything_3.cfg import create_object, load_config
     from depth_anything_3.registry import MODEL_REGISTRY
-    from depth_anything_3.utils.geometry import affine_inverse
-    from depth_anything_3.utils.io.input_processor import InputProcessor
-    from depth_anything_3.utils.io.output_processor import OutputProcessor
 
     model = create_object(load_config(MODEL_REGISTRY["da3-giant"])).cuda().eval()
     state = {key.removeprefix("model."): value for key, value in load_file(str(_WEIGHTS / "model.safetensors")).items()}
@@ -70,6 +67,22 @@ def _estimate(frames: np.ndarray, extrinsics: np.ndarray, intrinsics: np.ndarray
     depth_missing = [key for key in missing if "output_conv2." in key and "aux" not in key]
     if unexpected or depth_missing:
         raise RuntimeError(f"DA3 weight mismatch, missing {depth_missing[:5]}, unexpected {list(unexpected)[:5]}")
+    return model
+
+
+def _estimate(frames: np.ndarray, extrinsics: np.ndarray, intrinsics: np.ndarray, model=None) -> np.ndarray:
+    if str(_SRC) not in sys.path:
+        sys.path.insert(0, str(_SRC))
+    _stub_evo()
+    import torch
+
+    from depth_anything_3.utils.geometry import affine_inverse
+    from depth_anything_3.utils.io.input_processor import InputProcessor
+    from depth_anything_3.utils.io.output_processor import OutputProcessor
+
+    own = model is None
+    if own:
+        model = load_model()
     images, extrinsics_t, intrinsics_t = InputProcessor()(
         [frame for frame in frames], extrinsics, intrinsics, num_workers=1
     )
@@ -83,7 +96,8 @@ def _estimate(frames: np.ndarray, extrinsics: np.ndarray, intrinsics: np.ndarray
             )
         prediction = OutputProcessor()(raw)
     finally:
-        del model
+        if own:
+            del model
     depth = np.asarray(prediction.depth, dtype=np.float32) / _metric_scale(prediction.extrinsics, extrinsics_t.numpy())
     height, width = frames.shape[1], frames.shape[2]
     if depth.ndim == 4:

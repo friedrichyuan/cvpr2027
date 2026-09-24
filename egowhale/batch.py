@@ -1,0 +1,324 @@
+"""Ray pools for the episode DAG. One heavy model stays on each GPU."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import time
+import traceback
+from pathlib import Path
+
+os.environ.setdefault("MUJOCO_GL", "egl")
+
+from egowhale.action.approach import Approach
+from egowhale.action.base_ik import BaseIK
+from egowhale.action.curate import Curate
+from egowhale.action.retarget import Retarget
+from egowhale.step import ROOT, _done
+from egowhale.visual.composite import Composite
+from egowhale.visual.depth import Depth
+from egowhale.visual.inpaint import Inpaint
+from egowhale.visual.segment import Segment
+
+# Later stages wait on these. The two branches meet at composite.
+DEPS = {
+    "retarget": (),
+    "segment": (),
+    "base_ik": ("retarget",),
+    "inpaint": ("segment",),
+    "approach": ("base_ik",),
+    "depth": ("inpaint",),
+    "composite": ("retarget", "segment", "base_ik", "inpaint", "approach", "depth"),
+    "curate": ("composite",),
+}
+POOL = {
+    "retarget": "action",
+    "base_ik": "action",
+    "approach": "action",
+    "segment": "segment",
+    "inpaint": "inpaint",
+    "depth": "depth",
+    "composite": "cpu",
+    "curate": "cpu",
+}
+STEPS = {
+    "retarget": Retarget,
+    "segment": Segment,
+    "inpaint": Inpaint,
+    "depth": Depth,
+    "base_ik": BaseIK,
+    "approach": Approach,
+    "composite": Composite,
+    "curate": Curate,
+}
+
+
+class Job:
+    def __init__(self, src: Path, dst: Path):
+        self.src = src
+        self.dst = dst
+        self.done = {name for name, cls in STEPS.items() if _done(dst, cls)}
+        self.running: set[str] = set()
+        self.failed = False
+        self.error = ""
+        self.started = time.perf_counter()
+
+    def ready(self) -> list[str]:
+        if self.failed:
+            return []
+        return [
+            name
+            for name, deps in DEPS.items()
+            if name not in self.done and name not in self.running and all(dep in self.done for dep in deps)
+        ]
+
+    def finished(self) -> bool:
+        return self.failed or set(DEPS) <= self.done
+
+
+def execute(step, src, dst) -> None:
+    src, dst = Path(src), Path(dst)
+    dst.mkdir(parents=True, exist_ok=True)
+    if _done(dst, type(step)):
+        return
+    missing = [name for name in step.needs if not (dst / name).is_file()]
+    if missing:
+        raise FileNotFoundError(f"{step.name} missing {missing}")
+    step.run(src, dst)
+    missing = [name for name in step.makes if not (dst / name).is_file()]
+    if missing:
+        raise FileNotFoundError(f"{step.name} did not write {missing}")
+
+
+def _actors(pools: dict[str, int]):
+    import ray
+
+    gpu = ray.remote(num_gpus=1, max_concurrency=1)
+    cpu = ray.remote(num_cpus=1, max_concurrency=1)
+
+    @gpu
+    class SegmentActor:
+        def __init__(self):
+            from sam3.model_builder import build_sam3_video_predictor
+
+            self.step = Segment()
+            self.step._held = build_sam3_video_predictor(checkpoint_path=str(_segment_ckpt()))
+
+        def run(self, src, dst):
+            execute(self.step, src, dst)
+
+    @gpu
+    class InpaintActor:
+        def __init__(self):
+            self.step = Inpaint()
+
+        def run(self, src, dst):
+            execute(self.step, src, dst)
+
+    @gpu
+    class DepthActor:
+        def __init__(self):
+            from egowhale.visual.depth import load_model
+
+            self.step = Depth()
+            self.step._model = load_model()
+
+        def run(self, src, dst):
+            execute(self.step, src, dst)
+
+    @gpu
+    class ActionActor:
+        def __init__(self):
+            self.steps = {"retarget": Retarget(), "base_ik": BaseIK(), "approach": Approach()}
+
+        def run(self, stage, src, dst):
+            execute(self.steps[stage], src, dst)
+
+    @cpu
+    class CpuActor:
+        def __init__(self):
+            os.environ.pop("EGOWHALE_VLM_API_KEY", None)
+            self.steps = {"composite": Composite(), "curate": Curate()}
+
+        def run(self, stage, src, dst):
+            execute(self.steps[stage], src, dst)
+
+    made = {
+        "segment": [SegmentActor.remote() for _ in range(pools["segment"])],
+        "inpaint": [InpaintActor.remote() for _ in range(pools["inpaint"])],
+        "depth": [DepthActor.remote() for _ in range(pools["depth"])],
+        "action": [ActionActor.remote() for _ in range(pools["action"])],
+        "cpu": [CpuActor.remote() for _ in range(pools["cpu"])],
+    }
+    return made
+
+
+def _segment_ckpt() -> Path:
+    return ROOT / "thirdparty" / "sam3" / "weights" / "sam3" / "sam3.pt"
+
+
+def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path) -> None:
+    import ray
+
+    if not ray.is_initialized():
+        ray.init(ignore_reinit_error=True)
+    have = int(ray.cluster_resources().get("GPU", 0))
+    need = pools["segment"] + pools["inpaint"] + pools["depth"] + pools["action"]
+    if need > have:
+        raise SystemExit(f"GPU pools ask for {need} devices, cluster has {have}")
+    free = _actors(pools)
+    waiting = list(jobs)
+    active: list[Job] = []
+    pending = {}
+
+    def submit() -> None:
+        while len(active) < inflight and waiting:
+            active.append(waiting.pop(0))
+        for job in active:
+            for stage in job.ready():
+                pool = POOL[stage]
+                if not free[pool]:
+                    continue
+                actor = free[pool].pop()
+                method = actor.run.remote(stage, str(job.src), str(job.dst)) if pool in ("action", "cpu") else actor.run.remote(str(job.src), str(job.dst))
+                job.running.add(stage)
+                pending[method] = (job, stage, pool, actor)
+
+    while waiting or active or pending:
+        submit()
+        if not pending:
+            for job in list(active):
+                if job.finished():
+                    _record(job, log)
+                    active.remove(job)
+            if not waiting and not pending:
+                break
+            continue
+        done, _rest = ray.wait(list(pending), num_returns=1)
+        ref = done[0]
+        job, stage, pool, actor = pending.pop(ref)
+        try:
+            ray.get(ref)
+        except Exception:
+            job.failed = True
+            job.error = f"{stage}: {traceback.format_exc().strip().splitlines()[-1]}"
+            print(f"fail {job.src.parent.name}/{job.src.stem} {job.error}", flush=True)
+        else:
+            job.done.add(stage)
+        job.running.discard(stage)
+        free[pool].append(actor)
+        if job.finished() and job in active:
+            _record(job, log)
+            active.remove(job)
+    ray.shutdown()
+
+
+def _record(job: Job, log: Path) -> None:
+    row = {
+        "episode": f"{job.src.parent.name}/{job.src.stem}",
+        "ok": not job.failed,
+        "error": job.error,
+        "seconds": round(time.perf_counter() - job.started, 2),
+    }
+    print(f"{'ok' if row['ok'] else 'fail'} {row['episode']} {row['seconds']:.1f}s", flush=True)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a") as handle:
+        handle.write(json.dumps(row) + "\n")
+
+
+def simulate(count: int, pools: dict[str, int], inflight: int, fail: dict[tuple[int, str], str] | None = None) -> list[tuple]:
+    """Single-threaded stand-in: each pool has N slots and finishes the oldest task first."""
+    fail = fail or {}
+    jobs = [Job(Path(f"task/{index}.hdf5"), Path(f"out/{index}")) for index in range(count)]
+    for job in jobs:
+        job.done.clear()
+    free = {name: size for name, size in pools.items()}
+    waiting = list(jobs)
+    active: list[Job] = []
+    running: list[tuple] = []
+    trace = []
+    guard = 0
+    while waiting or active or running:
+        guard += 1
+        if guard > 10000:
+            raise RuntimeError("scheduler did not finish")
+        while len(active) < inflight and waiting:
+            active.append(waiting.pop(0))
+        for job in active:
+            index = int(job.src.stem)
+            for stage in job.ready():
+                pool = POOL[stage]
+                if free[pool] <= 0:
+                    continue
+                free[pool] -= 1
+                job.running.add(stage)
+                running.append((index, stage, pool))
+                trace.append((index, stage, "start"))
+        if not running:
+            for job in list(active):
+                if job.finished():
+                    active.remove(job)
+            if not running and all(job.finished() for job in active):
+                break
+            if not running:
+                raise RuntimeError("no ready stage and nothing running")
+            continue
+        index, stage, pool = running.pop(0)
+        job = jobs[index]
+        job.running.discard(stage)
+        free[pool] += 1
+        reason = fail.get((index, stage))
+        if reason:
+            job.failed = True
+            job.error = reason
+            trace.append((index, stage, "fail"))
+        else:
+            job.done.add(stage)
+            trace.append((index, stage, "end"))
+        if job.finished() and job in active:
+            active.remove(job)
+    return trace
+
+
+def episodes_from(paths: list[Path], limit: int) -> list[Path]:
+    found = []
+    for path in paths:
+        if path.is_dir():
+            found.extend(sorted(item for item in path.rglob("*.hdf5") if item.with_suffix(".mp4").is_file()))
+        else:
+            found.append(path)
+    if limit:
+        found = found[:limit]
+    return found
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the episode DAG on Ray pools.")
+    parser.add_argument("paths", nargs="+", type=Path, help="HDF5 files or a dataset directory")
+    parser.add_argument("--out", type=Path, default=ROOT / "outputs")
+    parser.add_argument("--inflight", type=int, default=8)
+    parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--segment", type=int, default=1)
+    parser.add_argument("--inpaint", type=int, default=1)
+    parser.add_argument("--depth", type=int, default=1)
+    parser.add_argument("--action", type=int, default=1)
+    args = parser.parse_args()
+    sources = episodes_from([path.expanduser().resolve() for path in args.paths], args.limit)
+    if not sources:
+        raise SystemExit("no episodes")
+    out = args.out.expanduser().resolve()
+    jobs = [Job(src, out / src.parent.name / src.stem) for src in sources]
+    pools = {
+        "segment": args.segment,
+        "inpaint": args.inpaint,
+        "depth": args.depth,
+        "action": args.action,
+        "cpu": args.inflight,
+    }
+    print(f"{len(jobs)} episodes  inflight {args.inflight}  pools {pools}", flush=True)
+    serve(jobs, pools, args.inflight, out / "batch.jsonl")
+
+
+if __name__ == "__main__":
+    main()

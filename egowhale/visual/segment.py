@@ -26,25 +26,31 @@ class Segment(Step):
             raise FileNotFoundError(_CKPT)
         from sam3.model_builder import build_sam3_video_predictor
 
-        predictor = build_sam3_video_predictor(checkpoint_path=str(_CKPT))
+        held = getattr(self, "_held", None)
+        predictor = held if held is not None else build_sam3_video_predictor(checkpoint_path=str(_CKPT))
         try:
             masks = _segment(predictor, video)
         finally:
-            del predictor
+            if held is None:
+                del predictor
         save_masks(Path(dst) / MASKS, masks)
 
 
 def _segment(predictor, video: Path) -> np.ndarray:
     session = predictor.handle_request(request={"type": "start_session", "resource_path": str(video)})
-    mid = _frame_count(video) // 2
-    predictor.handle_request(
-        request={"type": "add_prompt", "session_id": session["session_id"], "frame_index": mid, "text": "person"}
-    )
-    outputs = {}
-    for item in predictor.handle_stream_request(
-        request={"type": "propagate_in_video", "session_id": session["session_id"]}
-    ):
-        outputs[item["frame_index"]] = item["outputs"]
+    session_id = session["session_id"]
+    try:
+        mid = _frame_count(video) // 2
+        predictor.handle_request(
+            request={"type": "add_prompt", "session_id": session_id, "frame_index": mid, "text": "person"}
+        )
+        outputs = {}
+        for item in predictor.handle_stream_request(
+            request={"type": "propagate_in_video", "session_id": session_id}
+        ):
+            outputs[item["frame_index"]] = item["outputs"]
+    finally:
+        predictor.handle_request({"type": "close_session", "session_id": session_id, "run_gc_collect": False})
     if not outputs:
         raise RuntimeError("SAM3 returned no frames")
     masks = np.stack([_union(outputs[index]) for index in sorted(outputs)])
