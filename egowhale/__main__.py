@@ -8,6 +8,7 @@ from pathlib import Path
 
 os.environ.setdefault("MUJOCO_GL", "egl")
 
+from egowhale.action.approach import Approach
 from egowhale.action.base_ik import BaseIK
 from egowhale.action.curate import Curate
 from egowhale.action.retarget import Retarget
@@ -17,7 +18,7 @@ from egowhale.visual.depth import Depth
 from egowhale.visual.inpaint import Inpaint
 from egowhale.visual.segment import Segment
 
-STEPS = (Retarget, Segment, Inpaint, Depth, BaseIK, Composite, Curate)
+STEPS = (Retarget, Segment, Inpaint, Depth, BaseIK, Approach, Composite, Curate)
 
 
 def main() -> None:

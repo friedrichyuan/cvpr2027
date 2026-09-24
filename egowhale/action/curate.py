@@ -18,7 +18,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from egowhale.media import read_rgb
-from egowhale.step import BASE, COMPOSITE, GRIPPER, IK, QUALITY, Step
+from egowhale.step import BASE, COMPOSITE, GRIPPER, IK, PREFIX, QUALITY, Step
 from egowhale.visual.composite import _hide, _place_base, _place_camera
 
 _SCENE = Path(__file__).resolve().parents[2] / "assets" / "mujoco_arx_scene" / "scene.xml"
@@ -39,7 +39,7 @@ Respond in JSON: {"is consistent": true/false, "confidence": 0.0-1.0, "reasoning
 
 class Curate(Step):
     name = "curate"
-    needs = (GRIPPER, IK, BASE, COMPOSITE)
+    needs = (GRIPPER, IK, BASE, COMPOSITE, PREFIX)
     makes = (QUALITY,)
 
     def run(self, src: Path, dst: Path) -> None:
@@ -75,7 +75,8 @@ class Curate(Step):
         invalid_ratio = float((~kept).mean())
         keep = invalid_ratio <= _DROP_RATIO
         description = _description(Path(src))
-        audit = _audit(background[:frames], fps, description) if keep else {"status": "skipped", "reason": "dropped before audit"}
+        approach = len(np.load(dst / PREFIX)["qpos"]) - 1
+        audit = _audit(background[approach:approach + frames], fps, description) if keep else {"status": "skipped", "reason": "dropped before audit"}
         if audit.get("is_consistent") is False:
             keep = False
         report = {

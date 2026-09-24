@@ -13,6 +13,7 @@ INPAINT = "visual/inpaint.mp4"
 DEPTH = "visual/depth.npz"
 BASE = "action/base.json"
 IK = "action/ik.npz"
+PREFIX = "action/prefix.npz"
 COMPOSITE = "visual/composite.mp4"
 QUALITY = "action/quality.json"
 

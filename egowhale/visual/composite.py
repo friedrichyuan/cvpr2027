@@ -14,17 +14,17 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from egowhale.media import load_masks, read_rgb, write_rgb
-from egowhale.step import BASE, COMPOSITE, DEPTH, GRIPPER, IK, INPAINT, MASKS, ROOT, Step
+from egowhale.step import BASE, COMPOSITE, DEPTH, GRIPPER, IK, INPAINT, MASKS, PREFIX, ROOT, Step
 
 _SCENE = ROOT / "assets" / "mujoco_arx_scene" / "scene.xml"
-_HIDE = ("floor", "table", "camera", "workspace", "front_workspace", "base_plus", "base_minus", "robot_front", "humanego")
+_HIDE = ("floor", "table", "camera", "workspace", "front_workspace", "base_link", "base_plus", "base_minus", "robot_front", "humanego")
 _GRIPPER_GEOMS = ("left_link7", "left_link8", "right_link17", "right_link18")
 _HAND_KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
 
 class Composite(Step):
     name = "composite"
-    needs = (INPAINT, IK, BASE, GRIPPER, DEPTH, MASKS)
+    needs = (INPAINT, IK, BASE, GRIPPER, DEPTH, MASKS, PREFIX)
     makes = (COMPOSITE,)
 
     def run(self, src: Path, dst: Path) -> None:
@@ -40,12 +40,20 @@ class Composite(Step):
         base = np.asarray(json.loads((dst / BASE).read_text())["matrix"], dtype=np.float64)
         frames = min(len(background), len(qpos))
         background, qpos = background[:frames], qpos[:frames]
+        prefix = np.load(dst / PREFIX)["qpos"]
+        background = _hold(background, len(prefix))
+        qpos = np.concatenate((prefix, qpos[1:]), axis=0)
         height, width = background.shape[1], background.shape[2]
         robot, robot_mask, gripper_mask, robot_depth = _render(qpos, base, intrinsic, height, width)
-        scene_depth = _match_depth(np.load(dst / DEPTH)["depth"], height, width)
-        hand = _match_mask(load_masks(dst / MASKS), height, width)
+        scene_depth = _hold(_match_depth(np.load(dst / DEPTH)["depth"][:frames], height, width), len(prefix))
+        hand = _hold(_match_mask(load_masks(dst / MASKS)[:frames], height, width), len(prefix))
         image = _composite(background, robot, robot_mask, gripper_mask, robot_depth, scene_depth, hand)
         write_rgb(dst / COMPOSITE, image, fps)
+
+
+def _hold(array: np.ndarray, count: int) -> np.ndarray:
+    """Keep frame 0 under the approach, then continue from frame 1. Frame 0 is the arrival."""
+    return np.concatenate((np.repeat(array[:1], count, axis=0), array[1:]), axis=0)
 
 
 def _video_height(path: Path) -> float:

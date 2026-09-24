@@ -12,6 +12,7 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 import mujoco
 import numpy as np
 import torch
+from scipy.signal import savgol_filter
 from scipy.spatial.transform import Rotation
 
 from egowhale.step import BASE, GRIPPER, IK, ROOT, Step
@@ -41,10 +42,8 @@ _R_CAM_ROBOT = np.array([[0.0, -1.0, 0.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0]], d
 _REACH = 0.855
 _DT = 1.0 / 30.0
 _BOUND = np.array([0.30, 0.30, 0.20, np.deg2rad(35.0)], dtype=np.float64)
-_CHUNK = 64
-_SEEDS = 8
-_INITS = 4
-_STEPS = 80
+_SEEDS = 2
+_STEPS = 120
 
 
 class BaseIK(Step):
@@ -72,6 +71,9 @@ def _solve(position, rotation, width, valid):
     from curobo.inverse_kinematics import InverseKinematics, InverseKinematicsCfg
     from curobo.kinematics import Kinematics, KinematicsCfg
 
+    seed_r, seed_t = _seed_pose(position, valid)
+    goal_p, goal_r = _hold(position, rotation, valid)
+    offsets = _offset_grid()
     robot = _robot_yaml()
     kin = Kinematics(KinematicsCfg.from_robot_yaml_file(robot, tool_frames=list(TCP)))
     ik = InverseKinematics(
@@ -81,33 +83,46 @@ def _solve(position, rotation, width, valid):
             self_collision_check=False,
             load_collision_spheres=False,
             use_cuda_graph=False,
-            max_batch_size=_CHUNK,
+            max_batch_size=len(offsets) * len(goal_p),
             optimizer_configs=["ik/lbfgs_ik.yml"],
         )
     )
-    seed_r, seed_t = _seed_pose(position, valid)
-    goal_p, goal_r = _hold(position, rotation, valid)
-    offset, arm = _best_seed(ik, goal_p, goal_r, seed_r, seed_t)
+    offset, arm = _best_seed(ik, goal_p, goal_r, seed_r, seed_t, offsets)
     offset, arm, losses = _refine(kin, goal_p, goal_r, valid, seed_r, seed_t, offset, arm)
+    arm = _smooth_arm(arm)
     qpos = _pack_qpos(arm, width, valid)
     return _camera_matrix(seed_r, seed_t, offset), qpos, losses
 
 
-def _best_seed(ik, position, rotation, seed_r, seed_t):
-    rng = np.random.default_rng(0)
-    offsets = [np.zeros(4, dtype=np.float64)]
-    span = np.array([0.12, 0.12, 0.08, np.deg2rad(15.0)])
-    for _ in range(_INITS - 1):
-        offsets.append(np.clip(rng.uniform(-span, span), -_BOUND, _BOUND))
-    best_cost, best = np.inf, None
-    for offset in offsets:
-        base_p, base_r = _into_base(position, rotation, _camera_matrix(seed_r, seed_t, offset))
-        arm, cost = _batch_ik(ik, base_p, base_r)
-        if cost < best_cost:
-            best_cost, best = cost, (offset, arm)
-    if best is None:
-        raise RuntimeError("cuRobo returned no joint seed")
-    return best
+def _smooth_arm(arm: np.ndarray) -> np.ndarray:
+    window = min(15, arm.shape[0] if arm.shape[0] % 2 else arm.shape[0] - 1)
+    if window <= 3:
+        return arm
+    return savgol_filter(arm, window, 3, axis=0)
+
+
+def _offset_grid() -> np.ndarray:
+    samples = [
+        np.linspace(-bound, bound, 3)
+        for bound in _BOUND
+    ]
+    grid = np.stack(np.meshgrid(*samples, indexing="ij"), axis=-1).reshape(-1, 4)
+    return grid.astype(np.float64)
+
+
+def _best_seed(ik, position, rotation, seed_r, seed_t, offsets):
+    frames = len(position)
+    posed = [
+        _into_base(position, rotation, _camera_matrix(seed_r, seed_t, offset))
+        for offset in offsets
+    ]
+    stacked_p = np.concatenate([item[0] for item in posed], axis=0)
+    stacked_r = np.concatenate([item[1] for item in posed], axis=0)
+    arm, error = _batch_ik(ik, stacked_p, stacked_r)
+    arm = arm.reshape(len(offsets), frames, -1)
+    error = error.reshape(len(offsets), frames, -1)
+    choice = int(np.nanmean(error, axis=(1, 2)).argmin())
+    return offsets[choice], arm[choice]
 
 
 def _refine(kin, position, rotation, valid, seed_r, seed_t, offset, arm):
@@ -153,7 +168,7 @@ def _loss(kin, q, base, goal_p, goal_q, mask, seed_R, seed_t):
     jerk = (q[3:] - 3.0 * q[2:-1] + 3.0 * q[1:-2] - q[:-3]).square().mean()
     low, high = _limits()
     joint_limit = torch.relu(low - q).square().mean() + torch.relu(q - high).square().mean()
-    total = 20.0 * position + 5.0 * orientation + 0.05 * continuity + 2e-4 * velocity + 0.2 * jerk + 5.0 * joint_limit
+    total = 20.0 * position + 5.0 * orientation + 4.0 * continuity + 0.05 * velocity + 2.0 * jerk + 5.0 * joint_limit
     return total, {
         "position": position,
         "orientation": orientation,
@@ -206,24 +221,17 @@ def _batch_ik(ik, position, rotation):
     from curobo.types import GoalToolPose, Pose
 
     pos, quat = _wxyz_pair(position, rotation)
-    chunks, costs = [], []
-    for start in range(0, len(pos), _CHUNK):
-        stop = min(start + _CHUNK, len(pos))
-        poses = {
-            name: Pose(
-                position=torch.tensor(pos[start:stop, side], device="cuda", dtype=torch.float32),
-                quaternion=torch.tensor(quat[start:stop, side], device="cuda", dtype=torch.float32),
-                name=name,
-                normalize_rotation=True,
-            )
-            for side, name in enumerate(TCP)
-        }
-        result = ik.solve_pose(goal_tool_poses=GoalToolPose.from_poses(poses, ordered_tool_frames=list(TCP)))
-        width = stop - start
-        chunks.append(_arm_from_result(result, ik)[:width])
-        costs.append(_mean_error(result, width))
-    weights = np.array([len(chunk) for chunk in chunks], dtype=np.float64)
-    return np.concatenate(chunks, axis=0), float(np.dot(costs, weights) / weights.sum())
+    poses = {
+        name: Pose(
+            position=torch.tensor(pos[:, side], device="cuda", dtype=torch.float32),
+            quaternion=torch.tensor(quat[:, side], device="cuda", dtype=torch.float32),
+            name=name,
+            normalize_rotation=True,
+        )
+        for side, name in enumerate(TCP)
+    }
+    result = ik.solve_pose(goal_tool_poses=GoalToolPose.from_poses(poses, ordered_tool_frames=list(TCP)))
+    return _arm_from_result(result, ik)[: len(pos)], _frame_error(result, len(pos))
 
 
 def _arm_from_result(result, ik) -> np.ndarray:
@@ -236,12 +244,12 @@ def _arm_from_result(result, ik) -> np.ndarray:
     return np.asarray(values[:, index], dtype=np.float64)
 
 
-def _mean_error(result, width: int) -> float:
+def _frame_error(result, width: int) -> np.ndarray:
     error = getattr(result, "position_error", None)
     if error is None:
-        return 0.0
+        return np.zeros((width, 1), dtype=np.float64)
     values = error.detach().float().cpu().numpy().reshape(error.shape[0], -1)[:width]
-    return float(np.nanmean(values))
+    return np.asarray(values, dtype=np.float64)
 
 
 def _limits():
