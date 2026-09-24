@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import cv2
@@ -10,7 +11,18 @@ import numpy as np
 from egowhale.media import save_masks
 from egowhale.step import MASKS, ROOT, Step
 
-_CKPT = ROOT / "thirdparty" / "sam3" / "weights" / "sam3" / "sam3.pt"
+_ROOT = ROOT / "thirdparty" / "sam3"
+_CKPT = _ROOT / "weights" / "sam3" / "sam3.pt"
+
+
+def load_predictor():
+    """SAM 3 ships in thirdparty and is not installed on the worker by default."""
+    root = str(_ROOT)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from sam3.model_builder import build_sam3_video_predictor
+
+    return build_sam3_video_predictor(checkpoint_path=str(_CKPT))
 
 
 class Segment(Step):
@@ -24,10 +36,8 @@ class Segment(Step):
             raise FileNotFoundError(video)
         if not _CKPT.is_file():
             raise FileNotFoundError(_CKPT)
-        from sam3.model_builder import build_sam3_video_predictor
-
         held = getattr(self, "_held", None)
-        predictor = held if held is not None else build_sam3_video_predictor(checkpoint_path=str(_CKPT))
+        predictor = held if held is not None else load_predictor()
         try:
             masks = _segment(predictor, video)
         finally:

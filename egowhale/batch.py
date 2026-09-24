@@ -100,10 +100,10 @@ def _actors(pools: dict[str, int]):
     @gpu
     class SegmentActor:
         def __init__(self):
-            from sam3.model_builder import build_sam3_video_predictor
+            from egowhale.visual.segment import load_predictor
 
             self.step = Segment()
-            self.step._held = build_sam3_video_predictor(checkpoint_path=str(_segment_ckpt()))
+            self.step._held = load_predictor()
 
         def run(self, src, dst):
             execute(self.step, src, dst)
@@ -152,10 +152,6 @@ def _actors(pools: dict[str, int]):
         "cpu": [CpuActor.remote() for _ in range(pools["cpu"])],
     }
     return made
-
-
-def _segment_ckpt() -> Path:
-    return ROOT / "thirdparty" / "sam3" / "weights" / "sam3" / "sam3.pt"
 
 
 def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path) -> None:
