@@ -42,9 +42,13 @@ class Inpaint(Step):
             for index, (frame, mask) in enumerate(zip(frames, masks)):
                 cv2.imwrite(str(video_dir / f"{index:05d}.png"), cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
                 cv2.imwrite(str(mask_dir / f"{index:05d}.png"), mask.astype(np.uint8) * 255)
-            subprocess.run(
+            quiet = os.environ.get("EGOWHALE_QUIET") == "1"
+            env = os.environ.copy()
+            if quiet:
+                env["TQDM_DISABLE"] = "1"
+            result = subprocess.run(
                 [
-                    os.environ.get("PROPAINTER_PYTHON", sys.executable),
+                    env.get("PROPAINTER_PYTHON", sys.executable),
                     str(script),
                     "--video",
                     str(video_dir),
@@ -68,9 +72,16 @@ class Inpaint(Step):
                     "--save_fps",
                     "30",
                 ],
-                check=True,
                 cwd=str(_ROOT),
+                env=env,
+                stdout=subprocess.DEVNULL if quiet else None,
+                stderr=subprocess.PIPE if quiet else None,
+                text=True,
             )
+            if result.returncode != 0:
+                tail = (result.stderr or "").strip().splitlines()
+                detail = tail[-1] if tail else f"exit {result.returncode}"
+                raise RuntimeError(detail)
             result = next(out_dir.rglob("inpaint_out.mp4"))
             out.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(result, out)

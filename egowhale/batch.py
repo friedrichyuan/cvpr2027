@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
+import logging
 import os
+import sys
 import time
 import traceback
 from pathlib import Path
@@ -77,18 +81,22 @@ class Job:
         return self.failed or set(DEPS) <= self.done
 
 
-def execute(step, src, dst) -> None:
+def execute(step, src, dst) -> str:
+    os.environ["EGOWHALE_QUIET"] = "1"
     src, dst = Path(src), Path(dst)
     dst.mkdir(parents=True, exist_ok=True)
     if _done(dst, type(step)):
-        return
+        return ""
     missing = [name for name in step.needs if not (dst / name).is_file()]
     if missing:
         raise FileNotFoundError(f"{step.name} missing {missing}")
-    step.run(src, dst)
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        step.run(src, dst)
     missing = [name for name in step.makes if not (dst / name).is_file()]
     if missing:
         raise FileNotFoundError(f"{step.name} did not write {missing}")
+    return " ".join(line.strip() for line in buffer.getvalue().splitlines() if line.strip())
 
 
 def _actors(pools: dict[str, int]):
@@ -106,7 +114,7 @@ def _actors(pools: dict[str, int]):
             self.step._held = load_predictor()
 
         def run(self, src, dst):
-            execute(self.step, src, dst)
+            return execute(self.step, src, dst)
 
     @gpu
     class InpaintActor:
@@ -114,7 +122,7 @@ def _actors(pools: dict[str, int]):
             self.step = Inpaint()
 
         def run(self, src, dst):
-            execute(self.step, src, dst)
+            return execute(self.step, src, dst)
 
     @gpu
     class DepthActor:
@@ -125,7 +133,7 @@ def _actors(pools: dict[str, int]):
             self.step._model = load_model()
 
         def run(self, src, dst):
-            execute(self.step, src, dst)
+            return execute(self.step, src, dst)
 
     @gpu
     class ActionActor:
@@ -133,7 +141,7 @@ def _actors(pools: dict[str, int]):
             self.steps = {"retarget": Retarget(), "base_ik": BaseIK(), "approach": Approach()}
 
         def run(self, stage, src, dst):
-            execute(self.steps[stage], src, dst)
+            return execute(self.steps[stage], src, dst)
 
     @cpu
     class CpuActor:
@@ -142,28 +150,87 @@ def _actors(pools: dict[str, int]):
             self.steps = {"composite": Composite(), "curate": Curate()}
 
         def run(self, stage, src, dst):
-            execute(self.steps[stage], src, dst)
+            return execute(self.steps[stage], src, dst)
 
-    made = {
-        "segment": [SegmentActor.remote() for _ in range(pools["segment"])],
-        "inpaint": [InpaintActor.remote() for _ in range(pools["inpaint"])],
-        "depth": [DepthActor.remote() for _ in range(pools["depth"])],
-        "action": [ActionActor.remote() for _ in range(pools["action"])],
-        "cpu": [CpuActor.remote() for _ in range(pools["cpu"])],
+    classes = {
+        "segment": SegmentActor,
+        "inpaint": InpaintActor,
+        "depth": DepthActor,
+        "action": ActionActor,
+        "cpu": CpuActor,
     }
-    return made
+    return {
+        name: [(f"{name}{index}", cls.remote()) for index in range(pools[name])]
+        for name, cls in classes.items()
+    }
+
+
+_LOG_FORMAT = (
+    "<green>{time:HH:mm:ss}</green> │ {extra[progress]} │ <level>{extra[verb]}</level>"
+    " │ {extra[actor]} │ {extra[stage]} │ {extra[episode]} │ {extra[elapsed]} │ {message}"
+)
+_LEVEL = {"START": "INFO", "DONE": "SUCCESS", "FAIL": "ERROR", "OK": "SUCCESS"}
+
+
+def _col(text: str, width: int) -> str:
+    text = text or ""
+    if len(text) <= width:
+        return text.ljust(width)
+    return text[: width - 2] + ".."
+
+
+class Log:
+    """Fixed columns: progress, verb, actor, stage, episode, elapsed, detail."""
+
+    def __init__(self, path: Path, total: int):
+        from loguru import logger
+
+        self.total = total
+        self.ok = 0
+        self.fail = 0
+        self._logger = logger
+        path.parent.mkdir(parents=True, exist_ok=True)
+        logger.remove()
+        logger.add(sys.stderr, format=_LOG_FORMAT, colorize=True)
+        logger.add(path, format=_LOG_FORMAT, colorize=False, encoding="utf-8")
+
+    def event(self, kind: str, label: str, stage: str, episode: str, extra: str = "") -> None:
+        if kind == "start":
+            verb, elapsed, detail = "START", "", ""
+        elif kind == "done":
+            verb = "DONE"
+            elapsed, separated, detail = (extra or "").partition("  ")
+            if not separated:
+                elapsed, detail = extra or "", ""
+        elif kind == "ok":
+            verb, elapsed, detail = "OK", extra, ""
+        else:
+            verb = "FAIL"
+            elapsed, separated, detail = (extra or "").partition("  ")
+            if not separated or not elapsed.endswith("s"):
+                elapsed, detail = "", extra
+        done = f"{self.ok + self.fail}/{self.total}"
+        self._logger.bind(
+            progress=_col(done, 9),
+            verb=_col(verb, 5),
+            actor=_col("" if label == "-" else label, 9),
+            stage=_col("episode" if stage == "-" else stage, 10),
+            episode=_col(episode, 28),
+            elapsed=_col(elapsed, 8),
+        ).log(_LEVEL[verb], detail)
 
 
 def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path) -> None:
     import ray
 
     if not ray.is_initialized():
-        ray.init(ignore_reinit_error=True)
+        ray.init(ignore_reinit_error=True, log_to_driver=False, logging_level=logging.ERROR)
     have = int(ray.cluster_resources().get("GPU", 0))
     need = pools["segment"] + pools["inpaint"] + pools["depth"] + pools["action"]
     if need > have:
         raise SystemExit(f"GPU pools ask for {need} devices, cluster has {have}")
     free = _actors(pools)
+    journal = Log(log.with_suffix(".log"), len(jobs))
     waiting = list(jobs)
     active: list[Job] = []
     pending = {}
@@ -172,52 +239,68 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path) -> N
         while len(active) < inflight and waiting:
             active.append(waiting.pop(0))
         for job in active:
+            episode = _episode(job)
             for stage in job.ready():
                 pool = POOL[stage]
                 if not free[pool]:
                     continue
-                actor = free[pool].pop()
+                label, actor = free[pool].pop()
                 method = actor.run.remote(stage, str(job.src), str(job.dst)) if pool in ("action", "cpu") else actor.run.remote(str(job.src), str(job.dst))
                 job.running.add(stage)
-                pending[method] = (job, stage, pool, actor)
+                pending[method] = (job, stage, pool, label, actor, time.perf_counter())
+                journal.event("start", label, stage, episode)
 
     while waiting or active or pending:
         submit()
         if not pending:
             for job in list(active):
                 if job.finished():
-                    _record(job, log)
+                    _record(job, log, journal)
                     active.remove(job)
             if not waiting and not pending:
                 break
             continue
         done, _rest = ray.wait(list(pending), num_returns=1)
         ref = done[0]
-        job, stage, pool, actor = pending.pop(ref)
+        job, stage, pool, label, actor, started = pending.pop(ref)
+        episode = _episode(job)
         try:
-            ray.get(ref)
+            summary = ray.get(ref) or ""
         except Exception:
             job.failed = True
             job.error = f"{stage}: {traceback.format_exc().strip().splitlines()[-1]}"
-            print(f"fail {job.src.parent.name}/{job.src.stem} {job.error}", flush=True)
+            journal.event("fail", label, stage, episode, job.error)
         else:
             job.done.add(stage)
+            elapsed = f"{time.perf_counter() - started:.1f}s"
+            journal.event("done", label, stage, episode, f"{elapsed}  {summary}".rstrip())
         job.running.discard(stage)
-        free[pool].append(actor)
+        free[pool].append((label, actor))
         if job.finished() and job in active:
-            _record(job, log)
+            _record(job, log, journal)
             active.remove(job)
     ray.shutdown()
 
 
-def _record(job: Job, log: Path) -> None:
+def _episode(job: Job) -> str:
+    return f"{job.src.parent.name}/{job.src.stem}"
+
+
+def _record(job: Job, log: Path, journal: Log) -> None:
     row = {
-        "episode": f"{job.src.parent.name}/{job.src.stem}",
+        "episode": _episode(job),
         "ok": not job.failed,
         "error": job.error,
         "seconds": round(time.perf_counter() - job.started, 2),
     }
-    print(f"{'ok' if row['ok'] else 'fail'} {row['episode']} {row['seconds']:.1f}s", flush=True)
+    if row["ok"]:
+        journal.ok += 1
+    else:
+        journal.fail += 1
+    if row["ok"]:
+        journal.event("ok", "", "episode", row["episode"], f"{row['seconds']:.1f}s")
+    else:
+        journal.event("fail", "", "episode", row["episode"], f"{row['seconds']:.1f}s  {row['error']}")
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("a") as handle:
         handle.write(json.dumps(row) + "\n")
