@@ -281,27 +281,21 @@ def _boot(free: dict, log) -> None:
 
 
 def _take(active: list[Job], stage: str, limit: int) -> list[Job]:
-    """Pack ready episodes of one length until the frame budget is full. Segment stays one video."""
+    """Whole episodes, oldest first. A node then adds later episodes of the same length until it is full."""
     ready = [job for job in active if stage in job.ready()]
     if not ready or stage == "segment":
         return ready[:1]
-    groups: dict[int, list[Job]] = {}
+    length = ready[0].frames
+    chosen: list[Job] = []
+    total = 0
     for job in ready:
-        groups.setdefault(job.frames, []).append(job)
-    best: list[Job] = []
-    best_total = -1
-    for group in groups.values():
-        chosen: list[Job] = []
-        total = 0
-        for job in group:
-            if chosen and total + job.frames > limit:
-                break
-            chosen.append(job)
-            total += job.frames
-        if total > best_total:
-            best = chosen
-            best_total = total
-    return best
+        if job.frames != length:
+            continue
+        if chosen and total + job.frames > limit:
+            break
+        chosen.append(job)
+        total += job.frames
+    return chosen
 
 
 def _apply(jobs, rows, stage, meter, writer, log, active) -> None:

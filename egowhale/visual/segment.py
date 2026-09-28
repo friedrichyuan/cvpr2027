@@ -46,13 +46,24 @@ def _slice_batch(value, local: int, batch: int):
     return value
 
 
+def _window(index: int, last: int | None, length: int, budget: int) -> tuple[int, int]:
+    """Frames ahead of the tracker. Forward and backward windows meet, they do not overlap."""
+    if last is None or index >= last:
+        start = index
+        end = min(length, start + budget)
+    else:
+        end = index + 1
+        start = max(0, end - budget)
+    return start, end
+
+
 def install_frame_batch(predictor, frames: int = 16) -> None:
-    """Batch the image backbone across frames of one video. The tracker still steps in order."""
+    """Batch the image backbone along one episode. The tracker still steps one frame at a time."""
     import torch
 
     detector = predictor.model.detector
     original = detector._get_img_feats
-    state = {"budget": max(1, int(frames)), "start": None, "end": None, "feats": None, "token": None}
+    state = {"budget": max(1, int(frames)), "start": None, "end": None, "feats": None, "token": None, "last": None}
 
     def wrapped(backbone_out, img_ids):
         if "backbone_fpn" in backbone_out or not torch.is_tensor(img_ids) or img_ids.numel() != 1:
@@ -62,16 +73,17 @@ def install_frame_batch(predictor, frames: int = 16) -> None:
             return original(backbone_out, img_ids)
         index = int(img_ids.reshape(-1)[0].item())
         token = (img_batch.data_ptr(), int(img_batch.shape[0]))
-        if state["token"] != token or state["start"] is None or not (state["start"] <= index < state["end"]):
+        if state["token"] != token:
+            state["start"] = state["end"] = state["last"] = state["feats"] = None
+            state["token"] = token
+        if state["start"] is None or not (state["start"] <= index < state["end"]):
             budget = max(1, state["budget"])
             while True:
-                start = max(0, index - budget // 2)
-                end = min(int(img_batch.shape[0]), start + budget)
-                start = max(0, end - budget)
+                start, end = _window(index, state["last"], int(img_batch.shape[0]), budget)
                 images = img_batch[start:end].to(device=detector.device, dtype=torch.float32)
                 try:
                     state["feats"] = detector.backbone.forward_image(images)
-                    state["start"], state["end"], state["token"] = start, end, token
+                    state["start"], state["end"] = start, end
                     break
                 except Exception as exc:
                     oom = isinstance(exc, torch.cuda.OutOfMemoryError) or "out of memory" in str(exc).lower()
@@ -83,6 +95,7 @@ def install_frame_batch(predictor, frames: int = 16) -> None:
                     budget = max(1, budget // 2)
                     state["budget"] = budget
                     state["feats"] = None
+        state["last"] = index
         local = index - state["start"]
         chunk = state["end"] - state["start"]
         mapping = torch.full((int(img_batch.shape[0]),), -1, dtype=torch.long, device=img_ids.device)
