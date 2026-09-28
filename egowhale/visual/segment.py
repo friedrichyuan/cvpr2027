@@ -1,4 +1,4 @@
-"""SAM 3 person masks. The predictor stays on the segment actor."""
+"""EfficientSAM3 person masks. The image model stays on the segment actor."""
 
 from __future__ import annotations
 
@@ -7,103 +7,45 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import torch
 
-from egowhale.media import save_masks
+from egowhale.media import read_rgb, save_masks
 from egowhale.step import MASKS, ROOT, Step
 
-_ROOT = ROOT / "thirdparty" / "sam3"
-_CKPT = _ROOT / "weights" / "sam3" / "sam3.pt"
+_PKG = ROOT / "thirdparty" / "efficientsam3" / "sam3"
+_CKPT = ROOT / "thirdparty" / "efficientsam3" / "sam3_checkpoints" / "efficientsam3_tinyvit.pt"
+_BPE = _PKG / "assets" / "bpe_simple_vocab_16e6.txt.gz"
+_KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+_BATCH = 8
 
 
 def load_predictor():
-    """SAM 3 ships in thirdparty and is not installed on the worker by default."""
-    root = str(_ROOT)
+    """EfficientSAM3 ships in thirdparty and is not installed on the worker by default."""
+    root = str(_PKG)
     if root not in sys.path:
         sys.path.insert(0, root)
-    from sam3.model_builder import build_sam3_video_predictor
+    psutil = Path(sys.prefix) / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages" / "ray" / "thirdparty_files"
+    if psutil.is_dir() and str(psutil) not in sys.path:
+        sys.path.insert(0, str(psutil))
+    from sam3.model.sam3_image_processor import Sam3Processor
+    from sam3.model_builder import build_efficientsam3_image_model
 
-    return build_sam3_video_predictor(checkpoint_path=str(_CKPT))
-
-
-def _slice_batch(value, local: int, batch: int):
-    """Keep one frame from a backbone batch. The tracker still consumes a single frame."""
-    import torch
-
-    if torch.is_tensor(value):
-        if value.ndim >= 2 and value.shape[0] == batch:
-            return value[local : local + 1]
-        return value
-    if isinstance(value, dict):
-        return {key: _slice_batch(item, local, batch) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_slice_batch(item, local, batch) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_slice_batch(item, local, batch) for item in value)
-    tensors = getattr(value, "tensors", None)
-    if torch.is_tensor(tensors):
-        mask = getattr(value, "mask", None)
-        return type(value)(_slice_batch(tensors, local, batch), None if mask is None else _slice_batch(mask, local, batch))
-    return value
-
-
-def _window(index: int, last: int | None, length: int, budget: int) -> tuple[int, int]:
-    """Frames ahead of the tracker. Forward and backward windows meet, they do not overlap."""
-    if last is None or index >= last:
-        start = index
-        end = min(length, start + budget)
-    else:
-        end = index + 1
-        start = max(0, end - budget)
-    return start, end
+    model = build_efficientsam3_image_model(
+        checkpoint_path=str(_CKPT),
+        bpe_path=str(_BPE),
+        backbone_type="tinyvit",
+        model_name="11m",
+        text_encoder_type="MobileCLIP-S0",
+        text_encoder_context_length=16,
+        load_from_HF=False,
+        device="cuda",
+    )
+    return Sam3Processor(model, confidence_threshold=0.5)
 
 
 def install_frame_batch(predictor, frames: int = 16) -> None:
-    """Batch the image backbone along one episode. The tracker still steps one frame at a time."""
-    import torch
-
-    detector = predictor.model.detector
-    original = detector._get_img_feats
-    state = {"budget": max(1, int(frames)), "start": None, "end": None, "feats": None, "token": None, "last": None}
-
-    def wrapped(backbone_out, img_ids):
-        if "backbone_fpn" in backbone_out or not torch.is_tensor(img_ids) or img_ids.numel() != 1:
-            return original(backbone_out, img_ids)
-        img_batch = backbone_out.get("img_batch_all_stages")
-        if not torch.is_tensor(img_batch):
-            return original(backbone_out, img_ids)
-        index = int(img_ids.reshape(-1)[0].item())
-        token = (img_batch.data_ptr(), int(img_batch.shape[0]))
-        if state["token"] != token:
-            state["start"] = state["end"] = state["last"] = state["feats"] = None
-            state["token"] = token
-        if state["start"] is None or not (state["start"] <= index < state["end"]):
-            budget = max(1, state["budget"])
-            while True:
-                start, end = _window(index, state["last"], int(img_batch.shape[0]), budget)
-                images = img_batch[start:end].to(device=detector.device, dtype=torch.float32)
-                try:
-                    state["feats"] = detector.backbone.forward_image(images)
-                    state["start"], state["end"] = start, end
-                    break
-                except Exception as exc:
-                    oom = isinstance(exc, torch.cuda.OutOfMemoryError) or "out of memory" in str(exc).lower()
-                    if not oom:
-                        raise
-                    torch.cuda.empty_cache()
-                    if budget <= 1:
-                        raise
-                    budget = max(1, budget // 2)
-                    state["budget"] = budget
-                    state["feats"] = None
-        state["last"] = index
-        local = index - state["start"]
-        chunk = state["end"] - state["start"]
-        mapping = torch.full((int(img_batch.shape[0]),), -1, dtype=torch.long, device=img_ids.device)
-        mapping[index] = 0
-        merged = {**backbone_out, **_slice_batch(state["feats"], local, chunk), "id_mapping": mapping}
-        return original(merged, img_ids)
-
-    detector._get_img_feats = wrapped
+    """The segment actor still calls this. The detection head batch is fixed."""
+    return None
 
 
 class Segment(Step):
@@ -127,7 +69,7 @@ class Segment(Step):
         save_masks(Path(dst) / MASKS, masks)
 
     def consume(self, payload: dict) -> dict:
-        """Segment one prefetched video. The backbone batches frames inside the video."""
+        """Segment one prefetched video. The detection head takes several frames at once."""
         import time
 
         results = []
@@ -150,47 +92,63 @@ class Segment(Step):
         return {"results": results}
 
 
-def _segment(predictor, video: Path | None = None, frames: np.ndarray | None = None) -> np.ndarray:
-    if frames is not None:
-        from PIL import Image
-
-        resource = [Image.fromarray(frame) for frame in frames]
-        mid = len(frames) // 2
-    else:
-        resource = str(video)
-        mid = _frame_count(video) // 2
-    session = predictor.handle_request(request={"type": "start_session", "resource_path": resource})
-    session_id = session["session_id"]
-    try:
-        predictor.handle_request(
-            request={"type": "add_prompt", "session_id": session_id, "frame_index": mid, "text": "person"}
-        )
-        outputs = {}
-        for item in predictor.handle_stream_request(
-            request={"type": "propagate_in_video", "session_id": session_id}
-        ):
-            outputs[item["frame_index"]] = item["outputs"]
-    finally:
-        predictor.handle_request({"type": "close_session", "session_id": session_id, "run_gc_collect": False})
-    if not outputs:
-        raise RuntimeError("SAM3 returned no frames")
-    masks = np.stack([_union(outputs[index]) for index in sorted(outputs)])
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    closed = [cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel).astype(bool) for mask in masks]
-    return np.stack(closed)
+def _text(processor):
+    cached = getattr(processor, "_person", None)
+    if cached is None:
+        cached = processor.model.backbone.forward_text(["person"], device=processor.device)
+        processor._person = cached
+    return cached
 
 
-def _union(outputs: dict) -> np.ndarray:
-    masks = np.asarray(outputs.get("out_binary_masks", []))
-    if masks.ndim == 4:
-        masks = masks[:, 0]
-    if masks.size == 0:
-        raise RuntimeError("SAM3 produced an empty mask")
-    return np.any(masks.astype(bool), axis=0)
+def _segment(processor, video: Path | None = None, frames: np.ndarray | None = None) -> np.ndarray:
+    if frames is None:
+        frames, _fps = read_rgb(video)
+    if len(frames) == 0:
+        raise RuntimeError("EfficientSAM3 returned no frames")
+    text = _text(processor)
+    masks = [_ground(processor, frames[start : start + _BATCH], text) for start in range(0, len(frames), _BATCH)]
+    return np.concatenate(masks)
 
 
-def _frame_count(video: Path) -> int:
-    capture = cv2.VideoCapture(str(video))
-    count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 1)
-    capture.release()
-    return max(count, 1)
+def _ground(processor, frames: np.ndarray, text: dict) -> np.ndarray:
+    from PIL import Image
+
+    from sam3.model.data_misc import FindStage, interpolate
+
+    state = processor.set_image_batch([Image.fromarray(frame) for frame in frames])
+    state["backbone_out"].update(text)
+    count = len(frames)
+    device = processor.device
+    find = FindStage(
+        img_ids=torch.arange(count, device=device),
+        text_ids=torch.zeros(count, dtype=torch.long, device=device),
+        input_boxes=None,
+        input_boxes_mask=None,
+        input_boxes_label=None,
+        input_points=None,
+        input_points_mask=None,
+    )
+    out = processor.model.forward_grounding(
+        backbone_out=state["backbone_out"],
+        find_input=find,
+        find_target=None,
+        geometric_prompt=processor.model._get_dummy_prompt(count),
+    )
+    probs = (out["pred_logits"].sigmoid() * out["presence_logit_dec"].sigmoid().unsqueeze(1)).squeeze(-1)
+    low = out["pred_masks"]
+    keep = probs > processor.confidence_threshold
+    height, width = frames.shape[1], frames.shape[2]
+    masks = []
+    for index in range(count):
+        chosen = low[index][keep[index]]
+        if chosen.numel() == 0:
+            masks.append(np.zeros((height, width), dtype=bool))
+            continue
+        up = interpolate(chosen.unsqueeze(1), (height, width), mode="bilinear", align_corners=False).sigmoid()
+        merged = (up.squeeze(1) > 0.5).any(dim=0)
+        masks.append(_close(merged.detach().cpu().numpy()))
+    return np.stack(masks)
+
+
+def _close(mask: np.ndarray) -> np.ndarray:
+    return cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, _KERNEL).astype(bool)
