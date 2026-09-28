@@ -384,7 +384,8 @@ class _Meter:
         writer.flush()
 
     def _step(self) -> int:
-        step = int((time.perf_counter() - self.wall0) * 1000)
+        """TensorBoard step is wall seconds since boot. Milliseconds made 100s look like 100000."""
+        step = int(time.perf_counter() - self.wall0)
         if step <= self._last:
             step = self._last + 1
         self._last = step
