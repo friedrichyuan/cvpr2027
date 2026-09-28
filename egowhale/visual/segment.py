@@ -25,6 +25,27 @@ def load_predictor():
     return build_sam3_video_predictor(checkpoint_path=str(_CKPT))
 
 
+def _slice_batch(value, local: int, batch: int):
+    """Keep one frame from a backbone batch. The tracker still consumes a single frame."""
+    import torch
+
+    if torch.is_tensor(value):
+        if value.ndim >= 2 and value.shape[0] == batch:
+            return value[local : local + 1]
+        return value
+    if isinstance(value, dict):
+        return {key: _slice_batch(item, local, batch) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_slice_batch(item, local, batch) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_slice_batch(item, local, batch) for item in value)
+    tensors = getattr(value, "tensors", None)
+    if torch.is_tensor(tensors):
+        mask = getattr(value, "mask", None)
+        return type(value)(_slice_batch(tensors, local, batch), None if mask is None else _slice_batch(mask, local, batch))
+    return value
+
+
 def install_frame_batch(predictor, frames: int = 16) -> None:
     """Batch the image backbone across frames of one video. The tracker still steps in order."""
     import torch
@@ -62,9 +83,11 @@ def install_frame_batch(predictor, frames: int = 16) -> None:
                     budget = max(1, budget // 2)
                     state["budget"] = budget
                     state["feats"] = None
+        local = index - state["start"]
+        chunk = state["end"] - state["start"]
         mapping = torch.full((int(img_batch.shape[0]),), -1, dtype=torch.long, device=img_ids.device)
-        mapping[state["start"] : state["end"]] = torch.arange(state["end"] - state["start"], device=img_ids.device)
-        merged = {**backbone_out, **state["feats"], "id_mapping": mapping}
+        mapping[index] = 0
+        merged = {**backbone_out, **_slice_batch(state["feats"], local, chunk), "id_mapping": mapping}
         return original(merged, img_ids)
 
     detector._get_img_feats = wrapped
