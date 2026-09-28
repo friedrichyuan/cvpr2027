@@ -52,6 +52,9 @@ POOL = {
     "composite": "cpu",
     "curate": "cpu",
 }
+VISUAL = ("segment", "inpaint", "depth")
+# Frames packed into one forward. A single longer episode still runs alone. OOM halves the budget.
+FRAME_BUDGET = {"inpaint": 320, "depth": 192}
 STEPS = {
     "retarget": Retarget,
     "segment": Segment,
@@ -124,16 +127,20 @@ def _actors(pools: dict[str, int]):
     @gpu
     class SegmentActor:
         def __init__(self):
-            from egowhale.visual.segment import load_predictor
+            from egowhale.visual.segment import install_frame_batch, load_predictor
 
             self.step = Segment()
             self.step._held = load_predictor()
+            install_frame_batch(self.step._held)
 
         def ready(self):
             return _device()
 
         def run(self, src, dst):
             return execute(self.step, src, dst)
+
+        def consume(self, payload):
+            return self.step.consume(payload)
 
     @gpu
     class InpaintActor:
@@ -146,6 +153,9 @@ def _actors(pools: dict[str, int]):
 
         def run(self, src, dst):
             return execute(self.step, src, dst)
+
+        def consume(self, payload, budget):
+            return self.step.consume(payload, budget)
 
     @gpu
     class DepthActor:
@@ -160,6 +170,9 @@ def _actors(pools: dict[str, int]):
 
         def run(self, src, dst):
             return execute(self.step, src, dst)
+
+        def consume(self, payload, budget):
+            return self.step.consume(payload, budget)
 
     @gpu
     class ActionActor:
@@ -184,12 +197,23 @@ def _actors(pools: dict[str, int]):
         def run(self, stage, src, dst):
             return execute(self.steps[stage], src, dst)
 
+    @ray.remote(num_cpus=2, max_concurrency=8)
+    class FeedActor:
+        def ready(self):
+            return "cpu"
+
+        def prepare(self, stage, pairs):
+            from egowhale.visual.feed import prepare
+
+            return prepare(stage, pairs)
+
     classes = {
         "segment": SegmentActor,
         "inpaint": InpaintActor,
         "depth": DepthActor,
         "action": ActionActor,
         "cpu": CpuActor,
+        "feed": FeedActor,
     }
     return {
         name: [(f"{name}{index}", cls.remote()) for index in range(pools[name])]
@@ -204,6 +228,7 @@ _PLACED = (
     ("action", "action", "cuRobo"),
     ("cpu", "composite", "MuJoCo"),
     ("cpu", "curate", "checks"),
+    ("feed", "feed", "prefetch"),
 )
 
 
@@ -255,6 +280,52 @@ def _boot(free: dict, log) -> None:
             _row(log, "Running", names, devices, models)
 
 
+def _take(active: list[Job], stage: str, limit: int) -> list[Job]:
+    """Pack ready episodes of one length until the frame budget is full. Segment stays one video."""
+    ready = [job for job in active if stage in job.ready()]
+    if not ready or stage == "segment":
+        return ready[:1]
+    groups: dict[int, list[Job]] = {}
+    for job in ready:
+        groups.setdefault(job.frames, []).append(job)
+    best: list[Job] = []
+    best_total = -1
+    for group in groups.values():
+        chosen: list[Job] = []
+        total = 0
+        for job in group:
+            if chosen and total + job.frames > limit:
+                break
+            chosen.append(job)
+            total += job.frames
+        if total > best_total:
+            best = chosen
+            best_total = total
+    return best
+
+
+def _apply(jobs, rows, stage, meter, writer, log, active) -> None:
+    noted = False
+    for job, row in zip(jobs, rows):
+        ran, seconds = row[0], row[1]
+        error = row[2] if len(row) > 2 else ""
+        if error:
+            job.failed = True
+            job.error = f"{stage}: {error}"
+        else:
+            job.done.add(stage)
+            if ran:
+                job.ran = True
+                meter.note(stage, job.frames, seconds)
+                noted = True
+        job.running.discard(stage)
+        if job.finished() and job in active:
+            _record(job, log, writer, meter)
+            active.remove(job)
+    if noted:
+        meter.write(writer)
+
+
 def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, board: Path) -> None:
     import ray
     from torch.utils.tensorboard import SummaryWriter
@@ -268,7 +339,6 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
     journal = _logger()
     free = _actors(pools)
     _boot(free, journal)
-    watch = _watch(len(jobs))
     journal.info(f"{len(jobs)} episodes    tensorboard {board}")
     journal.info(f"tensorboard --logdir {board}")
     writer = SummaryWriter(log_dir=str(board))
@@ -276,22 +346,82 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
     waiting = list(jobs)
     active: list[Job] = []
     pending = {}
+    budget = dict(FRAME_BUDGET)
+    feed = free.pop("feed")[0][1]
+    lanes = []
+    for stage in VISUAL:
+        for label, actor in free.pop(POOL[stage]):
+            lanes.append(
+                {
+                    "stage": stage,
+                    "label": label,
+                    "actor": actor,
+                    "feed": None,
+                    "gpu": None,
+                    "jobs": None,
+                    "next_feed": None,
+                    "next_jobs": None,
+                    "next_data": None,
+                }
+            )
 
-    def submit() -> None:
+    def consume(lane, data, chosen) -> None:
+        lane["jobs"] = chosen
+        if lane["stage"] == "segment":
+            launched = lane["actor"].consume.remote(data)
+        else:
+            launched = lane["actor"].consume.remote(data, budget[lane["stage"]])
+        lane["gpu"] = launched
+        pending[launched] = ("gpu", lane)
+
+    def promote(lane) -> None:
+        data = lane["next_data"]
+        chosen = lane["next_jobs"]
+        lane["next_data"] = None
+        lane["next_jobs"] = None
+        consume(lane, data, chosen)
+
+    def pump() -> None:
         while len(active) < inflight and waiting:
             active.append(waiting.pop(0))
+        for lane in lanes:
+            stage = lane["stage"]
+            limit = budget.get(stage, 10**9)
+            idle = lane["feed"] is None and lane["gpu"] is None and lane["jobs"] is None and lane["next_feed"] is None and lane["next_data"] is None
+            if idle:
+                chosen = _take(active, stage, limit)
+                if not chosen:
+                    continue
+                for job in chosen:
+                    job.running.add(stage)
+                ref = feed.prepare.remote(stage, [(str(job.src), str(job.dst)) for job in chosen])
+                lane["feed"] = ref
+                lane["jobs"] = chosen
+                pending[ref] = ("feed", lane)
+            elif lane["gpu"] is not None and lane["next_feed"] is None and lane["next_data"] is None:
+                chosen = _take(active, stage, limit)
+                if not chosen:
+                    continue
+                for job in chosen:
+                    job.running.add(stage)
+                ref = feed.prepare.remote(stage, [(str(job.src), str(job.dst)) for job in chosen])
+                lane["next_feed"] = ref
+                lane["next_jobs"] = chosen
+                pending[ref] = ("next", lane)
         for job in active:
             for stage in job.ready():
+                if stage in VISUAL:
+                    continue
                 pool = POOL[stage]
                 if not free[pool]:
                     continue
                 label, actor = free[pool].pop()
-                method = actor.run.remote(stage, str(job.src), str(job.dst)) if pool in ("action", "cpu") else actor.run.remote(str(job.src), str(job.dst))
+                method = actor.run.remote(stage, str(job.src), str(job.dst))
                 job.running.add(stage)
-                pending[method] = (job, stage, pool, label, actor)
+                pending[method] = ("run", job, stage, pool, label, actor)
 
     while waiting or active or pending:
-        submit()
+        pump()
         if not pending:
             for job in list(active):
                 if job.finished():
@@ -302,25 +432,48 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
             continue
         done, _rest = ray.wait(list(pending), num_returns=1)
         ref = done[0]
-        job, stage, pool, label, actor = pending.pop(ref)
+        kind = pending.pop(ref)
+        if kind[0] == "feed":
+            lane = kind[1]
+            lane["feed"] = None
+            consume(lane, ref, lane["jobs"])
+            continue
+        if kind[0] == "next":
+            lane = kind[1]
+            lane["next_feed"] = None
+            lane["next_data"] = ref
+            if lane["gpu"] is None:
+                promote(lane)
+            continue
+        if kind[0] == "run":
+            _job, stage, pool, label, actor = kind[1:]
+            try:
+                ran, seconds = ray.get(ref)
+                rows = [(ran, seconds, "")]
+            except Exception:
+                message = traceback.format_exc().strip().splitlines()[-1]
+                rows = [(False, 0.0, message)]
+            _apply([_job], rows, stage, meter, writer, log, active)
+            free[pool].append((label, actor))
+            continue
+        lane = kind[1]
+        chosen = list(lane["jobs"] or [])
         try:
-            ran, seconds = ray.get(ref)
+            payload = ray.get(ref)
         except Exception:
-            job.failed = True
-            job.error = f"{stage}: {traceback.format_exc().strip().splitlines()[-1]}"
-            ran = False
+            message = traceback.format_exc().strip().splitlines()[-1]
+            rows = [(False, 0.0, message)] * len(chosen)
         else:
-            job.done.add(stage)
-            if ran:
-                job.ran = True
-                meter.note(stage, job.frames, seconds)
-        job.running.discard(stage)
-        free[pool].append((label, actor))
-        if job.finished() and job in active:
-            _record(job, log, writer, meter)
-            active.remove(job)
-        elif ran:
-            meter.write(writer)
+            rows = payload["results"]
+            if len(rows) != len(chosen):
+                rows = [(False, 0.0, "batch result mismatch")] * len(chosen)
+            elif lane["stage"] in budget and "budget" in payload:
+                budget[lane["stage"]] = min(budget[lane["stage"]], int(payload["budget"]))
+        _apply(chosen, rows, lane["stage"], meter, writer, log, active)
+        lane["gpu"] = None
+        lane["jobs"] = None
+        if lane["next_data"] is not None:
+            promote(lane)
     writer.flush()
     writer.close()
     elapsed = max(time.perf_counter() - meter.wall0, 1e-6)
@@ -541,6 +694,7 @@ def main() -> None:
         "depth": args.depth,
         "action": args.action,
         "cpu": args.inflight,
+        "feed": 1,
     }
     watch = _watch(len(jobs))
     for index, job in enumerate(jobs):

@@ -33,6 +33,78 @@ class Depth(Step):
         np.savez_compressed(path, depth=depth.astype(np.float32))
         print(f"  depth median {float(np.median(depth)):.3f} m")
 
+    def consume(self, payload: dict, budget: int) -> dict:
+        """Forward a dataloader batch. Equal shapes share one DA3 call. OOM halves the budget."""
+        import time
+
+        import torch
+
+        items = payload["items"]
+        results = [None] * len(items)
+        todo = [index for index, item in enumerate(items) if item.get("ok")]
+        for index, item in enumerate(items):
+            if not item.get("ok"):
+                results[index] = (False, 0.0, item.get("error") or "feed failed")
+        limit = max(int(budget), 1)
+
+        def run(indexes: list[int]) -> None:
+            nonlocal limit
+            if not indexes:
+                return
+            model = getattr(self, "_model", None)
+            own = model is None
+            if own:
+                model = load_model()
+            started = time.perf_counter()
+            try:
+                _forward_ready([items[index] for index in indexes], model)
+            except Exception as exc:
+                oom = isinstance(exc, torch.cuda.OutOfMemoryError) or "out of memory" in str(exc).lower()
+                if oom:
+                    torch.cuda.empty_cache()
+                if oom and len(indexes) > 1:
+                    limit = max(1, limit // 2)
+                    mid = max(1, len(indexes) // 2)
+                    run(indexes[:mid])
+                    run(indexes[mid:])
+                    return
+                message = str(exc).splitlines()[-1]
+                for index in indexes:
+                    results[index] = (False, 0.0, message)
+                return
+            finally:
+                if own:
+                    del model
+            share = (time.perf_counter() - started) / len(indexes)
+            for index in indexes:
+                if results[index] is None:
+                    results[index] = (True, share, "")
+
+        pending = list(todo)
+        sizes = {index: int(items[index]["images"].shape[0]) for index in todo}
+        while pending:
+            group = _slices(pending, [sizes[index] for index in pending], limit)[0]
+            run(group)
+            pending = pending[len(group) :]
+        return {"results": results, "budget": limit}
+
+
+def _slices(indexes: list[int], sizes: list[int], limit: int) -> list[list[int]]:
+    """Groups that fit in the frame budget. One episode longer than the budget stays whole."""
+    groups: list[list[int]] = []
+    current: list[int] = []
+    total = 0
+    for index, size in zip(indexes, sizes):
+        if current and total + size > limit:
+            groups.append(current)
+            current = []
+            total = 0
+        current.append(index)
+        total += size
+    if current:
+        groups.append(current)
+    return groups
+
 
 def _cameras(episode: Path, height: int, width: int, frames: int):
     with h5py.File(episode, "r") as handle:
@@ -105,6 +177,74 @@ def _estimate(frames: np.ndarray, extrinsics: np.ndarray, intrinsics: np.ndarray
     if depth.shape[1:] != (height, width):
         depth = np.stack([cv2.resize(frame, (width, height), interpolation=cv2.INTER_LINEAR) for frame in depth])
     return depth
+
+
+def prepare_view(episode: Path, frames: np.ndarray) -> dict:
+    """CPU side of DA3: resize and cameras. The GPU actor only forwards."""
+    if str(_SRC) not in sys.path:
+        sys.path.insert(0, str(_SRC))
+    _stub_evo()
+    from depth_anything_3.utils.io.input_processor import InputProcessor
+
+    extrinsics, intrinsics = _cameras(Path(episode), frames.shape[1], frames.shape[2], len(frames))
+    frames = frames[: len(extrinsics)]
+    images, extrinsics_t, intrinsics_t = InputProcessor()(
+        [frame for frame in frames], extrinsics, intrinsics, num_workers=1
+    )
+    return {
+        "images": images.cpu(),
+        "extrinsics": extrinsics_t.cpu(),
+        "intrinsics": intrinsics_t.cpu(),
+        "size": (int(frames.shape[1]), int(frames.shape[2])),
+        "key": tuple(int(value) for value in images.shape),
+    }
+
+
+def _forward_ready(items, model) -> None:
+    """One DA3 forward per group of views with the same count and processed size."""
+    if str(_SRC) not in sys.path:
+        sys.path.insert(0, str(_SRC))
+    _stub_evo()
+    import torch
+
+    from depth_anything_3.utils.geometry import affine_inverse
+    from depth_anything_3.utils.io.output_processor import OutputProcessor
+
+    buckets = {}
+    for item in items:
+        buckets.setdefault(tuple(item["key"]), []).append(item)
+    for bucket in buckets.values():
+        images = torch.stack([item["images"] for item in bucket]).cuda().float()
+        extrinsics = torch.cat([_normalize_extrinsics(affine_inverse, item["extrinsics"]) for item in bucket], dim=0)
+        intrinsics = torch.cat([item["intrinsics"][None] for item in bucket], dim=0).cuda().float()
+        with torch.inference_mode():
+            raw = model(images, extrinsics, intrinsics, ref_view_strategy="middle")
+        batch = images.shape[0]
+        for index, item in enumerate(bucket):
+            prediction = OutputProcessor()(_slice_output(raw, index, batch))
+            depth = np.asarray(prediction.depth, dtype=np.float32) / _metric_scale(
+                prediction.extrinsics, item["extrinsics"].numpy()
+            )
+            height, width = item["size"]
+            if depth.ndim == 4:
+                depth = depth.squeeze(1)
+            if depth.shape[1:] != (height, width):
+                depth = np.stack([cv2.resize(frame, (width, height), interpolation=cv2.INTER_LINEAR) for frame in depth])
+            path = Path(item["dst"])
+            path.parent.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(path, depth=depth.astype(np.float32))
+
+
+def _slice_output(raw, index: int, batch: int):
+    import torch
+
+    data = {}
+    for key, value in raw.items():
+        if torch.is_tensor(value) and value.ndim >= 1 and value.shape[0] == batch:
+            data[key] = value[index : index + 1]
+        else:
+            data[key] = value
+    return data
 
 
 def _stub_evo() -> None:

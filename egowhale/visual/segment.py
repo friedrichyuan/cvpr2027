@@ -1,4 +1,4 @@
-"""SAM3 person masks. The predictor is dropped before the next GPU stage."""
+"""SAM 3 person masks. The predictor stays on the segment actor."""
 
 from __future__ import annotations
 
@@ -25,6 +25,51 @@ def load_predictor():
     return build_sam3_video_predictor(checkpoint_path=str(_CKPT))
 
 
+def install_frame_batch(predictor, frames: int = 16) -> None:
+    """Batch the image backbone across frames of one video. The tracker still steps in order."""
+    import torch
+
+    detector = predictor.model.detector
+    original = detector._get_img_feats
+    state = {"budget": max(1, int(frames)), "start": None, "end": None, "feats": None, "token": None}
+
+    def wrapped(backbone_out, img_ids):
+        if "backbone_fpn" in backbone_out or not torch.is_tensor(img_ids) or img_ids.numel() != 1:
+            return original(backbone_out, img_ids)
+        img_batch = backbone_out.get("img_batch_all_stages")
+        if not torch.is_tensor(img_batch):
+            return original(backbone_out, img_ids)
+        index = int(img_ids.reshape(-1)[0].item())
+        token = (img_batch.data_ptr(), int(img_batch.shape[0]))
+        if state["token"] != token or state["start"] is None or not (state["start"] <= index < state["end"]):
+            budget = max(1, state["budget"])
+            while True:
+                start = max(0, index - budget // 2)
+                end = min(int(img_batch.shape[0]), start + budget)
+                start = max(0, end - budget)
+                images = img_batch[start:end].to(device=detector.device, dtype=torch.float32)
+                try:
+                    state["feats"] = detector.backbone.forward_image(images)
+                    state["start"], state["end"], state["token"] = start, end, token
+                    break
+                except Exception as exc:
+                    oom = isinstance(exc, torch.cuda.OutOfMemoryError) or "out of memory" in str(exc).lower()
+                    if not oom:
+                        raise
+                    torch.cuda.empty_cache()
+                    if budget <= 1:
+                        raise
+                    budget = max(1, budget // 2)
+                    state["budget"] = budget
+                    state["feats"] = None
+        mapping = torch.full((int(img_batch.shape[0]),), -1, dtype=torch.long, device=img_ids.device)
+        mapping[state["start"] : state["end"]] = torch.arange(state["end"] - state["start"], device=img_ids.device)
+        merged = {**backbone_out, **state["feats"], "id_mapping": mapping}
+        return original(merged, img_ids)
+
+    detector._get_img_feats = wrapped
+
+
 class Segment(Step):
     name = "segment"
     makes = (MASKS,)
@@ -45,12 +90,42 @@ class Segment(Step):
                 del predictor
         save_masks(Path(dst) / MASKS, masks)
 
+    def consume(self, payload: dict) -> dict:
+        """Segment one prefetched video. The backbone batches frames inside the video."""
+        import time
 
-def _segment(predictor, video: Path) -> np.ndarray:
-    session = predictor.handle_request(request={"type": "start_session", "resource_path": str(video)})
+        results = []
+        predictor = getattr(self, "_held", None)
+        if predictor is None:
+            predictor = load_predictor()
+            self._held = predictor
+        for item in payload["items"]:
+            if not item.get("ok"):
+                results.append((False, 0.0, item.get("error") or "feed failed"))
+                continue
+            started = time.perf_counter()
+            try:
+                masks = _segment(predictor, frames=item["frames"])
+                save_masks(Path(item["dst"]), masks)
+            except Exception as exc:
+                results.append((False, 0.0, str(exc).splitlines()[-1]))
+                continue
+            results.append((True, time.perf_counter() - started, ""))
+        return {"results": results}
+
+
+def _segment(predictor, video: Path | None = None, frames: np.ndarray | None = None) -> np.ndarray:
+    if frames is not None:
+        from PIL import Image
+
+        resource = [Image.fromarray(frame) for frame in frames]
+        mid = len(frames) // 2
+    else:
+        resource = str(video)
+        mid = _frame_count(video) // 2
+    session = predictor.handle_request(request={"type": "start_session", "resource_path": resource})
     session_id = session["session_id"]
     try:
-        mid = _frame_count(video) // 2
         predictor.handle_request(
             request={"type": "add_prompt", "session_id": session_id, "frame_index": mid, "text": "person"}
         )
