@@ -1,21 +1,25 @@
-"""Remove the person with ProPainter. Depth is not used."""
+"""Remove the person with ProPainter. The weights stay on the inpaint actor."""
 
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
-import cv2
 import numpy as np
 
-from egowhale.media import load_masks, read_rgb
+from egowhale.media import load_masks, read_rgb, write_rgb
 from egowhale.step import INPAINT, MASKS, ROOT, Step
 
 _ROOT = ROOT / "thirdparty" / "propainter"
+
+
+def _import():
+    root = str(_ROOT)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from inference_propainter import inpaint_video, load_models
+
+    return load_models, inpaint_video
 
 
 class Inpaint(Step):
@@ -24,64 +28,34 @@ class Inpaint(Step):
     makes = (INPAINT,)
     gpus = 1
 
+    def load(self):
+        load_models, _inpaint = _import()
+        self._held = load_models(str(_ROOT / "weights"))
+        self._inpaint = _inpaint
+
     def run(self, src: Path, dst: Path) -> None:
         video = Path(src).with_suffix(".mp4")
-        script = _ROOT / "inference_propainter.py"
-        if not script.is_file():
-            raise FileNotFoundError(script)
-        frames, _fps = read_rgb(video)
+        if not (_ROOT / "inference_propainter.py").is_file():
+            raise FileNotFoundError(_ROOT)
+        frames, fps = read_rgb(video)
         masks = load_masks(Path(dst) / MASKS)
         if len(frames) != len(masks):
             raise ValueError(f"{len(frames)} frames vs {len(masks)} masks")
+        held = getattr(self, "_held", None)
+        if held is None:
+            self.load()
+            held = self._held
+        painted = self._inpaint(
+            held,
+            frames,
+            masks,
+            resize_ratio=0.5,
+            mask_dilation=4,
+            ref_stride=10,
+            neighbor_length=10,
+            subvideo_length=80,
+            raft_iter=20,
+            fp16=True,
+        )
         out = Path(dst) / INPAINT
-        with tempfile.TemporaryDirectory(prefix="egowhale_inpaint_") as tmp:
-            tmp_dir = Path(tmp)
-            video_dir, mask_dir, out_dir = tmp_dir / "video", tmp_dir / "masks", tmp_dir / "out"
-            video_dir.mkdir()
-            mask_dir.mkdir()
-            for index, (frame, mask) in enumerate(zip(frames, masks)):
-                cv2.imwrite(str(video_dir / f"{index:05d}.png"), cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-                cv2.imwrite(str(mask_dir / f"{index:05d}.png"), mask.astype(np.uint8) * 255)
-            quiet = os.environ.get("EGOWHALE_QUIET") == "1"
-            env = os.environ.copy()
-            if quiet:
-                env["TQDM_DISABLE"] = "1"
-            result = subprocess.run(
-                [
-                    env.get("PROPAINTER_PYTHON", sys.executable),
-                    str(script),
-                    "--video",
-                    str(video_dir),
-                    "--mask",
-                    str(mask_dir),
-                    "--output",
-                    str(out_dir),
-                    "--fp16",
-                    "--neighbor_length",
-                    "10",
-                    "--ref_stride",
-                    "10",
-                    "--subvideo_length",
-                    "80",
-                    "--mask_dilation",
-                    "4",
-                    "--raft_iter",
-                    "20",
-                    "--resize_ratio",
-                    "0.5",
-                    "--save_fps",
-                    "30",
-                ],
-                cwd=str(_ROOT),
-                env=env,
-                stdout=subprocess.DEVNULL if quiet else None,
-                stderr=subprocess.PIPE if quiet else None,
-                text=True,
-            )
-            if result.returncode != 0:
-                tail = (result.stderr or "").strip().splitlines()
-                detail = tail[-1] if tail else f"exit {result.returncode}"
-                raise RuntimeError(detail)
-            result = next(out_dir.rglob("inpaint_out.mp4"))
-            out.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(result, out)
+        write_rgb(out, np.stack(painted), fps)

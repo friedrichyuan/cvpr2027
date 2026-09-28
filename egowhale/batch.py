@@ -8,6 +8,7 @@ import io
 import json
 import logging
 import os
+import sys
 import time
 import traceback
 from pathlib import Path
@@ -131,6 +132,7 @@ def _actors(pools: dict[str, int]):
     class InpaintActor:
         def __init__(self):
             self.step = Inpaint()
+            self.step.load()
 
         def ready(self):
             return _device()
@@ -198,14 +200,26 @@ _PLACED = (
 )
 
 
-def _row(status: str, node: str, device: str, model: str) -> None:
-    print(f"  {status:<10} {node:<22} {device:<16} {model}", flush=True)
+def _logger():
+    from loguru import logger
+
+    logger.remove()
+    logger.add(sys.stderr, format="<green>{time:HH:mm:ss}</green> │ <level>{level:<7}</level> │ {message}", colorize=True)
+    return logger
 
 
-def _boot(free: dict) -> None:
+def _row(log, status: str, node: str, device: str, model: str) -> None:
+    line = f"{status:<10} {node:<22} {device:<16} {model}"
+    if status == "Running":
+        log.success(line)
+    else:
+        log.info(line)
+
+
+def _boot(free: dict, log) -> None:
     import ray
 
-    _row("Status", "Node", "Device", "Model")
+    _row(log, "Status", "Node", "Device", "Model")
     seen = set()
     for pool, _node, _model in _PLACED:
         if pool in seen or pool not in free:
@@ -213,7 +227,7 @@ def _boot(free: dict) -> None:
         seen.add(pool)
         names = ", ".join(name for owner, name, _item in _PLACED if owner == pool)
         models = ", ".join(item for owner, _name, item in _PLACED if owner == pool)
-        _row("Starting", names, "", models)
+        _row(log, "Starting", names, "", models)
     pending = []
     left = {pool: len(slots) for pool, slots in free.items()}
     found: dict[str, list[str]] = {pool: [] for pool in free}
@@ -231,7 +245,7 @@ def _boot(free: dict) -> None:
             names = ", ".join(name for owner, name, _item in _PLACED if owner == pool)
             models = ", ".join(item for owner, _name, item in _PLACED if owner == pool)
             devices = ", ".join(dict.fromkeys(found[pool]))
-            _row("Running", names, devices, models)
+            _row(log, "Running", names, devices, models)
 
 
 def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, board: Path) -> None:
@@ -244,11 +258,12 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
     need = pools["segment"] + pools["inpaint"] + pools["depth"] + pools["action"]
     if need > have:
         raise SystemExit(f"GPU pools ask for {need} devices, cluster has {have}")
+    journal = _logger()
     free = _actors(pools)
-    _boot(free)
+    _boot(free, journal)
     watch = _watch(len(jobs))
-    print(f"\n{len(jobs)} episodes    tensorboard {board}", flush=True)
-    print(f"tensorboard --logdir {board}\n", flush=True)
+    journal.info(f"{len(jobs)} episodes    tensorboard {board}")
+    journal.info(f"tensorboard --logdir {board}")
     writer = SummaryWriter(log_dir=str(board))
     clock = time.perf_counter()
     frames = 0
@@ -298,7 +313,7 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
     writer.flush()
     writer.close()
     elapsed = max(time.perf_counter() - clock, 1e-6)
-    print(f"done  {ok} ok  {fail} fail  {frames / elapsed:.2f} fps", flush=True)
+    journal.info(f"done  {ok} ok  {fail} fail  {frames / elapsed:.2f} fps")
     ray.shutdown()
 
 
