@@ -172,7 +172,7 @@ def _actors(pools: dict[str, int]):
             self.steps = {"composite": Composite(), "curate": Curate()}
 
         def ready(self):
-            return _device()
+            return "cpu"
 
         def run(self, stage, src, dst):
             return execute(self.steps[stage], src, dst)
@@ -209,7 +209,7 @@ def _logger():
 
 
 def _row(log, status: str, node: str, device: str, model: str) -> None:
-    line = f"{status:<10} {node:<22} {device:<16} {model}"
+    line = f"{status:<10} │ {node:<22} │ {device:<16} │ {model}"
     if status == "Running":
         log.success(line)
     else:
