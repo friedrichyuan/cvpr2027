@@ -8,10 +8,11 @@ import io
 import json
 import logging
 import os
-import sys
 import time
 import traceback
 from pathlib import Path
+
+import numpy as np
 
 os.environ.setdefault("MUJOCO_GL", "egl")
 
@@ -99,6 +100,13 @@ def execute(step, src, dst) -> str:
     return " ".join(line.strip() for line in buffer.getvalue().splitlines() if line.strip())
 
 
+def _device() -> str:
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+    if not visible:
+        return "cpu"
+    return "cuda:" + visible.split(",")[0]
+
+
 def _actors(pools: dict[str, int]):
     import ray
 
@@ -113,6 +121,9 @@ def _actors(pools: dict[str, int]):
             self.step = Segment()
             self.step._held = load_predictor()
 
+        def ready(self):
+            return _device()
+
         def run(self, src, dst):
             return execute(self.step, src, dst)
 
@@ -120,6 +131,9 @@ def _actors(pools: dict[str, int]):
     class InpaintActor:
         def __init__(self):
             self.step = Inpaint()
+
+        def ready(self):
+            return _device()
 
         def run(self, src, dst):
             return execute(self.step, src, dst)
@@ -132,6 +146,9 @@ def _actors(pools: dict[str, int]):
             self.step = Depth()
             self.step._model = load_model()
 
+        def ready(self):
+            return _device()
+
         def run(self, src, dst):
             return execute(self.step, src, dst)
 
@@ -139,6 +156,9 @@ def _actors(pools: dict[str, int]):
     class ActionActor:
         def __init__(self):
             self.steps = {"retarget": Retarget(), "base_ik": BaseIK(), "approach": Approach()}
+
+        def ready(self):
+            return _device()
 
         def run(self, stage, src, dst):
             return execute(self.steps[stage], src, dst)
@@ -148,6 +168,9 @@ def _actors(pools: dict[str, int]):
         def __init__(self):
             os.environ.pop("EGOWHALE_VLM_API_KEY", None)
             self.steps = {"composite": Composite(), "curate": Curate()}
+
+        def ready(self):
+            return _device()
 
         def run(self, stage, src, dst):
             return execute(self.steps[stage], src, dst)
@@ -165,63 +188,55 @@ def _actors(pools: dict[str, int]):
     }
 
 
-_LOG_FORMAT = (
-    "<green>{time:HH:mm:ss}</green> │ {extra[progress]} │ <level>{extra[verb]}</level>"
-    " │ {extra[actor]} │ {extra[stage]} │ {extra[episode]} │ {extra[elapsed]} │ {message}"
+_PLACED = (
+    ("segment", "segment", "SAM 3"),
+    ("inpaint", "inpaint", "ProPainter"),
+    ("depth", "depth", "DA3-GIANT"),
+    ("action", "action", "cuRobo"),
+    ("cpu", "composite", "MuJoCo"),
+    ("cpu", "curate", "checks"),
 )
-_LEVEL = {"START": "INFO", "DONE": "SUCCESS", "FAIL": "ERROR", "OK": "SUCCESS"}
 
 
-def _col(text: str, width: int) -> str:
-    text = text or ""
-    if len(text) <= width:
-        return text.ljust(width)
-    return text[: width - 2] + ".."
+def _row(status: str, node: str, device: str, model: str) -> None:
+    print(f"  {status:<10} {node:<22} {device:<16} {model}", flush=True)
 
 
-class Log:
-    """Fixed columns: progress, verb, actor, stage, episode, elapsed, detail."""
-
-    def __init__(self, path: Path, total: int):
-        from loguru import logger
-
-        self.total = total
-        self.ok = 0
-        self.fail = 0
-        self._logger = logger
-        path.parent.mkdir(parents=True, exist_ok=True)
-        logger.remove()
-        logger.add(sys.stderr, format=_LOG_FORMAT, colorize=True)
-        logger.add(path, format=_LOG_FORMAT, colorize=False, encoding="utf-8")
-
-    def event(self, kind: str, label: str, stage: str, episode: str, extra: str = "") -> None:
-        if kind == "start":
-            verb, elapsed, detail = "START", "", ""
-        elif kind == "done":
-            verb = "DONE"
-            elapsed, separated, detail = (extra or "").partition("  ")
-            if not separated:
-                elapsed, detail = extra or "", ""
-        elif kind == "ok":
-            verb, elapsed, detail = "OK", extra, ""
-        else:
-            verb = "FAIL"
-            elapsed, separated, detail = (extra or "").partition("  ")
-            if not separated or not elapsed.endswith("s"):
-                elapsed, detail = "", extra
-        done = f"{self.ok + self.fail}/{self.total}"
-        self._logger.bind(
-            progress=_col(done, 9),
-            verb=_col(verb, 5),
-            actor=_col("" if label == "-" else label, 9),
-            stage=_col("episode" if stage == "-" else stage, 10),
-            episode=_col(episode, 28),
-            elapsed=_col(elapsed, 8),
-        ).log(_LEVEL[verb], detail)
-
-
-def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path) -> None:
+def _boot(free: dict) -> None:
     import ray
+
+    _row("Status", "Node", "Device", "Model")
+    seen = set()
+    for pool, _node, _model in _PLACED:
+        if pool in seen or pool not in free:
+            continue
+        seen.add(pool)
+        names = ", ".join(name for owner, name, _item in _PLACED if owner == pool)
+        models = ", ".join(item for owner, _name, item in _PLACED if owner == pool)
+        _row("Starting", names, "", models)
+    pending = []
+    left = {pool: len(slots) for pool, slots in free.items()}
+    found: dict[str, list[str]] = {pool: [] for pool in free}
+    for pool, slots in free.items():
+        for _label, actor in slots:
+            pending.append((pool, actor.ready.remote()))
+    while pending:
+        done, _rest = ray.wait([item[1] for item in pending], num_returns=1)
+        ref = done[0]
+        pool, handle = next(item for item in pending if item[1] is ref)
+        pending.remove((pool, ref))
+        found[pool].append(ray.get(handle))
+        left[pool] -= 1
+        if left[pool] == 0:
+            names = ", ".join(name for owner, name, _item in _PLACED if owner == pool)
+            models = ", ".join(item for owner, _name, item in _PLACED if owner == pool)
+            devices = ", ".join(dict.fromkeys(found[pool]))
+            _row("Running", names, devices, models)
+
+
+def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, board: Path) -> None:
+    import ray
+    from torch.utils.tensorboard import SummaryWriter
 
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True, log_to_driver=False, logging_level=logging.ERROR)
@@ -230,7 +245,14 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path) -> N
     if need > have:
         raise SystemExit(f"GPU pools ask for {need} devices, cluster has {have}")
     free = _actors(pools)
-    journal = Log(log.with_suffix(".log"), len(jobs))
+    _boot(free)
+    watch = _watch(len(jobs))
+    print(f"\n{len(jobs)} episodes    tensorboard {board}", flush=True)
+    print(f"tensorboard --logdir {board}\n", flush=True)
+    writer = SummaryWriter(log_dir=str(board))
+    clock = time.perf_counter()
+    frames = 0
+    ok = fail = 0
     waiting = list(jobs)
     active: list[Job] = []
     pending = {}
@@ -239,7 +261,6 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path) -> N
         while len(active) < inflight and waiting:
             active.append(waiting.pop(0))
         for job in active:
-            episode = _episode(job)
             for stage in job.ready():
                 pool = POOL[stage]
                 if not free[pool]:
@@ -247,38 +268,37 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path) -> N
                 label, actor = free[pool].pop()
                 method = actor.run.remote(stage, str(job.src), str(job.dst)) if pool in ("action", "cpu") else actor.run.remote(str(job.src), str(job.dst))
                 job.running.add(stage)
-                pending[method] = (job, stage, pool, label, actor, time.perf_counter())
-                journal.event("start", label, stage, episode)
+                pending[method] = (job, stage, pool, label, actor)
 
     while waiting or active or pending:
         submit()
         if not pending:
             for job in list(active):
                 if job.finished():
-                    _record(job, log, journal)
+                    ok, fail, frames = _record(job, log, writer, clock, ok, fail, frames)
                     active.remove(job)
             if not waiting and not pending:
                 break
             continue
         done, _rest = ray.wait(list(pending), num_returns=1)
         ref = done[0]
-        job, stage, pool, label, actor, started = pending.pop(ref)
-        episode = _episode(job)
+        job, stage, pool, label, actor = pending.pop(ref)
         try:
-            summary = ray.get(ref) or ""
+            ray.get(ref)
         except Exception:
             job.failed = True
             job.error = f"{stage}: {traceback.format_exc().strip().splitlines()[-1]}"
-            journal.event("fail", label, stage, episode, job.error)
         else:
             job.done.add(stage)
-            elapsed = f"{time.perf_counter() - started:.1f}s"
-            journal.event("done", label, stage, episode, f"{elapsed}  {summary}".rstrip())
         job.running.discard(stage)
         free[pool].append((label, actor))
         if job.finished() and job in active:
-            _record(job, log, journal)
+            ok, fail, frames = _record(job, log, writer, clock, ok, fail, frames)
             active.remove(job)
+    writer.flush()
+    writer.close()
+    elapsed = max(time.perf_counter() - clock, 1e-6)
+    print(f"done  {ok} ok  {fail} fail  {frames / elapsed:.2f} fps", flush=True)
     ray.shutdown()
 
 
@@ -286,7 +306,15 @@ def _episode(job: Job) -> str:
     return f"{job.src.parent.name}/{job.src.stem}"
 
 
-def _record(job: Job, log: Path, journal: Log) -> None:
+def _watch(count: int) -> set[int]:
+    if count <= 0:
+        return set()
+    keep = min(count, max(1, int(round(count * 0.1))))
+    indexes = np.unique(np.round(np.linspace(0, count - 1, keep)).astype(int))
+    return set(int(index) for index in indexes)
+
+
+def _record(job: Job, log: Path, writer, clock: float, ok: int, fail: int, frames: int):
     row = {
         "episode": _episode(job),
         "ok": not job.failed,
@@ -294,16 +322,67 @@ def _record(job: Job, log: Path, journal: Log) -> None:
         "seconds": round(time.perf_counter() - job.started, 2),
     }
     if row["ok"]:
-        journal.ok += 1
+        ok += 1
+        frames += job.frames
     else:
-        journal.fail += 1
-    if row["ok"]:
-        journal.event("ok", "", "episode", row["episode"], f"{row['seconds']:.1f}s")
-    else:
-        journal.event("fail", "", "episode", row["episode"], f"{row['seconds']:.1f}s  {row['error']}")
+        fail += 1
+    elapsed = max(time.perf_counter() - clock, 1e-6)
+    step = ok + fail
+    writer.add_scalar("throughput/fps", frames / elapsed, step)
+    writer.add_scalar("progress/ok", ok, step)
+    writer.add_scalar("progress/fail", fail, step)
+    if row["ok"] and job.watch:
+        _compare(job, writer)
+    writer.flush()
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("a") as handle:
         handle.write(json.dumps(row) + "\n")
+    return ok, fail, frames
+
+
+def _compare(job: Job, writer) -> None:
+    import cv2
+
+    from egowhale.media import read_rgb
+    from egowhale.step import COMPOSITE, INPAINT, PREFIX
+
+    before, _fps = read_rgb(job.dst / INPAINT)
+    after, _fps = read_rgb(job.dst / COMPOSITE)
+    prefix = len(np.load(job.dst / PREFIX)["qpos"])
+    after = after[max(prefix - 1, 0) :]
+    count = min(len(before), len(after))
+    if count == 0:
+        return
+    pick = np.unique(np.round(np.linspace(0, count - 1, min(32, count))).astype(int))
+    frames = [_pair(_fit(before[index]), _fit(after[index])) for index in pick]
+    video = np.stack(frames).transpose(0, 3, 1, 2)[None]
+    writer.add_video("compare/" + _episode(job).replace("/", "_"), video, job.index, fps=4)
+    writer.flush()
+
+
+def _fit(frame: np.ndarray) -> np.ndarray:
+    import cv2
+
+    height, width = frame.shape[:2]
+    if height <= 360:
+        return np.ascontiguousarray(frame)
+    width = int(width * 360 / height) // 2 * 2
+    return cv2.resize(frame, (width, 360), interpolation=cv2.INTER_AREA)
+
+
+def _pair(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+    import cv2
+
+    if left.shape != right.shape:
+        right = cv2.resize(right, (left.shape[1], left.shape[0]))
+    return np.ascontiguousarray(np.concatenate([left, right], axis=1))
+
+
+def _frame_count(src: Path) -> int:
+    import h5py
+
+    with h5py.File(src) as handle:
+        return int(handle["transforms/camera"].shape[0])
 
 
 def simulate(count: int, pools: dict[str, int], inflight: int, fail: dict[tuple[int, str], str] | None = None) -> list[tuple]:
@@ -395,8 +474,12 @@ def main() -> None:
         "action": args.action,
         "cpu": args.inflight,
     }
-    print(f"{len(jobs)} episodes  inflight {args.inflight}  pools {pools}", flush=True)
-    serve(jobs, pools, args.inflight, out / "batch.jsonl")
+    watch = _watch(len(jobs))
+    for index, job in enumerate(jobs):
+        job.index = index
+        job.frames = _frame_count(job.src)
+        job.watch = index in watch
+    serve(jobs, pools, args.inflight, out / "batch.jsonl", out / "tb")
 
 
 if __name__ == "__main__":
