@@ -11,7 +11,11 @@ import os
 import sys
 import time
 import traceback
+import warnings
 from pathlib import Path
+
+# moviepy 1.0.3 predates Python 3.12 and warns on its own regex literals.
+warnings.filterwarnings("ignore", category=SyntaxWarning, module=r"moviepy(\.|$)")
 
 import numpy as np
 
@@ -68,6 +72,7 @@ class Job:
         self.running: set[str] = set()
         self.failed = False
         self.error = ""
+        self.ran = False
         self.started = time.perf_counter()
 
     def ready(self) -> list[str]:
@@ -83,22 +88,24 @@ class Job:
         return self.failed or set(DEPS) <= self.done
 
 
-def execute(step, src, dst) -> str:
+def execute(step, src, dst) -> tuple[bool, float]:
+    """Run one stage. Return whether it computed, and how long that took. Skips are (False, 0)."""
     os.environ["EGOWHALE_QUIET"] = "1"
     src, dst = Path(src), Path(dst)
     dst.mkdir(parents=True, exist_ok=True)
     if _done(dst, type(step)):
-        return ""
+        return False, 0.0
     missing = [name for name in step.needs if not (dst / name).is_file()]
     if missing:
         raise FileNotFoundError(f"{step.name} missing {missing}")
     buffer = io.StringIO()
+    started = time.perf_counter()
     with contextlib.redirect_stdout(buffer):
         step.run(src, dst)
     missing = [name for name in step.makes if not (dst / name).is_file()]
     if missing:
         raise FileNotFoundError(f"{step.name} did not write {missing}")
-    return " ".join(line.strip() for line in buffer.getvalue().splitlines() if line.strip())
+    return True, time.perf_counter() - started
 
 
 def _device() -> str:
@@ -265,9 +272,7 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
     journal.info(f"{len(jobs)} episodes    tensorboard {board}")
     journal.info(f"tensorboard --logdir {board}")
     writer = SummaryWriter(log_dir=str(board))
-    clock = time.perf_counter()
-    frames = 0
-    ok = fail = 0
+    meter = _Meter()
     waiting = list(jobs)
     active: list[Job] = []
     pending = {}
@@ -290,7 +295,7 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
         if not pending:
             for job in list(active):
                 if job.finished():
-                    ok, fail, frames = _record(job, log, writer, clock, ok, fail, frames)
+                    _record(job, log, writer, meter)
                     active.remove(job)
             if not waiting and not pending:
                 break
@@ -299,21 +304,27 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
         ref = done[0]
         job, stage, pool, label, actor = pending.pop(ref)
         try:
-            ray.get(ref)
+            ran, seconds = ray.get(ref)
         except Exception:
             job.failed = True
             job.error = f"{stage}: {traceback.format_exc().strip().splitlines()[-1]}"
+            ran = False
         else:
             job.done.add(stage)
+            if ran:
+                job.ran = True
+                meter.note(stage, job.frames, seconds)
         job.running.discard(stage)
         free[pool].append((label, actor))
         if job.finished() and job in active:
-            ok, fail, frames = _record(job, log, writer, clock, ok, fail, frames)
+            _record(job, log, writer, meter)
             active.remove(job)
+        elif ran:
+            meter.write(writer)
     writer.flush()
     writer.close()
-    elapsed = max(time.perf_counter() - clock, 1e-6)
-    journal.info(f"done  {ok} ok  {fail} fail  {frames / elapsed:.2f} fps")
+    elapsed = max(time.perf_counter() - meter.wall0, 1e-6)
+    journal.info(f"done  {meter.ok} ok  {meter.fail} fail  {meter.frames / elapsed:.2f} fps")
     ray.shutdown()
 
 
@@ -329,30 +340,71 @@ def _watch(count: int) -> set[int]:
     return set(int(index) for index in indexes)
 
 
-def _record(job: Job, log: Path, writer, clock: float, ok: int, fail: int, frames: int):
+class _Meter:
+    """system/* counts this run only. node/* is each stage's own speed. Skips add episodes, not frames."""
+
+    def __init__(self):
+        self.wall0 = time.perf_counter()
+        self.episodes = 0
+        self.ok = 0
+        self.fail = 0
+        self.frames = 0
+        self.nodes = {name: {"frames": 0, "seconds": 0.0, "episodes": 0} for name in STEPS}
+        self._last = -1
+
+    def note(self, stage: str, frames: int, seconds: float) -> None:
+        node = self.nodes[stage]
+        node["frames"] += frames
+        node["seconds"] += seconds
+        node["episodes"] += 1
+
+    def finish(self, job: Job) -> None:
+        self.episodes += 1
+        if job.failed:
+            self.fail += 1
+            return
+        self.ok += 1
+        if job.ran:
+            self.frames += job.frames
+
+    def write(self, writer) -> None:
+        step = self._step()
+        writer.add_scalar("system/episodes", self.episodes, step)
+        writer.add_scalar("system/frames", self.frames, step)
+        elapsed = time.perf_counter() - self.wall0
+        if self.frames and elapsed >= 1:
+            writer.add_scalar("system/fps", self.frames / elapsed, step)
+        for name, node in self.nodes.items():
+            if not node["episodes"]:
+                continue
+            writer.add_scalar(f"node/{name}/episodes", node["episodes"], step)
+            writer.add_scalar(f"node/{name}/frames", node["frames"], step)
+            if node["seconds"] >= 0.05:
+                writer.add_scalar(f"node/{name}/fps", node["frames"] / node["seconds"], step)
+        writer.flush()
+
+    def _step(self) -> int:
+        step = int((time.perf_counter() - self.wall0) * 1000)
+        if step <= self._last:
+            step = self._last + 1
+        self._last = step
+        return step
+
+
+def _record(job: Job, log: Path, writer, meter: _Meter) -> None:
     row = {
         "episode": _episode(job),
         "ok": not job.failed,
         "error": job.error,
         "seconds": round(time.perf_counter() - job.started, 2),
     }
-    if row["ok"]:
-        ok += 1
-        frames += job.frames
-    else:
-        fail += 1
-    elapsed = max(time.perf_counter() - clock, 1e-6)
-    step = ok + fail
-    writer.add_scalar("throughput/fps", frames / elapsed, step)
-    writer.add_scalar("progress/ok", ok, step)
-    writer.add_scalar("progress/fail", fail, step)
+    meter.finish(job)
+    meter.write(writer)
     if row["ok"] and job.watch:
         _compare(job, writer)
-    writer.flush()
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("a") as handle:
         handle.write(json.dumps(row) + "\n")
-    return ok, fail, frames
 
 
 def _compare(job: Job, writer) -> None:
