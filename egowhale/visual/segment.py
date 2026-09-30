@@ -14,8 +14,8 @@ from egowhale.step import MASKS, ROOT, Step, compute_lock
 _SAM3 = ROOT / "thirdparty" / "sam3"
 _CKPT = _SAM3 / "weights" / "sam3" / "sam3.pt"
 _BPE = _SAM3 / "sam3" / "assets" / "bpe_simple_vocab_16e6.txt.gz"
-_CUTIE_PKG = ROOT / "thirdparty" / "propainter" / "web-demos" / "hugging_face"
-_CUTIE = ROOT / "thirdparty" / "propainter" / "weights" / "cutie-base-mega.pth"
+_CUTIE_PKG = ROOT / "thirdparty" / "cutie"
+_CUTIE = _CUTIE_PKG / "weights" / "cutie-base-mega.pth"
 _KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 _STRIDE = 10
 _SHORT = 480

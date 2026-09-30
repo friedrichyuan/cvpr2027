@@ -47,6 +47,7 @@ Model weights stay local:
 | Model | Path |
 | --- | --- |
 | SAM 3 | `thirdparty/sam3` |
+| Cutie (from the ProPainter web demo) | `thirdparty/cutie` |
 | ProPainter | `thirdparty/propainter` |
 | Depth Anything 3 (DA3-GIANT) | `thirdparty/da3` |
 
@@ -86,11 +87,11 @@ egowhale/action/    retarget, base search, approach, curation
 egowhale/visual/    segmentation, inpaint, depth, composite
 scripts/            one shell entry per stage
 assets/             robot scene and logo
-thirdparty/         SAM 3, ProPainter, Depth Anything 3
+thirdparty/         SAM 3, Cutie, ProPainter, Depth Anything 3
 ```
 
 ## Acknowledgments
 
 The conversion of egocentric manipulation video into robot demonstrations — action retargeting, arm synthesis, and multi-level quality curation — follows [Ego2Robot](https://arxiv.org/abs/2608.02580) (Wang et al.).
 
-EgoWhale also relies on [SAM 3](https://github.com/facebookresearch/sam3), [ProPainter](https://github.com/sczhou/ProPainter), [Depth Anything 3](https://github.com/ByteDance-Seed/Depth-Anything-3), [cuRobo](https://curobo.org/), and [MuJoCo](https://mujoco.org/).
+EgoWhale also relies on [SAM 3](https://github.com/facebookresearch/sam3), [Cutie](https://github.com/hkchengrex/Cutie), [ProPainter](https://github.com/sczhou/ProPainter), [Depth Anything 3](https://github.com/ByteDance-Seed/Depth-Anything-3), [cuRobo](https://curobo.org/), and [MuJoCo](https://mujoco.org/).

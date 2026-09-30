@@ -56,6 +56,8 @@ POOL = {
     "curate": "cpu",
 }
 VISUAL = ("segment", "inpaint", "depth")
+# GPU share of an action actor riding on an inpaint card.
+RIDE_SHARE = 0.1
 # Frames packed into one forward. A single longer episode still runs alone. OOM halves the budget.
 FRAME_BUDGET = {"inpaint": 320, "depth": 192}
 STEPS = {
@@ -453,7 +455,7 @@ def serve(jobs: list[Job], pools: dict[str, int], share: dict[str, float], infli
     journal.info(f"{len(jobs)} episodes    tensorboard {board}")
     journal.info(f"tensorboard --logdir {board}")
     writer = SummaryWriter(log_dir=str(board))
-    meter = _Meter()
+    meter = _Meter({name: pools[POOL[name]] for name in STEPS})
     waiting = list(jobs)
     active: list[Job] = []
     pending = {}
@@ -727,9 +729,13 @@ def _watch(count: int) -> set[int]:
 
 
 class _Meter:
-    """system/* counts this run only. node/* is each stage's own speed. Skips add episodes, not frames."""
+    """system/* counts this run only. node/*/fps is the whole pool's speed while busy. Skips add episodes, not frames.
 
-    def __init__(self):
+    Stages that share a pool (retarget, base_ik, approach) each report as if the pool ran only that stage.
+    """
+
+    def __init__(self, actors: dict[str, int]):
+        self.actors = actors
         self.wall0 = time.perf_counter()
         self.episodes = 0
         self.ok = 0
@@ -766,7 +772,7 @@ class _Meter:
             writer.add_scalar(f"node/{name}/episodes", node["episodes"], step)
             writer.add_scalar(f"node/{name}/frames", node["frames"], step)
             if node["seconds"] >= 0.05:
-                writer.add_scalar(f"node/{name}/fps", node["frames"] / node["seconds"], step)
+                writer.add_scalar(f"node/{name}/fps", node["frames"] / node["seconds"] * self.actors[name], step)
 
     def _step(self) -> int:
         """TensorBoard step is wall seconds since boot. Milliseconds made 100s look like 100000."""
@@ -913,9 +919,9 @@ def main() -> None:
     parser.add_argument("--segment", type=int, default=1)
     parser.add_argument("--inpaint", type=int, default=4)
     parser.add_argument("--depth", type=int, default=2)
-    parser.add_argument("--action", type=int, default=1)
+    parser.add_argument("--action", type=int, default=1, help="action cards; 0 puts the action actors on inpaint cards")
     parser.add_argument("--segment-actors", type=int, default=2, help="segment actors sharing each segment card")
-    parser.add_argument("--action-actors", type=int, default=4, help="action actors sharing each action card")
+    parser.add_argument("--action-actors", type=int, default=4, help="action actors per action card, or in total with --action 0")
     parser.add_argument("--render", type=int, default=4, help="MuJoCo render actors")
     args = parser.parse_args()
     sources = episodes_from([path.expanduser().resolve() for path in args.paths], args.limit)
@@ -924,7 +930,9 @@ def main() -> None:
     out = args.out.expanduser().resolve()
     jobs = [Job(src, out / src.parent.name / src.stem) for src in sources]
     segment = args.segment * args.segment_actors
-    action = args.action * args.action_actors
+    action = args.action * args.action_actors if args.action else args.action_actors
+    if not args.action and action > args.inpaint:
+        raise SystemExit("--action 0 puts one action actor per inpaint card; lower --action-actors")
     visual = segment + args.inpaint + args.depth
     pools = {
         "segment": segment,
@@ -939,6 +947,9 @@ def main() -> None:
         "action_write": action,
     }
     share = {"segment": 1.0 / args.segment_actors, "action": 1.0 / args.action_actors}
+    if not args.action:
+        # Inpaint is placed first, so each 0.9 slot takes its own card and leaves room for one action actor.
+        share = {"inpaint": 1 - RIDE_SHARE, "segment": share["segment"], "action": RIDE_SHARE}
     watch = _watch(len(jobs))
     for index, job in enumerate(jobs):
         job.index = index
