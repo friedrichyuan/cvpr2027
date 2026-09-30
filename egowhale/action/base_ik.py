@@ -53,18 +53,32 @@ class BaseIK(Step):
     gpus = 1
 
     def run(self, src: Path, dst: Path) -> None:
-        dst = Path(dst)
-        with np.load(dst / GRIPPER) as data:
-            position = np.asarray(data["position"], dtype=np.float64)
-            rotation = np.asarray(data["rotation"], dtype=np.float64)
-            width = np.asarray(data["width"], dtype=np.float64)
-            valid = np.asarray(data["valid"], dtype=bool)
-        matrix, qpos, losses = _solve(position, rotation, width, valid)
-        base_path = dst / BASE
-        base_path.parent.mkdir(parents=True, exist_ok=True)
-        base_path.write_text(json.dumps({"matrix": matrix.tolist(), "losses": losses}, indent=2))
-        np.savez_compressed(dst / IK, qpos=qpos.astype(np.float32))
+        result = self.compute(read_gripper(Path(dst)))
+        save_base(Path(dst), result)
+        losses = result["losses"]
         print(f"  pos {losses['position'] * 1000:.1f} mm  jerk {losses['jerk']:.4f}")
+
+    def compute(self, data: dict) -> dict:
+        matrix, qpos, losses = _solve(data["position"], data["rotation"], data["width"], data["valid"])
+        return {"matrix": matrix, "qpos": qpos.astype(np.float32), "losses": losses}
+
+
+def read_gripper(dst: Path) -> dict:
+    with np.load(Path(dst) / GRIPPER) as data:
+        return {
+            "position": np.asarray(data["position"], dtype=np.float64),
+            "rotation": np.asarray(data["rotation"], dtype=np.float64),
+            "width": np.asarray(data["width"], dtype=np.float64),
+            "valid": np.asarray(data["valid"], dtype=bool),
+        }
+
+
+def save_base(dst: Path, result: dict) -> None:
+    dst = Path(dst)
+    base_path = dst / BASE
+    base_path.parent.mkdir(parents=True, exist_ok=True)
+    base_path.write_text(json.dumps({"matrix": result["matrix"].tolist(), "losses": result["losses"]}, indent=2))
+    np.savez_compressed(dst / IK, qpos=result["qpos"])
 
 
 def _solve(position, rotation, width, valid):

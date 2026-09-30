@@ -24,8 +24,12 @@ class Approach(Step):
     gpus = 1
 
     def run(self, src: Path, dst: Path) -> None:
-        dst = Path(dst)
-        qpos = np.load(dst / IK)["qpos"]
+        prefix = self.compute(read_ik(Path(dst)))
+        save_prefix(Path(dst), prefix)
+        print(f"  approach {len(prefix['qpos'])} frames  {(len(prefix['qpos']) - 1) / _FPS:.2f}s")
+
+    def compute(self, data: dict) -> dict:
+        qpos = data["qpos"]
         model = mujoco.MjModel.from_xml_path(str(SCENE))
         goal = _read(model, ARM, qpos[0])
         arm_step = _read(model, ARM, qpos[1]) - goal
@@ -37,10 +41,17 @@ class Approach(Step):
         prefix = np.zeros((len(arm), model.nq), dtype=np.float32)
         _write(model, ARM, arm, prefix)
         _write(model, _gripper_names(), grip, prefix)
-        path = dst / PREFIX
-        path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(path, qpos=prefix)
-        print(f"  approach {len(prefix)} frames  {(len(prefix) - 1) / _FPS:.2f}s")
+        return {"qpos": prefix}
+
+
+def read_ik(dst: Path) -> dict:
+    return {"qpos": np.load(Path(dst) / IK)["qpos"]}
+
+
+def save_prefix(dst: Path, result: dict) -> None:
+    path = Path(dst) / PREFIX
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path, qpos=result["qpos"])
 
 
 def _trajopt(goal: np.ndarray) -> np.ndarray:

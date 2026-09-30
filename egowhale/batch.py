@@ -122,16 +122,17 @@ def _actors(pools: dict[str, int]):
     import ray
 
     gpu = ray.remote(num_gpus=1, max_concurrency=1)
+    # The next episode waits on the compute lock while this one copies its result out.
+    pipe = ray.remote(num_gpus=1, max_concurrency=2)
     cpu = ray.remote(num_cpus=1, max_concurrency=1)
 
-    @gpu
+    @pipe
     class SegmentActor:
         def __init__(self):
-            from egowhale.visual.segment import install_frame_batch, load_predictor
+            from egowhale.visual.segment import load_tracker
 
             self.step = Segment()
-            self.step._held = load_predictor()
-            install_frame_batch(self.step._held)
+            self.step._processor, self.step._cutie = load_tracker()
 
         def ready(self):
             return _device()
@@ -142,7 +143,7 @@ def _actors(pools: dict[str, int]):
         def consume(self, payload):
             return self.step.consume(payload)
 
-    @gpu
+    @pipe
     class InpaintActor:
         def __init__(self):
             self.step = Inpaint()
@@ -157,7 +158,7 @@ def _actors(pools: dict[str, int]):
         def consume(self, payload, budget):
             return self.step.consume(payload, budget)
 
-    @gpu
+    @pipe
     class DepthActor:
         def __init__(self):
             from egowhale.visual.depth import load_model
@@ -185,6 +186,17 @@ def _actors(pools: dict[str, int]):
         def run(self, stage, src, dst):
             return execute(self.steps[stage], src, dst)
 
+        def compute(self, stage, dst, data):
+            import ray
+
+            started = time.perf_counter()
+            try:
+                out = self.steps[stage].compute(data)
+            except Exception as exc:
+                return {"ok": False, "error": str(exc).splitlines()[-1], "seconds": 0.0, "save_ref": None}
+            packed = {"stage": stage, "dst": dst, "out": out}
+            return {"ok": True, "seconds": time.perf_counter() - started, "save_ref": ray.put(packed)}
+
     @cpu
     class CpuActor:
         def __init__(self):
@@ -207,6 +219,63 @@ def _actors(pools: dict[str, int]):
 
             return prepare(stage, pairs)
 
+    @ray.remote(num_cpus=1, max_concurrency=1)
+    class StoreActor:
+        def ready(self):
+            return "cpu"
+
+        def commit(self, saves):
+            from egowhale.visual.store import commit
+
+            commit(saves)
+            return True
+
+    @ray.remote(num_cpus=1, max_concurrency=1)
+    class ActionReadActor:
+        def ready(self):
+            return "cpu"
+
+        def load(self, stage, src, dst):
+            src, dst = Path(src), Path(dst)
+            if stage == "retarget":
+                from egowhale.action.retarget import read_episode
+
+                return read_episode(src)
+            if stage == "base_ik":
+                from egowhale.action.base_ik import read_gripper
+
+                return read_gripper(dst)
+            if stage == "approach":
+                from egowhale.action.approach import read_ik
+
+                return read_ik(dst)
+            raise ValueError(stage)
+
+    @ray.remote(num_cpus=1, max_concurrency=1)
+    class ActionWriteActor:
+        def ready(self):
+            return "cpu"
+
+        def save(self, packed):
+            dst = Path(packed["dst"])
+            stage = packed["stage"]
+            out = packed["out"]
+            if stage == "retarget":
+                from egowhale.action.retarget import save_gripper
+
+                save_gripper(dst, out)
+            elif stage == "base_ik":
+                from egowhale.action.base_ik import save_base
+
+                save_base(dst, out)
+            elif stage == "approach":
+                from egowhale.action.approach import save_prefix
+
+                save_prefix(dst, out)
+            else:
+                raise ValueError(stage)
+            return True
+
     classes = {
         "segment": SegmentActor,
         "inpaint": InpaintActor,
@@ -214,6 +283,9 @@ def _actors(pools: dict[str, int]):
         "action": ActionActor,
         "cpu": CpuActor,
         "feed": FeedActor,
+        "write": StoreActor,
+        "action_read": ActionReadActor,
+        "action_write": ActionWriteActor,
     }
     return {
         name: [(f"{name}{index}", cls.remote()) for index in range(pools[name])]
@@ -222,13 +294,16 @@ def _actors(pools: dict[str, int]):
 
 
 _PLACED = (
-    ("segment", "segment", "SAM 3"),
+    ("segment", "segment", "SAM 3 + Cutie"),
     ("inpaint", "inpaint", "ProPainter"),
     ("depth", "depth", "DA3-GIANT"),
     ("action", "action", "cuRobo"),
     ("cpu", "composite", "MuJoCo"),
     ("cpu", "curate", "checks"),
     ("feed", "feed", "prefetch"),
+    ("write", "write", "store"),
+    ("action_read", "action-read", "prefetch"),
+    ("action_write", "action-write", "store"),
 )
 
 
@@ -283,7 +358,7 @@ def _boot(free: dict, log) -> None:
 def _take(active: list[Job], stage: str, limit: int) -> list[Job]:
     """Whole episodes, oldest first. A node then adds later episodes of the same length until it is full."""
     ready = [job for job in active if stage in job.ready()]
-    if not ready or stage == "segment":
+    if not ready or stage in ("segment", "inpaint"):
         return ready[:1]
     length = ready[0].frames
     chosen: list[Job] = []
@@ -341,8 +416,10 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
     active: list[Job] = []
     pending = {}
     budget = dict(FRAME_BUDGET)
-    feed = free.pop("feed")[0][1]
+    readers = [actor for _label, actor in free.pop("feed")]
+    writers = [actor for _label, actor in free.pop("write")]
     lanes = []
+    slot = 0
     for stage in VISUAL:
         for label, actor in free.pop(POOL[stage]):
             lanes.append(
@@ -350,63 +427,124 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
                     "stage": stage,
                     "label": label,
                     "actor": actor,
-                    "feed": None,
-                    "gpu": None,
-                    "jobs": None,
-                    "next_feed": None,
-                    "next_jobs": None,
-                    "next_data": None,
+                    "readers": readers[slot : slot + 2],
+                    "writer": writers[slot // 2],
+                    "busy": {},
+                    "ready": [],
+                    "inflight": [],
                 }
             )
+            slot += 2
+    action_lanes = []
+    for (_label, actor), (_rl, reader), (_wl, store) in zip(free.pop("action"), free.pop("action_read"), free.pop("action_write")):
+        action_lanes.append(
+            {
+                "actor": actor,
+                "reader": reader,
+                "writer": store,
+                "read": None,
+                "gpu": None,
+                "job": None,
+                "stage": None,
+                "next_read": None,
+                "next_job": None,
+                "next_stage": None,
+                "next_data": None,
+            }
+        )
 
     def consume(lane, data, chosen) -> None:
-        lane["jobs"] = chosen
         if lane["stage"] == "segment":
             launched = lane["actor"].consume.remote(data)
         else:
             launched = lane["actor"].consume.remote(data, budget[lane["stage"]])
-        lane["gpu"] = launched
-        pending[launched] = ("gpu", lane)
+        lane["inflight"].append(launched)
+        pending[launched] = ("gpu", lane, chosen)
 
-    def promote(lane) -> None:
+    def fill(lane) -> None:
+        """Keep one decoded episode queued behind the one on the GPU."""
+        stage = lane["stage"]
+        limit = budget.get(stage, 10**9)
+        while len(lane["busy"]) + len(lane["ready"]) + len(lane["inflight"]) < 3:
+            reader = next((item for item in lane["readers"] if item not in lane["busy"].values()), None)
+            if reader is None:
+                return
+            chosen = _take(active, stage, limit)
+            if not chosen:
+                return
+            for job in chosen:
+                job.running.add(stage)
+            ref = reader.prepare.remote(stage, [(str(job.src), str(job.dst)) for job in chosen])
+            lane["busy"][ref] = reader
+            pending[ref] = ("feed", lane, chosen)
+
+    def launch(lane) -> None:
+        while len(lane["inflight"]) < 2 and lane["ready"]:
+            data, chosen = lane["ready"].pop(0)
+            consume(lane, data, chosen)
+
+    def promote_action(lane) -> None:
+        job = lane["next_job"]
+        stage = lane["next_stage"]
         data = lane["next_data"]
-        chosen = lane["next_jobs"]
+        lane["next_job"] = None
+        lane["next_stage"] = None
         lane["next_data"] = None
-        lane["next_jobs"] = None
-        consume(lane, data, chosen)
+        lane["job"] = job
+        lane["stage"] = stage
+        launched = lane["actor"].compute.remote(stage, str(job.dst), data)
+        lane["gpu"] = launched
+        pending[launched] = ("action", lane)
 
     def pump() -> None:
         while len(active) < inflight and waiting:
             active.append(waiting.pop(0))
         for lane in lanes:
-            stage = lane["stage"]
-            limit = budget.get(stage, 10**9)
-            idle = lane["feed"] is None and lane["gpu"] is None and lane["jobs"] is None and lane["next_feed"] is None and lane["next_data"] is None
+            fill(lane)
+            launch(lane)
+        held = set()
+        for lane in action_lanes:
+            if lane["job"] is not None:
+                held.add(id(lane["job"]))
+            if lane["next_job"] is not None:
+                held.add(id(lane["next_job"]))
+        for lane in action_lanes:
+            idle = lane["read"] is None and lane["gpu"] is None and lane["job"] is None and lane["next_read"] is None and lane["next_data"] is None
+            want_next = lane["gpu"] is not None and lane["next_read"] is None and lane["next_data"] is None
+            if not idle and not want_next:
+                continue
+            chosen = None
+            for job in active:
+                if id(job) in held:
+                    continue
+                for stage in job.ready():
+                    if POOL[stage] != "action":
+                        continue
+                    chosen = (job, stage)
+                    break
+                if chosen:
+                    break
+            if chosen is None:
+                continue
+            job, stage = chosen
+            job.running.add(stage)
+            held.add(id(job))
+            ref = lane["reader"].load.remote(stage, str(job.src), str(job.dst))
             if idle:
-                chosen = _take(active, stage, limit)
-                if not chosen:
-                    continue
-                for job in chosen:
-                    job.running.add(stage)
-                ref = feed.prepare.remote(stage, [(str(job.src), str(job.dst)) for job in chosen])
-                lane["feed"] = ref
-                lane["jobs"] = chosen
-                pending[ref] = ("feed", lane)
-            elif lane["gpu"] is not None and lane["next_feed"] is None and lane["next_data"] is None:
-                chosen = _take(active, stage, limit)
-                if not chosen:
-                    continue
-                for job in chosen:
-                    job.running.add(stage)
-                ref = feed.prepare.remote(stage, [(str(job.src), str(job.dst)) for job in chosen])
-                lane["next_feed"] = ref
-                lane["next_jobs"] = chosen
-                pending[ref] = ("next", lane)
+                lane["read"] = ref
+                lane["job"] = job
+                lane["stage"] = stage
+                pending[ref] = ("aread", lane)
+            else:
+                lane["next_read"] = ref
+                lane["next_job"] = job
+                lane["next_stage"] = stage
+                pending[ref] = ("anext", lane)
         for job in active:
             for stage in job.ready():
-                if stage in VISUAL:
-                    continue
                 pool = POOL[stage]
+                if stage in VISUAL or pool == "action":
+                    continue
                 if not free[pool]:
                     continue
                 label, actor = free[pool].pop()
@@ -424,20 +562,29 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
             if not waiting and not pending:
                 break
             continue
-        done, _rest = ray.wait(list(pending), num_returns=1)
-        ref = done[0]
+        ready_refs, _rest = ray.wait(list(pending), num_returns=1, fetch_local=False)
+        ref = ready_refs[0]
         kind = pending.pop(ref)
         if kind[0] == "feed":
-            lane = kind[1]
-            lane["feed"] = None
-            consume(lane, ref, lane["jobs"])
+            lane, chosen = kind[1], kind[2]
+            lane["busy"].pop(ref, None)
+            lane["ready"].append((ref, chosen))
+            launch(lane)
+            fill(lane)
             continue
-        if kind[0] == "next":
+        if kind[0] == "aread":
             lane = kind[1]
-            lane["next_feed"] = None
+            lane["read"] = None
+            launched = lane["actor"].compute.remote(lane["stage"], str(lane["job"].dst), ref)
+            lane["gpu"] = launched
+            pending[launched] = ("action", lane)
+            continue
+        if kind[0] == "anext":
+            lane = kind[1]
+            lane["next_read"] = None
             lane["next_data"] = ref
             if lane["gpu"] is None:
-                promote(lane)
+                promote_action(lane)
             continue
         if kind[0] == "run":
             _job, stage, pool, label, actor = kind[1:]
@@ -450,24 +597,62 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
             _apply([_job], rows, stage, meter, writer, log, active)
             free[pool].append((label, actor))
             continue
-        lane = kind[1]
-        chosen = list(lane["jobs"] or [])
+        if kind[0] in ("write", "awrite"):
+            stage, chosen, rows = kind[1:]
+            try:
+                ray.get(ref)
+            except Exception:
+                message = traceback.format_exc().strip().splitlines()[-1]
+                rows = [(False, 0.0, message)] * len(chosen)
+            _apply(chosen, rows, stage, meter, writer, log, active)
+            continue
+        if kind[0] == "action":
+            lane = kind[1]
+            job = lane["job"]
+            stage = lane["stage"]
+            lane["gpu"] = None
+            lane["job"] = None
+            lane["stage"] = None
+            if lane["next_data"] is not None:
+                promote_action(lane)
+            try:
+                payload = ray.get(ref)
+            except Exception:
+                message = traceback.format_exc().strip().splitlines()[-1]
+                _apply([job], [(False, 0.0, message)], stage, meter, writer, log, active)
+                continue
+            if not payload["ok"]:
+                _apply([job], [(False, 0.0, payload["error"])], stage, meter, writer, log, active)
+                continue
+            rows = [(True, payload["seconds"], "")]
+            if payload["save_ref"] is None:
+                _apply([job], rows, stage, meter, writer, log, active)
+                continue
+            stored = lane["writer"].save.remote(payload["save_ref"])
+            pending[stored] = ("awrite", stage, [job], rows)
+            continue
+        lane, chosen = kind[1], list(kind[2])
+        stage = lane["stage"]
+        lane["inflight"] = [item for item in lane["inflight"] if item != ref]
+        launch(lane)
+        fill(lane)
         try:
             payload = ray.get(ref)
         except Exception:
             message = traceback.format_exc().strip().splitlines()[-1]
-            rows = [(False, 0.0, message)] * len(chosen)
-        else:
-            rows = payload["results"]
-            if len(rows) != len(chosen):
-                rows = [(False, 0.0, "batch result mismatch")] * len(chosen)
-            elif lane["stage"] in budget and "budget" in payload:
-                budget[lane["stage"]] = min(budget[lane["stage"]], int(payload["budget"]))
-        _apply(chosen, rows, lane["stage"], meter, writer, log, active)
-        lane["gpu"] = None
-        lane["jobs"] = None
-        if lane["next_data"] is not None:
-            promote(lane)
+            _apply(chosen, [(False, 0.0, message)] * len(chosen), stage, meter, writer, log, active)
+            continue
+        rows = payload["results"]
+        if len(rows) != len(chosen):
+            rows = [(False, 0.0, "batch result mismatch")] * len(chosen)
+        elif stage in budget and "budget" in payload:
+            budget[stage] = min(budget[stage], int(payload["budget"]))
+        save_ref = payload.get("save_ref")
+        if save_ref is None:
+            _apply(chosen, rows, stage, meter, writer, log, active)
+            continue
+        stored = lane["writer"].commit.remote(save_ref)
+        pending[stored] = ("write", stage, chosen, rows)
     writer.flush()
     writer.close()
     elapsed = max(time.perf_counter() - meter.wall0, 1e-6)
@@ -528,7 +713,6 @@ class _Meter:
             writer.add_scalar(f"node/{name}/frames", node["frames"], step)
             if node["seconds"] >= 0.05:
                 writer.add_scalar(f"node/{name}/fps", node["frames"] / node["seconds"], step)
-        writer.flush()
 
     def _step(self) -> int:
         """TensorBoard step is wall seconds since boot. Milliseconds made 100s look like 100000."""
@@ -670,11 +854,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the episode DAG on Ray pools.")
     parser.add_argument("paths", nargs="+", type=Path, help="HDF5 files or a dataset directory")
     parser.add_argument("--out", type=Path, default=ROOT / "outputs")
-    parser.add_argument("--inflight", type=int, default=8)
+    parser.add_argument("--inflight", type=int, default=128)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--segment", type=int, default=1)
-    parser.add_argument("--inpaint", type=int, default=1)
-    parser.add_argument("--depth", type=int, default=1)
+    parser.add_argument("--inpaint", type=int, default=4)
+    parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--action", type=int, default=1)
     args = parser.parse_args()
     sources = episodes_from([path.expanduser().resolve() for path in args.paths], args.limit)
@@ -682,13 +866,17 @@ def main() -> None:
         raise SystemExit("no episodes")
     out = args.out.expanduser().resolve()
     jobs = [Job(src, out / src.parent.name / src.stem) for src in sources]
+    visual = args.segment + args.inpaint + args.depth
     pools = {
         "segment": args.segment,
         "inpaint": args.inpaint,
         "depth": args.depth,
         "action": args.action,
-        "cpu": args.inflight,
-        "feed": 1,
+        "cpu": min(args.inflight, 8),
+        "feed": visual * 2,
+        "write": visual,
+        "action_read": args.action,
+        "action_write": args.action,
     }
     watch = _watch(len(jobs))
     for index, job in enumerate(jobs):

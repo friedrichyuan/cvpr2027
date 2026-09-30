@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from egowhale.media import load_masks, read_rgb, write_rgb
-from egowhale.step import INPAINT, MASKS, ROOT, Step
+from egowhale.step import INPAINT, MASKS, ROOT, Step, compute_lock
 from egowhale.visual.paint import load_models, paint_clips, prepare_clip
 
 _ROOT = ROOT / "thirdparty" / "propainter"
@@ -35,10 +35,12 @@ class Inpaint(Step):
         """Paint a dataloader batch. Same size and length share one forward. OOM halves the budget."""
         import time
 
+        import ray
         import torch
 
         items = payload["items"]
         results = [None] * len(items)
+        saves = []
         todo = [index for index, item in enumerate(items) if item.get("ok")]
         for index, item in enumerate(items):
             if not item.get("ok"):
@@ -55,7 +57,12 @@ class Inpaint(Step):
             try:
                 painted = paint_clips(self._held, [items[index] for index in indexes])
                 for index, frames in zip(indexes, painted):
-                    write_rgb(Path(items[index]["dst"]), frames, items[index]["fps"])
+                    saves.append({
+                        "kind": "video",
+                        "path": items[index]["dst"],
+                        "data": frames,
+                        "fps": items[index]["fps"],
+                    })
             except Exception as exc:
                 oom = isinstance(exc, torch.cuda.OutOfMemoryError) or "out of memory" in str(exc).lower()
                 if oom:
@@ -76,11 +83,12 @@ class Inpaint(Step):
 
         pending = list(todo)
         sizes = {index: int(items[index]["frames"].shape[1]) for index in todo}
-        while pending:
-            group = _slices(pending, [sizes[index] for index in pending], limit)[0]
-            run(group)
-            pending = pending[len(group) :]
-        return {"results": results, "budget": limit}
+        with compute_lock(self):
+            while pending:
+                group = _slices(pending, [sizes[index] for index in pending], limit)[0]
+                run(group)
+                pending = pending[len(group) :]
+        return {"results": results, "budget": limit, "save_ref": ray.put(saves) if saves else None}
 
 
 def _slices(indexes: list[int], sizes: list[int], limit: int) -> list[list[int]]:

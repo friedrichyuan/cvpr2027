@@ -10,10 +10,11 @@ import h5py
 import numpy as np
 
 from egowhale.media import read_rgb
-from egowhale.step import DEPTH, INPAINT, ROOT, Step
+from egowhale.step import DEPTH, INPAINT, ROOT, Step, compute_lock
 
 _SRC = ROOT / "thirdparty" / "da3" / "src"
 _WEIGHTS = ROOT / "thirdparty" / "da3" / "weights" / "DA3-GIANT"
+PROCESS_RES = 336
 
 
 class Depth(Step):
@@ -28,9 +29,7 @@ class Depth(Step):
         frames, _fps = read_rgb(Path(dst) / INPAINT)
         extrinsics, intrinsics = _cameras(Path(src), frames.shape[1], frames.shape[2], len(frames))
         depth = _estimate(frames[: len(extrinsics)], extrinsics, intrinsics, getattr(self, "_model", None))
-        path = Path(dst) / DEPTH
-        path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(path, depth=depth.astype(np.float32))
+        _store_depth(Path(dst) / DEPTH, depth)
         print(f"  depth median {float(np.median(depth)):.3f} m")
 
     def consume(self, payload: dict, budget: int) -> dict:
@@ -39,8 +38,11 @@ class Depth(Step):
 
         import torch
 
+        import ray
+
         items = payload["items"]
         results = [None] * len(items)
+        saves = []
         todo = [index for index, item in enumerate(items) if item.get("ok")]
         for index, item in enumerate(items):
             if not item.get("ok"):
@@ -57,7 +59,7 @@ class Depth(Step):
                 model = load_model()
             started = time.perf_counter()
             try:
-                _forward_ready([items[index] for index in indexes], model)
+                produced = _forward_ready([items[index] for index in indexes], model)
             except Exception as exc:
                 oom = isinstance(exc, torch.cuda.OutOfMemoryError) or "out of memory" in str(exc).lower()
                 if oom:
@@ -76,17 +78,19 @@ class Depth(Step):
                 if own:
                     del model
             share = (time.perf_counter() - started) / len(indexes)
-            for index in indexes:
+            for index, depth in zip(indexes, produced):
                 if results[index] is None:
                     results[index] = (True, share, "")
+                    saves.append({"kind": "depth", "path": items[index]["dst"], "data": depth})
 
         pending = list(todo)
         sizes = {index: int(items[index]["images"].shape[0]) for index in todo}
-        while pending:
-            group = _slices(pending, [sizes[index] for index in pending], limit)[0]
-            run(group)
-            pending = pending[len(group) :]
-        return {"results": results, "budget": limit}
+        with compute_lock(self):
+            while pending:
+                group = _slices(pending, [sizes[index] for index in pending], limit)[0]
+                run(group)
+                pending = pending[len(group) :]
+        return {"results": results, "budget": limit, "save_ref": ray.put(saves) if saves else None}
 
 
 def _slices(indexes: list[int], sizes: list[int], limit: int) -> list[list[int]]:
@@ -156,7 +160,7 @@ def _estimate(frames: np.ndarray, extrinsics: np.ndarray, intrinsics: np.ndarray
     if own:
         model = load_model()
     images, extrinsics_t, intrinsics_t = InputProcessor()(
-        [frame for frame in frames], extrinsics, intrinsics, num_workers=1
+        [frame for frame in frames], extrinsics, intrinsics, process_res=PROCESS_RES, num_workers=1
     )
     try:
         with torch.inference_mode():
@@ -189,7 +193,7 @@ def prepare_view(episode: Path, frames: np.ndarray) -> dict:
     extrinsics, intrinsics = _cameras(Path(episode), frames.shape[1], frames.shape[2], len(frames))
     frames = frames[: len(extrinsics)]
     images, extrinsics_t, intrinsics_t = InputProcessor()(
-        [frame for frame in frames], extrinsics, intrinsics, num_workers=1
+        [frame for frame in frames], extrinsics, intrinsics, process_res=PROCESS_RES, num_workers=1
     )
     return {
         "images": images.cpu(),
@@ -200,7 +204,12 @@ def prepare_view(episode: Path, frames: np.ndarray) -> dict:
     }
 
 
-def _forward_ready(items, model) -> None:
+def _store_depth(path: Path, depth: np.ndarray) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(path, depth=np.asarray(depth, dtype=np.float32))
+
+
+def _forward_ready(items, model) -> list[np.ndarray]:
     """One DA3 forward per group of views with the same count and processed size."""
     if str(_SRC) not in sys.path:
         sys.path.insert(0, str(_SRC))
@@ -210,6 +219,8 @@ def _forward_ready(items, model) -> None:
     from depth_anything_3.utils.geometry import affine_inverse
     from depth_anything_3.utils.io.output_processor import OutputProcessor
 
+    depths: list[np.ndarray | None] = [None] * len(items)
+    place = {id(item): index for index, item in enumerate(items)}
     buckets = {}
     for item in items:
         buckets.setdefault(tuple(item["key"]), []).append(item)
@@ -230,9 +241,8 @@ def _forward_ready(items, model) -> None:
                 depth = depth.squeeze(1)
             if depth.shape[1:] != (height, width):
                 depth = np.stack([cv2.resize(frame, (width, height), interpolation=cv2.INTER_LINEAR) for frame in depth])
-            path = Path(item["dst"])
-            path.parent.mkdir(parents=True, exist_ok=True)
-            np.savez_compressed(path, depth=depth.astype(np.float32))
+            depths[place[id(item)]] = depth
+    return depths
 
 
 def _slice_output(raw, index: int, batch: int):

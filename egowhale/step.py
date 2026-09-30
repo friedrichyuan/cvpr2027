@@ -7,6 +7,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+def compute_lock(step):
+    """One GPU section at a time. The caller copies results out after releasing it."""
+    import threading
+
+    lock = getattr(step, "_gate", None)
+    if lock is None:
+        lock = threading.Lock()
+        step._gate = lock
+    return lock
+
 GRIPPER = "action/gripper.npz"
 MASKS = "visual/masks.npz"
 INPAINT = "visual/inpaint.mp4"

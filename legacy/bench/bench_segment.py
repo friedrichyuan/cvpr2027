@@ -1,4 +1,6 @@
-"""Single-GPU EfficientSAM3 throughput.
+"""Archived EfficientSAM3 microbench. Production segment is SAM 3 plus Cutie.
+
+Single-GPU EfficientSAM3 throughput.
 
 Times the segment path on one visible GPU. torch.compile covers the detection
 head and the image backbone. The first call pays for compilation and is
@@ -18,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from egowhale.media import read_rgb

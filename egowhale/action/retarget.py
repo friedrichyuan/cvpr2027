@@ -25,20 +25,18 @@ class Retarget(Step):
     gpus = 1
 
     def run(self, src: Path, dst: Path) -> None:
-        src = Path(src)
-        position, rotation, width, valid, intrinsic = _episode_gpu(src)
+        save_gripper(Path(dst), self.compute(read_episode(Path(src))))
+
+    def compute(self, raw: dict) -> dict:
+        position, rotation, width, valid, intrinsic = _episode_gpu(raw)
         position, rotation, width = _smooth_gpu(position, rotation, width, valid)
-        path = Path(dst) / GRIPPER
-        path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(
-            path,
-            position=position.astype(np.float32),
-            rotation=rotation.astype(np.float32),
-            width=width.astype(np.float32),
-            valid=valid,
-            intrinsic=intrinsic.astype(np.float32),
-            fps=np.float32(FPS),
-        )
+        return {
+            "position": position.astype(np.float32),
+            "rotation": rotation.astype(np.float32),
+            "width": width.astype(np.float32),
+            "valid": valid,
+            "intrinsic": intrinsic.astype(np.float32),
+        }
 
 
 def _episode(path: Path):
@@ -151,17 +149,39 @@ def _slerp_smooth(rotations: np.ndarray) -> np.ndarray:
     return out
 
 
-def _episode_gpu(path: Path):
-    """Same geometry as `_episode`, stacked over frames on GPU."""
+def read_episode(path: Path) -> dict:
     with h5py.File(path, "r") as handle:
-        intrinsic = np.asarray(handle["camera/intrinsic"], dtype=np.float64)
         transforms = handle["transforms"]
-        camera = torch.tensor(np.asarray(transforms["camera"], dtype=np.float64), device="cuda")
-        joints = {
-            name: torch.tensor(np.asarray(dataset, dtype=np.float64), device="cuda")
-            for name, dataset in transforms.items()
-            if name != "camera"
+        return {
+            "intrinsic": np.asarray(handle["camera/intrinsic"], dtype=np.float64),
+            "camera": np.asarray(transforms["camera"], dtype=np.float64),
+            "joints": {
+                name: np.asarray(dataset, dtype=np.float64)
+                for name, dataset in transforms.items()
+                if name != "camera"
+            },
         }
+
+
+def save_gripper(dst: Path, result: dict) -> None:
+    path = Path(dst) / GRIPPER
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        path,
+        position=result["position"],
+        rotation=result["rotation"],
+        width=result["width"],
+        valid=result["valid"],
+        intrinsic=result["intrinsic"],
+        fps=np.float32(FPS),
+    )
+
+
+def _episode_gpu(raw: dict):
+    """Same geometry as `_episode`, stacked over frames on GPU."""
+    intrinsic = raw["intrinsic"]
+    camera = torch.tensor(raw["camera"], device="cuda")
+    joints = {name: torch.tensor(value, device="cuda") for name, value in raw["joints"].items()}
     frames = camera.shape[0]
     rotation_c = camera[:, :3, :3].transpose(-1, -2)
     translation = -torch.einsum("tij,tj->ti", rotation_c, camera[:, :3, 3])
