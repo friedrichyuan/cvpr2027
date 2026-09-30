@@ -241,7 +241,8 @@ def _savgol(values: torch.Tensor, window: int) -> torch.Tensor:
     coeffs = torch.tensor(savgol_coeffs(window, POLY), dtype=values.dtype, device=values.device)
     flat = values.reshape(values.shape[0], -1).transpose(0, 1).unsqueeze(1)
     kernel = coeffs.flip(0).view(1, 1, -1)
-    filtered = torch.nn.functional.conv1d(flat, kernel, padding=window // 2)
+    with torch.backends.cudnn.flags(enabled=False):  # cuDNN plans each new length (~0.3 s)
+        filtered = torch.nn.functional.conv1d(flat, kernel, padding=window // 2)
     filtered = filtered.squeeze(1).transpose(0, 1).reshape(values.shape)
     return _savgol_edges(values, filtered, window)
 

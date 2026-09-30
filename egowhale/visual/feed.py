@@ -23,13 +23,13 @@ def _one(stage: str, src: Path, dst: Path) -> dict:
         frames, _fps = read_rgb(src.with_suffix(".mp4"))
         return {"ok": True, "frames": frames, "dst": str(dst / MASKS)}
     if stage == "inpaint":
-        from egowhale.visual.paint import prepare_clip
+        from egowhale.visual.paint import prepare_crop
 
         frames, fps = read_rgb(src.with_suffix(".mp4"))
         masks = load_masks(dst / MASKS)
         if len(frames) != len(masks):
             raise ValueError(f"{len(frames)} frames vs {len(masks)} masks")
-        clip = prepare_clip(frames, masks)
+        clip = prepare_crop(frames, masks)
         clip["ok"] = True
         clip["fps"] = float(fps)
         clip["dst"] = str(dst / INPAINT)

@@ -94,6 +94,34 @@ def prepare_clip(frames: np.ndarray, masks: np.ndarray, resize_ratio: float = 0.
     }
 
 
+def prepare_crop(frames: np.ndarray, masks: np.ndarray, margin: float = 0.05, resize_ratio: float = 0.5) -> dict:
+    """Paint only the clip's mask box plus a margin. One box for the whole clip keeps flow coordinates fixed."""
+    from PIL import Image
+
+    height, width = masks.shape[1:]
+    ys, xs = np.where(masks.any(0))
+    if len(ys) == 0:
+        y0, y1, x0, x1 = 0, height, 0, width
+    else:
+        pad = int(margin * max(height, width))
+        y0 = max(0, (ys.min() - pad) // 16 * 16)
+        x0 = max(0, (xs.min() - pad) // 16 * 16)
+        y1 = min(height, -(-(ys.max() + 1 + pad) // 16) * 16)
+        x1 = min(width, -(-(xs.max() + 1 + pad) // 16) * 16)
+    clip = prepare_clip(np.ascontiguousarray(frames[:, y0:y1, x0:x1]), masks[:, y0:y1, x0:x1], resize_ratio)
+    size = (int(width * resize_ratio), int(height * resize_ratio))
+    clip["background"] = np.stack([np.asarray(Image.fromarray(frame).resize(size)) for frame in frames])
+    clip["box"] = (int(y0 * resize_ratio), int(x0 * resize_ratio))
+    return clip
+
+
+def paste(background: np.ndarray, painted: np.ndarray, box: tuple[int, int]) -> np.ndarray:
+    out = np.array(background)
+    top, left = box
+    out[:, top : top + painted.shape[1], left : left + painted.shape[2]] = painted
+    return out
+
+
 def paint_clips(models, clips: list[dict], ref_stride=10, neighbor_length=10, subvideo_length=80, raft_iter=20, fp16=True):
     """One forward per group of clips that share process size and length."""
     import torch
@@ -136,10 +164,6 @@ def _forward(models, frames, flow_masks, masks, originals, out_sizes, ref_stride
     painter = models["painter"]
     get_ref_index = _libs()["get_ref_index"]
 
-    def release() -> None:
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
     with torch.no_grad():
         if width <= 640:
             short_clip = 12
@@ -157,11 +181,9 @@ def _forward(models, frames, flow_masks, masks, originals, out_sizes, ref_stride
                 flows_f, flows_b = raft(window, iters=raft_iter)
                 forward_flows.append(flows_f)
                 backward_flows.append(flows_b)
-                release()
             flows = (torch.cat(forward_flows, dim=1), torch.cat(backward_flows, dim=1))
         else:
             flows = raft(frames, iters=raft_iter)
-            release()
 
         use_half = bool(fp16) and getattr(device, "type", "") == "cuda"
         if use_half:
@@ -190,12 +212,10 @@ def _forward(models, frames, flow_masks, masks, originals, out_sizes, ref_stride
                 completed = flow.combine_flow(pair, completed, flow_masks[:, left : right + 1])
                 pred_f.append(completed[0][:, pad_left : right - left - pad_right])
                 pred_b.append(completed[1][:, pad_left : right - left - pad_right])
-                release()
             completed_flows = (torch.cat(pred_f, dim=1), torch.cat(pred_b, dim=1))
         else:
             completed_flows, _edges = flow.forward_bidirect_flow(flows, flow_masks)
             completed_flows = flow.combine_flow(flows, completed_flows, flow_masks)
-            release()
 
         masked = frames * (1 - masks)
         prop_length = min(100, subvideo_length)
@@ -213,18 +233,18 @@ def _forward(models, frames, flow_masks, masks, originals, out_sizes, ref_stride
                 filled = frames[:, left:right] * (1 - masks[:, left:right]) + propagated.view(batch, count, 3, height, width) * masks[:, left:right]
                 updated_frames.append(filled[:, pad_left : right - left - pad_right])
                 updated_masks.append(local_masks.view(batch, count, 1, height, width)[:, pad_left : right - left - pad_right])
-                release()
             updated_frames = torch.cat(updated_frames, dim=1)
             updated_masks = torch.cat(updated_masks, dim=1)
         else:
             propagated, local_masks = painter.img_propagation(masked, completed_flows, masks, "nearest")
             updated_frames = frames * (1 - masks) + propagated.view(batch, video_length, 3, height, width) * masks
             updated_masks = local_masks.view(batch, video_length, 1, height, width)
-            release()
 
     stride = neighbor_length // 2
     ref_num = subvideo_length // ref_stride if video_length > subvideo_length else -1
-    composite = [[None] * video_length for _ in range(batch)]
+    base = torch.from_numpy(np.stack(originals)).to(device)
+    composite = torch.zeros_like(base)
+    filled = torch.zeros(video_length, dtype=torch.bool, device=device)
     for start in range(0, video_length, stride):
         neighbors = list(range(max(0, start - stride), min(video_length, start + stride + 1)))
         refs = get_ref_index(start, neighbors, video_length, ref_stride, ref_num)
@@ -238,24 +258,21 @@ def _forward(models, frames, flow_masks, masks, originals, out_sizes, ref_stride
                 len(neighbors),
             )
             predicted = (predicted.float() + 1) / 2
-            predicted = predicted.cpu().permute(0, 1, 3, 4, 2).numpy() * 255
-            binary = masks[:, neighbors].float().cpu().permute(0, 1, 3, 4, 2).numpy()
-            binary = (binary > 0.5).astype(np.uint8)
-        for item in range(batch):
-            for local, index in enumerate(neighbors):
-                image = predicted[item, local] * binary[item, local] + originals[item][index] * (1 - binary[item, local])
-                previous = composite[item][index]
-                if previous is not None:
-                    image = previous.astype(np.float32) * 0.5 + image.astype(np.float32) * 0.5
-                composite[item][index] = image.astype(np.uint8)
-        release()
+            predicted = predicted.permute(0, 1, 3, 4, 2) * 255
+            binary = (masks[:, neighbors].float().permute(0, 1, 3, 4, 2) > 0.5).to(torch.uint8)
+            image = (predicted * binary + base[:, neighbors] * (1 - binary)).to(torch.uint8)
+            previous = filled[neighbors].view(1, -1, 1, 1, 1)
+            blended = (composite[:, neighbors].float() * 0.5 + image.float() * 0.5).to(torch.uint8)
+            composite[:, neighbors] = torch.where(previous, blended, image)
+            filled[neighbors] = True
 
+    if not bool(filled.all()):
+        raise RuntimeError("ProPainter left a frame empty")
+    composite = composite.cpu().numpy()
     outputs = []
     for item, out_size in enumerate(out_sizes):
         frames_out = []
         for frame in composite[item]:
-            if frame is None:
-                raise RuntimeError("ProPainter left a frame empty")
             if (frame.shape[1], frame.shape[0]) != tuple(out_size):
                 frame = cv2.resize(frame, tuple(out_size), interpolation=cv2.INTER_CUBIC)
             frames_out.append(frame)

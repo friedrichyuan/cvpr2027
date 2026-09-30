@@ -15,7 +15,9 @@ def commit(saves: list[dict]) -> None:
         if kind == "masks":
             save_masks(path, item["data"])
         elif kind == "video":
-            write_rgb(path, item["data"], float(item["fps"]))
+            from egowhale.visual.paint import paste
+
+            write_rgb(path, paste(item["background"], item["data"], item["box"]), float(item["fps"]))
         elif kind == "depth":
             _store_depth(path, item["data"])
         else:

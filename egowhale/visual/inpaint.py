@@ -6,7 +6,7 @@ from pathlib import Path
 
 from egowhale.media import load_masks, read_rgb, write_rgb
 from egowhale.step import INPAINT, MASKS, ROOT, Step, compute_lock
-from egowhale.visual.paint import load_models, paint_clips, prepare_clip
+from egowhale.visual.paint import load_models, paint_clips, paste, prepare_crop
 
 _ROOT = ROOT / "thirdparty" / "propainter"
 
@@ -28,8 +28,9 @@ class Inpaint(Step):
             raise ValueError(f"{len(frames)} frames vs {len(masks)} masks")
         if getattr(self, "_held", None) is None:
             self.load()
-        painted = paint_clips(self._held, [prepare_clip(frames, masks)])[0]
-        write_rgb(Path(dst) / INPAINT, painted, fps)
+        clip = prepare_crop(frames, masks)
+        painted = paint_clips(self._held, [clip])[0]
+        write_rgb(Path(dst) / INPAINT, paste(clip["background"], painted, clip["box"]), fps)
 
     def consume(self, payload: dict, budget: int) -> dict:
         """Paint a dataloader batch. Same size and length share one forward. OOM halves the budget."""
@@ -62,6 +63,8 @@ class Inpaint(Step):
                         "path": items[index]["dst"],
                         "data": frames,
                         "fps": items[index]["fps"],
+                        "background": items[index]["background"],
+                        "box": items[index]["box"],
                     })
             except Exception as exc:
                 oom = isinstance(exc, torch.cuda.OutOfMemoryError) or "out of memory" in str(exc).lower()
