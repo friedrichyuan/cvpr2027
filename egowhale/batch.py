@@ -29,17 +29,19 @@ from egowhale.step import ROOT, _done
 from egowhale.visual.composite import Composite
 from egowhale.visual.depth import Depth
 from egowhale.visual.inpaint import Inpaint
+from egowhale.visual.render import Render
 from egowhale.visual.segment import Segment
 
-# Later stages wait on these. The two branches meet at composite.
+# Later stages wait on these. Only inpaint waits inside the visual branch; everything meets at composite.
 DEPS = {
     "retarget": (),
     "segment": (),
     "base_ik": ("retarget",),
     "inpaint": ("segment",),
     "approach": ("base_ik",),
-    "depth": ("inpaint",),
-    "composite": ("retarget", "segment", "base_ik", "inpaint", "approach", "depth"),
+    "depth": (),
+    "render": ("retarget", "base_ik", "approach"),
+    "composite": ("segment", "inpaint", "depth", "approach", "render"),
     "curate": ("composite",),
 }
 POOL = {
@@ -49,6 +51,7 @@ POOL = {
     "segment": "segment",
     "inpaint": "inpaint",
     "depth": "depth",
+    "render": "render",
     "composite": "cpu",
     "curate": "cpu",
 }
@@ -62,6 +65,7 @@ STEPS = {
     "depth": Depth,
     "base_ik": BaseIK,
     "approach": Approach,
+    "render": Render,
     "composite": Composite,
     "curate": Curate,
 }
@@ -118,7 +122,13 @@ def _device() -> str:
     return "cuda:" + visible.split(",")[0]
 
 
-def _actors(pools: dict[str, int]):
+def _egl(device: str) -> None:
+    """MuJoCo EGL ignores CUDA_VISIBLE_DEVICES and would render on physical GPU 0."""
+    os.environ["MUJOCO_EGL_DEVICE_ID"] = device
+
+
+def _actors(pools: dict[str, int], share: dict[str, float]):
+    """Every actor lives for the whole run. `share` is the GPU fraction for pools that stack on one card."""
     import ray
 
     gpu = ray.remote(num_gpus=1, max_concurrency=1)
@@ -206,8 +216,25 @@ def _actors(pools: dict[str, int]):
         def ready(self):
             return "cpu"
 
+        def egl(self, device):
+            _egl(device)
+
         def run(self, stage, src, dst):
             return execute(self.steps[stage], src, dst)
+
+    @cpu
+    class RenderActor:
+        def __init__(self):
+            self.step = Render()
+
+        def ready(self):
+            return "cpu"
+
+        def egl(self, device):
+            _egl(device)
+
+        def run(self, stage, src, dst):
+            return execute(self.step, src, dst)
 
     @ray.remote(num_cpus=2, max_concurrency=8)
     class FeedActor:
@@ -282,15 +309,26 @@ def _actors(pools: dict[str, int]):
         "depth": DepthActor,
         "action": ActionActor,
         "cpu": CpuActor,
+        "render": RenderActor,
         "feed": FeedActor,
         "write": StoreActor,
         "action_read": ActionReadActor,
         "action_write": ActionWriteActor,
     }
-    return {
-        name: [(f"{name}{index}", cls.remote()) for index in range(pools[name])]
-        for name, cls in classes.items()
-    }
+    made = {}
+
+    def make(names) -> None:
+        for name in names:
+            cls = classes[name].options(num_gpus=share[name]) if name in share else classes[name]
+            made[name] = [(f"{name}{index}", cls.remote()) for index in range(pools[name])]
+
+    # Whole cards are placed before fractional ones so a shared card cannot take a slot a whole actor needs.
+    make([name for name in classes if name not in share])
+    ray.get([actor.ready.remote() for name in ("inpaint", "depth") for _label, actor in made.get(name, [])])
+    for name in share:
+        make([name])
+        ray.get([actor.ready.remote() for _label, actor in made[name]])
+    return {name: made[name] for name in classes}
 
 
 _PLACED = (
@@ -298,7 +336,8 @@ _PLACED = (
     ("inpaint", "inpaint", "ProPainter"),
     ("depth", "depth", "DA3-GIANT"),
     ("action", "action", "cuRobo"),
-    ("cpu", "composite", "MuJoCo"),
+    ("render", "render", "MuJoCo"),
+    ("cpu", "composite", "paste"),
     ("cpu", "curate", "checks"),
     ("feed", "feed", "prefetch"),
     ("write", "write", "store"),
@@ -395,19 +434,22 @@ def _apply(jobs, rows, stage, meter, writer, log, active) -> None:
         meter.write(writer)
 
 
-def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, board: Path) -> None:
+def serve(jobs: list[Job], pools: dict[str, int], share: dict[str, float], inflight: int, log: Path, board: Path) -> None:
     import ray
     from torch.utils.tensorboard import SummaryWriter
 
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True, log_to_driver=False, logging_level=logging.ERROR)
     have = int(ray.cluster_resources().get("GPU", 0))
-    need = pools["segment"] + pools["inpaint"] + pools["depth"] + pools["action"]
+    need = round(sum(pools[name] * share.get(name, 1.0) for name in ("segment", "inpaint", "depth", "action")))
     if need > have:
         raise SystemExit(f"GPU pools ask for {need} devices, cluster has {have}")
     journal = _logger()
-    free = _actors(pools)
+    free = _actors(pools, share)
     _boot(free, journal)
+    # Render and curate draw with EGL on the action cards, which cuRobo leaves mostly idle.
+    cards = sorted({device.split(":")[-1] for device in ray.get([actor.ready.remote() for _label, actor in free["action"]])})
+    ray.get([actor.egl.remote(cards[index % len(cards)]) for pool in ("render", "cpu") for index, (_label, actor) in enumerate(free[pool])])
     journal.info(f"{len(jobs)} episodes    tensorboard {board}")
     journal.info(f"tensorboard --logdir {board}")
     writer = SummaryWriter(log_dir=str(board))
@@ -461,22 +503,34 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
         lane["inflight"].append(launched)
         pending[launched] = ("gpu", lane, chosen)
 
-    def fill(lane) -> None:
-        """Keep one decoded episode queued behind the one on the GPU."""
+    def load(lane) -> int:
+        return len(lane["busy"]) + len(lane["ready"]) + len(lane["inflight"])
+
+    def fill_one(lane) -> bool:
+        """Start decoding one more episode for this lane, if it has room and work exists."""
+        if load(lane) >= 4:
+            return False
+        reader = next((item for item in lane["readers"] if item not in lane["busy"].values()), None)
+        if reader is None:
+            return False
         stage = lane["stage"]
-        limit = budget.get(stage, 10**9)
-        while len(lane["busy"]) + len(lane["ready"]) + len(lane["inflight"]) < 3:
-            reader = next((item for item in lane["readers"] if item not in lane["busy"].values()), None)
-            if reader is None:
-                return
-            chosen = _take(active, stage, limit)
-            if not chosen:
-                return
-            for job in chosen:
-                job.running.add(stage)
-            ref = reader.prepare.remote(stage, [(str(job.src), str(job.dst)) for job in chosen])
-            lane["busy"][ref] = reader
-            pending[ref] = ("feed", lane, chosen)
+        chosen = _take(active, stage, budget.get(stage, 10**9))
+        if not chosen:
+            return False
+        for job in chosen:
+            job.running.add(stage)
+        ref = reader.prepare.remote(stage, [(str(job.src), str(job.dst)) for job in chosen])
+        lane["busy"][ref] = reader
+        pending[ref] = ("feed", lane, chosen)
+        return True
+
+    def fill() -> None:
+        """One episode on the GPU, one queued, both readers decoding. Scarce work goes to the least loaded lane first."""
+        progress = True
+        while progress:
+            progress = False
+            for lane in sorted(lanes, key=load):
+                progress |= fill_one(lane)
 
     def launch(lane) -> None:
         while len(lane["inflight"]) < 2 and lane["ready"]:
@@ -499,8 +553,8 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
     def pump() -> None:
         while len(active) < inflight and waiting:
             active.append(waiting.pop(0))
+        fill()
         for lane in lanes:
-            fill(lane)
             launch(lane)
         held = set()
         for lane in action_lanes:
@@ -570,7 +624,7 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
             lane["busy"].pop(ref, None)
             lane["ready"].append((ref, chosen))
             launch(lane)
-            fill(lane)
+            fill()
             continue
         if kind[0] == "aread":
             lane = kind[1]
@@ -635,7 +689,7 @@ def serve(jobs: list[Job], pools: dict[str, int], inflight: int, log: Path, boar
         stage = lane["stage"]
         lane["inflight"] = [item for item in lane["inflight"] if item != ref]
         launch(lane)
-        fill(lane)
+        fill()
         try:
             payload = ray.get(ref)
         except Exception:
@@ -860,30 +914,37 @@ def main() -> None:
     parser.add_argument("--inpaint", type=int, default=4)
     parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--action", type=int, default=1)
+    parser.add_argument("--segment-actors", type=int, default=2, help="segment actors sharing each segment card")
+    parser.add_argument("--action-actors", type=int, default=4, help="action actors sharing each action card")
+    parser.add_argument("--render", type=int, default=4, help="MuJoCo render actors")
     args = parser.parse_args()
     sources = episodes_from([path.expanduser().resolve() for path in args.paths], args.limit)
     if not sources:
         raise SystemExit("no episodes")
     out = args.out.expanduser().resolve()
     jobs = [Job(src, out / src.parent.name / src.stem) for src in sources]
-    visual = args.segment + args.inpaint + args.depth
+    segment = args.segment * args.segment_actors
+    action = args.action * args.action_actors
+    visual = segment + args.inpaint + args.depth
     pools = {
-        "segment": args.segment,
+        "segment": segment,
         "inpaint": args.inpaint,
         "depth": args.depth,
-        "action": args.action,
+        "action": action,
         "cpu": min(args.inflight, 8),
+        "render": args.render,
         "feed": visual * 2,
         "write": visual,
-        "action_read": args.action,
-        "action_write": args.action,
+        "action_read": action,
+        "action_write": action,
     }
+    share = {"segment": 1.0 / args.segment_actors, "action": 1.0 / args.action_actors}
     watch = _watch(len(jobs))
     for index, job in enumerate(jobs):
         job.index = index
         job.frames = _frame_count(job.src)
         job.watch = index in watch
-    serve(jobs, pools, args.inflight, out / "batch.jsonl", out / "tb")
+    serve(jobs, pools, share, args.inflight, out / "batch.jsonl", out / "tb")
 
 
 if __name__ == "__main__":

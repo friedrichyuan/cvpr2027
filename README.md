@@ -23,10 +23,11 @@ EgoWhale takes in egocentric manipulation video and writes out dual-arm robot de
 | Retarget | Camera-frame parallel gripper, then smooth | `action/gripper.npz` |
 | Segment | Person mask (SAM 3) | `visual/masks.npz` |
 | Inpaint | Remove the person (ProPainter) | `visual/inpaint.mp4` |
-| Depth | Scene depth (Depth Anything 3), scaled to meters | `visual/depth.npz` |
+| Depth | Depth of the original video (Depth Anything 3), scaled to meters | `visual/depth.npz` |
 | Base + IK | Base pose and arm trajectory (cuRobo) | `action/base.json`, `action/ik.npz` |
 | Approach | TrajOpt from the zero configuration to the first end-effector pose | `action/prefix.npz` |
-| Composite | MuJoCo render; gripper hidden where the scene is closer | `visual/composite.mp4` |
+| Render | MuJoCo render of the arm from the action outputs | `visual/render.npz` |
+| Composite | Paste the render; gripper hidden where the scene is closer | `visual/composite.mp4` |
 | Curate | Frame checks, action statistics, then a VLM audit | `action/quality.json` |
 
 A finished stage is skipped when every file in its output column exists. Delete those files to rerun it. Each stage is one class with `needs`, `makes`, and a GPU hint.

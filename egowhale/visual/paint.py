@@ -11,14 +11,14 @@ from egowhale.step import ROOT
 
 _ROOT = ROOT / "thirdparty" / "propainter"
 _URL = "https://github.com/sczhou/ProPainter/releases/download/v0.1.0/"
+_RESIZE_THREADS = 8
 
 
 def _libs():
     root = str(_ROOT)
     if root not in sys.path:
         sys.path.insert(0, root)
-    from core.utils import to_tensors
-    from inference_propainter import get_ref_index, resize_frames
+    from inference_propainter import get_ref_index
     from model.misc import get_device
     from model.modules.flow_comp_raft import RAFT_bi
     from model.propainter import InpaintGenerator
@@ -26,9 +26,7 @@ def _libs():
     from utils.download_util import load_file_from_url
 
     return {
-        "to_tensors": to_tensors,
         "get_ref_index": get_ref_index,
-        "resize_frames": resize_frames,
         "get_device": get_device,
         "RAFT_bi": RAFT_bi,
         "InpaintGenerator": InpaintGenerator,
@@ -60,19 +58,27 @@ def load_models(weight_dir: str, device=None):
     return {"raft": raft, "flow": flow, "painter": painter, "device": device, "half": False}
 
 
+def _resize_all(frames: np.ndarray, size: tuple[int, int]) -> np.ndarray:
+    """PIL's default resize, one thread per frame. PIL drops the GIL while resampling."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from PIL import Image
+
+    with ThreadPoolExecutor(_RESIZE_THREADS) as pool:
+        return np.stack(list(pool.map(lambda frame: np.asarray(Image.fromarray(frame).resize(size)), frames)))
+
+
 def prepare_clip(frames: np.ndarray, masks: np.ndarray, resize_ratio: float = 0.5, mask_dilation: int = 4) -> dict:
-    """Resize and dilate on the CPU dataloader. Tensors stay on CPU."""
+    """Resize and dilate on the CPU dataloader. Pixels stay uint8 until they reach the GPU."""
     import cv2
     import scipy.ndimage
     import torch
-    from PIL import Image
 
-    libs = _libs()
     height, width = frames.shape[1], frames.shape[2]
-    size = (int(width * resize_ratio), int(height * resize_ratio))
-    resized, process_size, out_size = libs["resize_frames"]([Image.fromarray(frame) for frame in frames], size)
-    process_w, process_h = process_size
-    flow_masks = []
+    # Same sizes as ProPainter's resize_frames: process size is the output size rounded down to a multiple of 8.
+    out_size = (int(width * resize_ratio), int(height * resize_ratio))
+    process_w, process_h = out_size[0] - out_size[0] % 8, out_size[1] - out_size[1] % 8
+    resized = _resize_all(frames, (process_w, process_h))
     dilated = []
     for mask in masks:
         image = cv2.resize(mask.astype(np.uint8), (process_w, process_h), interpolation=cv2.INTER_NEAREST)
@@ -80,24 +86,18 @@ def prepare_clip(frames: np.ndarray, masks: np.ndarray, resize_ratio: float = 0.
             image = scipy.ndimage.binary_dilation(image, iterations=mask_dilation).astype(np.uint8)
         else:
             image = (image > 0).astype(np.uint8)
-        painted = Image.fromarray(image * 255)
-        flow_masks.append(painted)
-        dilated.append(painted)
-    convert = libs["to_tensors"]()
+        dilated.append(image)
     return {
-        "frames": (convert(resized).unsqueeze(0) * 2 - 1).cpu(),
-        "flow": convert(flow_masks).unsqueeze(0).cpu(),
-        "masks": convert(dilated).unsqueeze(0).cpu(),
-        "original": np.stack([np.asarray(frame) for frame in resized]),
+        "frames": torch.from_numpy(resized).permute(0, 3, 1, 2).unsqueeze(0).contiguous(),
+        "masks": torch.from_numpy(np.stack(dilated)).unsqueeze(1).unsqueeze(0),
+        "original": resized,
         "out_size": out_size,
-        "key": (int(resized[0].size[0]), int(resized[0].size[1]), len(resized)),
+        "key": (process_w, process_h, len(resized)),
     }
 
 
 def prepare_crop(frames: np.ndarray, masks: np.ndarray, margin: float = 0.05, resize_ratio: float = 0.5) -> dict:
     """Paint only the clip's mask box plus a margin. One box for the whole clip keeps flow coordinates fixed."""
-    from PIL import Image
-
     height, width = masks.shape[1:]
     ys, xs = np.where(masks.any(0))
     if len(ys) == 0:
@@ -110,7 +110,7 @@ def prepare_crop(frames: np.ndarray, masks: np.ndarray, margin: float = 0.05, re
         x1 = min(width, -(-(xs.max() + 1 + pad) // 16) * 16)
     clip = prepare_clip(np.ascontiguousarray(frames[:, y0:y1, x0:x1]), masks[:, y0:y1, x0:x1], resize_ratio)
     size = (int(width * resize_ratio), int(height * resize_ratio))
-    clip["background"] = np.stack([np.asarray(Image.fromarray(frame).resize(size)) for frame in frames])
+    clip["background"] = _resize_all(frames, size)
     clip["box"] = (int(y0 * resize_ratio), int(x0 * resize_ratio))
     return clip
 
@@ -135,7 +135,6 @@ def paint_clips(models, clips: list[dict], ref_stride=10, neighbor_length=10, su
         outputs = _forward(
             models,
             torch.cat([clip["frames"] for clip in group], dim=0),
-            torch.cat([clip["flow"] for clip in group], dim=0),
             torch.cat([clip["masks"] for clip in group], dim=0),
             [clip["original"] for clip in group],
             [clip["out_size"] for clip in group],
@@ -150,14 +149,17 @@ def paint_clips(models, clips: list[dict], ref_stride=10, neighbor_length=10, su
     return painted
 
 
-def _forward(models, frames, flow_masks, masks, originals, out_sizes, ref_stride, neighbor_length, subvideo_length, raft_iter, fp16):
+def _forward(models, frames, masks, originals, out_sizes, ref_stride, neighbor_length, subvideo_length, raft_iter, fp16):
     import cv2
     import torch
 
     device = models["device"]
-    frames = frames.to(device)
-    flow_masks = flow_masks.to(device)
-    masks = masks.to(device)
+    # ProPainter's to_tensors maps pixels to [-1, 1] on the CPU. GPU division rounds differently in the last bit,
+    # so the 256 CPU results are looked up instead of recomputed.
+    table = (torch.arange(256, dtype=torch.float32).div(255) * 2 - 1).to(device)
+    frames = table[frames.to(device).long()]
+    masks = masks.to(device).float()
+    flow_masks = masks
     batch, video_length, _, height, width = frames.shape
     raft = models["raft"]
     flow = models["flow"]

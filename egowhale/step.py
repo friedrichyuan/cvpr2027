@@ -18,6 +18,9 @@ def compute_lock(step):
         step._gate = lock
     return lock
 
+# Inpaint, depth, and render all work at this fraction of the source video.
+SCALE = 0.5
+
 GRIPPER = "action/gripper.npz"
 MASKS = "visual/masks.npz"
 INPAINT = "visual/inpaint.mp4"
@@ -25,6 +28,7 @@ DEPTH = "visual/depth.npz"
 BASE = "action/base.json"
 IK = "action/ik.npz"
 PREFIX = "action/prefix.npz"
+RENDER = "visual/render.npz"
 COMPOSITE = "visual/composite.mp4"
 QUALITY = "action/quality.json"
 

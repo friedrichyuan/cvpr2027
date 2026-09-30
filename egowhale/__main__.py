@@ -16,9 +16,10 @@ from egowhale.step import ROOT, run
 from egowhale.visual.composite import Composite
 from egowhale.visual.depth import Depth
 from egowhale.visual.inpaint import Inpaint
+from egowhale.visual.render import Render
 from egowhale.visual.segment import Segment
 
-STEPS = (Retarget, Segment, Inpaint, Depth, BaseIK, Approach, Composite, Curate)
+STEPS = (Retarget, Segment, Inpaint, Depth, BaseIK, Approach, Render, Composite, Curate)
 
 
 def main() -> None:

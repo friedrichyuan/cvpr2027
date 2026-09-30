@@ -10,25 +10,27 @@ import h5py
 import numpy as np
 
 from egowhale.media import read_rgb
-from egowhale.step import DEPTH, INPAINT, ROOT, Step, compute_lock
+from egowhale.step import DEPTH, ROOT, SCALE, Step, compute_lock
 
 _SRC = ROOT / "thirdparty" / "da3" / "src"
 _WEIGHTS = ROOT / "thirdparty" / "da3" / "weights" / "DA3-GIANT"
 PROCESS_RES = 336
+_HAND_PARTS = ("Hand", "Finger", "Thumb")
+_HAND_MIN = 50
 
 
 class Depth(Step):
     name = "depth"
-    needs = (INPAINT,)
     makes = (DEPTH,)
     gpus = 1
 
     def run(self, src: Path, dst: Path) -> None:
         if not (_WEIGHTS / "model.safetensors").is_file():
             raise FileNotFoundError(_WEIGHTS)
-        frames, _fps = read_rgb(Path(dst) / INPAINT)
+        frames, _fps = read_rgb(Path(src).with_suffix(".mp4"))
         extrinsics, intrinsics = _cameras(Path(src), frames.shape[1], frames.shape[2], len(frames))
-        depth = _estimate(frames[: len(extrinsics)], extrinsics, intrinsics, getattr(self, "_model", None))
+        hand = _hand_points(Path(src), len(extrinsics))
+        depth = _estimate(frames[: len(extrinsics)], extrinsics, intrinsics, getattr(self, "_model", None), _out_size(frames), hand)
         _store_depth(Path(dst) / DEPTH, depth)
         print(f"  depth median {float(np.median(depth)):.3f} m")
 
@@ -146,7 +148,56 @@ def load_model():
     return model
 
 
-def _estimate(frames: np.ndarray, extrinsics: np.ndarray, intrinsics: np.ndarray, model=None) -> np.ndarray:
+def _out_size(frames: np.ndarray) -> tuple[int, int]:
+    """Depth is stored at the inpainted background's size."""
+    return int(frames.shape[1] * SCALE), int(frames.shape[2] * SCALE)
+
+
+def _hand_points(episode: Path, count: int) -> np.ndarray:
+    """EgoDex hand joints as (frame, row, col, depth in meters), in stored-depth pixels."""
+    with h5py.File(episode, "r") as handle:
+        transforms = handle["transforms"]
+        c2w = np.asarray(transforms["camera"], dtype=np.float64)[:count]
+        intrinsic = np.asarray(handle["camera/intrinsic"], dtype=np.float64)
+        names = [name for name in transforms if name.startswith(("left", "right")) and any(part in name for part in _HAND_PARTS)]
+        joints = np.stack([np.asarray(transforms[name], dtype=np.float64)[:count, :3, 3] for name in names], axis=1)
+    source_h, source_w = _source_size(episode.with_suffix(".mp4"))
+    height, width = int(source_h * SCALE), int(source_w * SCALE)
+    rows = []
+    for frame, camera in enumerate(c2w):
+        world_to_camera = _invert(camera)
+        points = joints[frame] @ world_to_camera[:3, :3].T + world_to_camera[:3, 3]
+        depth = points[:, 2]
+        front = depth > 0.05
+        col = (intrinsic[0, 0] * points[front, 0] / depth[front] + intrinsic[0, 2]) * SCALE
+        row = (intrinsic[1, 1] * points[front, 1] / depth[front] + intrinsic[1, 2]) * SCALE
+        inside = (col >= 0) & (col < width) & (row >= 0) & (row < height)
+        rows.append(np.stack([np.full(inside.sum(), frame), row[inside].astype(int), col[inside].astype(int), depth[front][inside]], axis=1))
+    return np.concatenate(rows) if rows else np.zeros((0, 4))
+
+
+def _meters(depth: np.ndarray, predicted: np.ndarray, reference: np.ndarray, hand: np.ndarray) -> np.ndarray:
+    """Scale DA3 depth so the visible hand sits at its tracked depth. Too few joints fall back to the camera path."""
+    if len(hand) >= _HAND_MIN:
+        frame, row, col = (hand[:, index].astype(int) for index in range(3))
+        ratio = hand[:, 3] / np.maximum(depth[frame, row, col], 1e-6)
+        middle = np.median(ratio)
+        # Joints hidden behind an object read the occluder, so keep the ones near the consensus.
+        return depth * float(np.median(ratio[np.abs(ratio / middle - 1) < 0.2]))
+    return depth / _metric_scale(predicted, reference)
+
+
+def _source_size(video: Path) -> tuple[float, float]:
+    capture = cv2.VideoCapture(str(video))
+    height = float(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0.0)
+    width = float(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0.0)
+    capture.release()
+    if height <= 0 or width <= 0:
+        raise FileNotFoundError(video)
+    return height, width
+
+
+def _estimate(frames: np.ndarray, extrinsics: np.ndarray, intrinsics: np.ndarray, model=None, size=None, hand=None) -> np.ndarray:
     if str(_SRC) not in sys.path:
         sys.path.insert(0, str(_SRC))
     _stub_evo()
@@ -174,13 +225,13 @@ def _estimate(frames: np.ndarray, extrinsics: np.ndarray, intrinsics: np.ndarray
     finally:
         if own:
             del model
-    depth = np.asarray(prediction.depth, dtype=np.float32) / _metric_scale(prediction.extrinsics, extrinsics_t.numpy())
-    height, width = frames.shape[1], frames.shape[2]
+    depth = np.asarray(prediction.depth, dtype=np.float32)
+    height, width = size or (frames.shape[1], frames.shape[2])
     if depth.ndim == 4:
         depth = depth.squeeze(1)
     if depth.shape[1:] != (height, width):
         depth = np.stack([cv2.resize(frame, (width, height), interpolation=cv2.INTER_LINEAR) for frame in depth])
-    return depth
+    return _meters(depth, prediction.extrinsics, extrinsics_t.numpy(), np.zeros((0, 4)) if hand is None else hand)
 
 
 def prepare_view(episode: Path, frames: np.ndarray) -> dict:
@@ -199,7 +250,8 @@ def prepare_view(episode: Path, frames: np.ndarray) -> dict:
         "images": images.cpu(),
         "extrinsics": extrinsics_t.cpu(),
         "intrinsics": intrinsics_t.cpu(),
-        "size": (int(frames.shape[1]), int(frames.shape[2])),
+        "size": _out_size(frames),
+        "hand": _hand_points(Path(episode), len(extrinsics)),
         "key": tuple(int(value) for value in images.shape),
     }
 
@@ -233,15 +285,13 @@ def _forward_ready(items, model) -> list[np.ndarray]:
         batch = images.shape[0]
         for index, item in enumerate(bucket):
             prediction = OutputProcessor()(_slice_output(raw, index, batch))
-            depth = np.asarray(prediction.depth, dtype=np.float32) / _metric_scale(
-                prediction.extrinsics, item["extrinsics"].numpy()
-            )
+            depth = np.asarray(prediction.depth, dtype=np.float32)
             height, width = item["size"]
             if depth.ndim == 4:
                 depth = depth.squeeze(1)
             if depth.shape[1:] != (height, width):
                 depth = np.stack([cv2.resize(frame, (width, height), interpolation=cv2.INTER_LINEAR) for frame in depth])
-            depths[place[id(item)]] = depth
+            depths[place[id(item)]] = _meters(depth, prediction.extrinsics, item["extrinsics"].numpy(), item["hand"])
     return depths
 
 

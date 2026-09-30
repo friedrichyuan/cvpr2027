@@ -19,7 +19,7 @@ from scipy.spatial.transform import Rotation
 
 from egowhale.media import read_rgb
 from egowhale.step import BASE, COMPOSITE, GRIPPER, IK, PREFIX, QUALITY, Step
-from egowhale.visual.composite import _hide, _place_base, _place_camera
+from egowhale.visual.render import _hide, _place_base, _place_camera
 
 _SCENE = Path(__file__).resolve().parents[2] / "assets" / "mujoco_arx_scene" / "scene.xml"
 _TCP = ("left_tcp", "right_tcp")
@@ -125,18 +125,28 @@ def _load_model():
     return spec.compile()
 
 
+_SCENES: dict[tuple[int, int], tuple] = {}
+
+
+def _scene(height: int, width: int):
+    """One model and GL context per image size, kept for the life of the process."""
+    if (height, width) not in _SCENES:
+        model = _load_model()
+        _hide(model)
+        model.vis.global_.offwidth = max(int(model.vis.global_.offwidth), width)
+        model.vis.global_.offheight = max(int(model.vis.global_.offheight), height)
+        renderer = mujoco.Renderer(model, height=height, width=width)
+        _SCENES[(height, width)] = (model, mujoco.MjData(model), renderer)
+    return _SCENES[(height, width)]
+
+
 def _signals(qpos, base, intrinsic, position, hand_valid, height, width):
-    model = _load_model()
-    _hide(model)
+    model, data, renderer = _scene(height, width)
     _place_base(model, base)
     _place_camera(model, intrinsic, height)
     bodies = _robot_bodies(model)
     parent = np.asarray(model.body_parentid)
     sites = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, name) for name in _TCP]
-    data = mujoco.MjData(model)
-    model.vis.global_.offwidth = max(int(model.vis.global_.offwidth), width)
-    model.vis.global_.offheight = max(int(model.vis.global_.offheight), height)
-    renderer = mujoco.Renderer(model, height=height, width=width)
     count = len(qpos)
     area = float(height * width)
     ik_error = np.full(count, np.nan)
@@ -162,7 +172,6 @@ def _signals(qpos, base, intrinsic, position, hand_valid, height, width):
         renderer.disable_segmentation_rendering()
         visible[index] = pixels > 0
         coverage[index] = pixels / area > _COVERAGE_LIMIT
-    renderer.close()
     return {
         "hand": hand_valid.all(axis=1),
         "ik": np.isfinite(ik_error) & (ik_error < _IK_LIMIT),

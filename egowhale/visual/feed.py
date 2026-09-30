@@ -37,7 +37,7 @@ def _one(stage: str, src: Path, dst: Path) -> dict:
     if stage == "depth":
         from egowhale.visual.depth import prepare_view
 
-        frames, _fps = read_rgb(dst / INPAINT)
+        frames, _fps = read_rgb(src.with_suffix(".mp4"))
         view = prepare_view(src, frames)
         view["ok"] = True
         view["dst"] = str(dst / DEPTH)
